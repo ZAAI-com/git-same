@@ -1,0 +1,433 @@
+//! Shell-based git command implementation.
+//!
+//! This module provides the real implementation of git operations
+//! by invoking git commands through the shell.
+
+use crate::errors::GitError;
+use crate::git::traits::{CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus};
+use std::path::Path;
+use std::process::{Command, Output};
+
+/// Shell-based git operations.
+///
+/// This implementation executes git commands via the shell and parses their output.
+#[derive(Debug, Clone, Default)]
+pub struct ShellGit {
+    /// Optional timeout for git commands (in seconds)
+    pub timeout_secs: Option<u64>,
+}
+
+impl ShellGit {
+    /// Creates a new ShellGit instance.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a new ShellGit with a timeout.
+    pub fn with_timeout(timeout_secs: u64) -> Self {
+        Self {
+            timeout_secs: Some(timeout_secs),
+        }
+    }
+
+    /// Runs a git command and returns the output.
+    fn run_git(&self, args: &[&str], cwd: Option<&Path>) -> Result<Output, GitError> {
+        let mut cmd = Command::new("git");
+        cmd.args(args);
+
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+
+        // Prevent git from prompting for credentials
+        cmd.env("GIT_TERMINAL_PROMPT", "0");
+
+        cmd.output().map_err(|e| {
+            GitError::command_failed(
+                format!("git {}", args.join(" ")),
+                format!("Failed to execute: {}", e),
+            )
+        })
+    }
+
+    /// Runs a git command and returns stdout as a string.
+    fn run_git_output(&self, args: &[&str], cwd: Option<&Path>) -> Result<String, GitError> {
+        let output = self.run_git(args, cwd)?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(GitError::command_failed(
+                format!("git {}", args.join(" ")),
+                stderr,
+            ))
+        }
+    }
+
+    /// Checks if a git command succeeds.
+    fn run_git_check(&self, args: &[&str], cwd: Option<&Path>) -> bool {
+        self.run_git(args, cwd)
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Parses the porcelain status output.
+    fn parse_status_output(&self, output: &str, branch_output: &str) -> RepoStatus {
+        let mut is_dirty = false;
+        let mut has_untracked = false;
+
+        for line in output.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let code = &line[0..2];
+            if code == "??" {
+                has_untracked = true;
+            } else {
+                is_dirty = true;
+            }
+        }
+
+        // Parse branch info from `git status -b --porcelain`
+        // Format: "## main...origin/main [ahead 1, behind 2]" or "## main"
+        let (branch, ahead, behind) = self.parse_branch_info(branch_output);
+
+        RepoStatus {
+            branch,
+            is_dirty,
+            ahead,
+            behind,
+            has_untracked,
+        }
+    }
+
+    /// Parses branch info from git status -b --porcelain output.
+    fn parse_branch_info(&self, output: &str) -> (String, u32, u32) {
+        let first_line = output.lines().next().unwrap_or("");
+
+        // Remove the "## " prefix
+        let line = first_line.strip_prefix("## ").unwrap_or(first_line);
+
+        // Split on "..." to get branch name and tracking info
+        let (branch_part, info_part): (&str, Option<&str>) = if let Some(idx) = line.find("...") {
+            (&line[..idx], Some(&line[idx + 3..]))
+        } else {
+            // No tracking branch, but might have [ahead X, behind Y] directly
+            // e.g., "## feature [ahead 1, behind 2]"
+            if let Some(bracket_idx) = line.find('[') {
+                (line[..bracket_idx].trim_end(), Some(&line[bracket_idx..]))
+            } else {
+                let branch = line.split_whitespace().next().unwrap_or("HEAD");
+                (branch, None)
+            }
+        };
+
+        let branch = branch_part.to_string();
+        let mut ahead = 0;
+        let mut behind = 0;
+
+        // Parse ahead/behind from info part
+        // Format: "origin/main [ahead 1, behind 2]" or "[ahead 1]" or "origin/main [ahead 1]"
+        if let Some(info) = info_part {
+            if let Some(start) = info.find('[') {
+                if let Some(end) = info.find(']') {
+                    let bracket_content = &info[start + 1..end];
+                    for part in bracket_content.split(", ") {
+                        if let Some(n) = part.strip_prefix("ahead ") {
+                            ahead = n.parse().unwrap_or(0);
+                        } else if let Some(n) = part.strip_prefix("behind ") {
+                            behind = n.parse().unwrap_or(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        (branch, ahead, behind)
+    }
+}
+
+impl GitOperations for ShellGit {
+    fn clone_repo(
+        &self,
+        url: &str,
+        target: &Path,
+        options: &CloneOptions,
+    ) -> Result<(), GitError> {
+        let mut args = vec!["clone"];
+
+        // Add depth if specified
+        let depth_str;
+        if options.depth > 0 {
+            depth_str = options.depth.to_string();
+            args.push("--depth");
+            args.push(&depth_str);
+        }
+
+        // Add branch if specified
+        if let Some(ref branch) = options.branch {
+            args.push("--branch");
+            args.push(branch);
+        }
+
+        // Add submodule recursion if requested
+        if options.recurse_submodules {
+            args.push("--recurse-submodules");
+        }
+
+        // Add URL and target
+        args.push(url);
+        let target_str = target.to_string_lossy();
+        args.push(&target_str);
+
+        let output = self.run_git(&args, None)?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(GitError::clone_failed(url, stderr))
+        }
+    }
+
+    fn fetch(&self, repo_path: &Path) -> Result<FetchResult, GitError> {
+        // Get current HEAD before fetch
+        let before = self.run_git_output(&["rev-parse", "HEAD"], Some(repo_path)).ok();
+
+        // Run fetch
+        let output = self.run_git(&["fetch", "--all", "--prune"], Some(repo_path))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            return Err(GitError::fetch_failed(repo_path, stderr));
+        }
+
+        // Check if remote tracking branch has new commits
+        let tracking_branch = self
+            .run_git_output(
+                &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                Some(repo_path),
+            )
+            .ok();
+
+        let updated = if let (Some(before_ref), Some(tracking)) = (before, tracking_branch) {
+            let after = self
+                .run_git_output(&["rev-parse", &tracking], Some(repo_path))
+                .ok();
+            after.map(|a| a != before_ref).unwrap_or(false)
+        } else {
+            false
+        };
+
+        // Count new commits if updated
+        let new_commits = if updated {
+            self.run_git_output(&["rev-list", "--count", "HEAD..@{u}"], Some(repo_path))
+                .ok()
+                .and_then(|s| s.parse().ok())
+        } else {
+            Some(0)
+        };
+
+        Ok(FetchResult {
+            updated,
+            new_commits,
+        })
+    }
+
+    fn pull(&self, repo_path: &Path) -> Result<PullResult, GitError> {
+        // First check status
+        let status = self.status(repo_path)?;
+
+        if status.is_dirty {
+            return Ok(PullResult {
+                success: false,
+                fast_forward: false,
+                error: Some("Working tree has uncommitted changes".to_string()),
+            });
+        }
+
+        // Try fast-forward only pull
+        let output = self.run_git(&["pull", "--ff-only"], Some(repo_path))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let fast_forward = stdout.contains("Fast-forward") || stdout.contains("Already up to date");
+
+            Ok(PullResult {
+                success: true,
+                fast_forward,
+                error: None,
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+            // Check if it's a non-fast-forward situation
+            if stderr.contains("Not possible to fast-forward") {
+                Ok(PullResult {
+                    success: false,
+                    fast_forward: false,
+                    error: Some("Cannot fast-forward, local branch has diverged".to_string()),
+                })
+            } else {
+                Err(GitError::pull_failed(repo_path, stderr))
+            }
+        }
+    }
+
+    fn status(&self, repo_path: &Path) -> Result<RepoStatus, GitError> {
+        // Get status with branch info
+        let branch_output =
+            self.run_git_output(&["status", "-b", "--porcelain"], Some(repo_path))?;
+
+        // Get just the file status
+        let status_output = self.run_git_output(&["status", "--porcelain"], Some(repo_path))?;
+
+        Ok(self.parse_status_output(&status_output, &branch_output))
+    }
+
+    fn is_repo(&self, path: &Path) -> bool {
+        if !path.exists() {
+            return false;
+        }
+
+        self.run_git_check(&["rev-parse", "--git-dir"], Some(path))
+    }
+
+    fn current_branch(&self, repo_path: &Path) -> Result<String, GitError> {
+        self.run_git_output(&["rev-parse", "--abbrev-ref", "HEAD"], Some(repo_path))
+    }
+
+    fn remote_url(&self, repo_path: &Path, remote: &str) -> Result<String, GitError> {
+        self.run_git_output(&["remote", "get-url", remote], Some(repo_path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shell_git_creation() {
+        let git = ShellGit::new();
+        assert!(git.timeout_secs.is_none());
+
+        let git_with_timeout = ShellGit::with_timeout(30);
+        assert_eq!(git_with_timeout.timeout_secs, Some(30));
+    }
+
+    #[test]
+    fn test_parse_branch_info_simple() {
+        let git = ShellGit::new();
+        let (branch, ahead, behind) = git.parse_branch_info("## main");
+        assert_eq!(branch, "main");
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 0);
+    }
+
+    #[test]
+    fn test_parse_branch_info_with_tracking() {
+        let git = ShellGit::new();
+        let (branch, ahead, behind) = git.parse_branch_info("## main...origin/main");
+        assert_eq!(branch, "main");
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 0);
+    }
+
+    #[test]
+    fn test_parse_branch_info_ahead() {
+        let git = ShellGit::new();
+        let (branch, ahead, behind) = git.parse_branch_info("## feature...origin/feature [ahead 3]");
+        assert_eq!(branch, "feature");
+        assert_eq!(ahead, 3);
+        assert_eq!(behind, 0);
+    }
+
+    #[test]
+    fn test_parse_branch_info_behind() {
+        let git = ShellGit::new();
+        let (branch, ahead, behind) = git.parse_branch_info("## main...origin/main [behind 5]");
+        assert_eq!(branch, "main");
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 5);
+    }
+
+    #[test]
+    fn test_parse_branch_info_diverged() {
+        let git = ShellGit::new();
+        let (branch, ahead, behind) =
+            git.parse_branch_info("## develop...origin/develop [ahead 2, behind 7]");
+        assert_eq!(branch, "develop");
+        assert_eq!(ahead, 2);
+        assert_eq!(behind, 7);
+    }
+
+    #[test]
+    fn test_parse_status_clean() {
+        let git = ShellGit::new();
+        let status = git.parse_status_output("", "## main...origin/main");
+        assert!(!status.is_dirty);
+        assert!(!status.has_untracked);
+        assert_eq!(status.branch, "main");
+    }
+
+    #[test]
+    fn test_parse_status_modified() {
+        let git = ShellGit::new();
+        let status = git.parse_status_output(" M src/main.rs", "## main");
+        assert!(status.is_dirty);
+        assert!(!status.has_untracked);
+    }
+
+    #[test]
+    fn test_parse_status_untracked() {
+        let git = ShellGit::new();
+        let status = git.parse_status_output("?? newfile.txt", "## main");
+        assert!(!status.is_dirty);
+        assert!(status.has_untracked);
+    }
+
+    #[test]
+    fn test_parse_status_mixed() {
+        let git = ShellGit::new();
+        let output = " M src/main.rs\n?? newfile.txt\nA  staged.rs";
+        let status = git.parse_status_output(output, "## feature [ahead 1, behind 2]");
+        assert!(status.is_dirty);
+        assert!(status.has_untracked);
+        assert_eq!(status.branch, "feature");
+        assert_eq!(status.ahead, 1);
+        assert_eq!(status.behind, 2);
+    }
+
+    // Integration tests that require actual git repo
+    #[test]
+    #[ignore] // Run with: cargo test -- --ignored
+    fn test_is_repo_real() {
+        let git = ShellGit::new();
+        // Current directory should be a git repo
+        assert!(git.is_repo(Path::new(".")));
+        // Root is not a git repo
+        assert!(!git.is_repo(Path::new("/")));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_current_branch_real() {
+        let git = ShellGit::new();
+        let branch = git.current_branch(Path::new("."));
+        assert!(branch.is_ok());
+        // Should return some branch name
+        assert!(!branch.unwrap().is_empty());
+    }
+
+    #[test]
+    #[ignore]
+    fn test_status_real() {
+        let git = ShellGit::new();
+        let status = git.status(Path::new("."));
+        assert!(status.is_ok());
+        let status = status.unwrap();
+        // Should have a branch
+        assert!(!status.branch.is_empty());
+    }
+}

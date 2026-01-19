@@ -1,0 +1,462 @@
+//! Configuration file parser.
+//!
+//! Handles loading and parsing of gisa.config.toml files.
+
+use super::provider_config::ProviderEntry;
+use crate::errors::AppError;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+/// Clone-specific options.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CloneOptions {
+    /// Shallow clone depth (0 = full history)
+    #[serde(default)]
+    pub depth: u32,
+
+    /// Specific branch to clone (empty = default branch)
+    #[serde(default)]
+    pub branch: String,
+
+    /// Whether to clone submodules
+    #[serde(default)]
+    pub recurse_submodules: bool,
+}
+
+/// Repository filter options.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FilterOptions {
+    /// Include archived repositories
+    #[serde(default)]
+    pub include_archived: bool,
+
+    /// Include forked repositories
+    #[serde(default)]
+    pub include_forks: bool,
+
+    /// Filter to specific organizations (empty = all)
+    #[serde(default)]
+    pub orgs: Vec<String>,
+
+    /// Exclude specific repos by full name (e.g., "org/repo")
+    #[serde(default)]
+    pub exclude_repos: Vec<String>,
+}
+
+/// Sync mode for existing repositories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SyncMode {
+    /// Only fetch (safe, doesn't modify working tree)
+    #[default]
+    Fetch,
+    /// Pull changes (modifies working tree)
+    Pull,
+}
+
+impl std::str::FromStr for SyncMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "fetch" => Ok(SyncMode::Fetch),
+            "pull" => Ok(SyncMode::Pull),
+            _ => Err(format!("Invalid sync mode: '{}'. Use 'fetch' or 'pull'", s)),
+        }
+    }
+}
+
+/// Full application configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    /// Base directory for all cloned repos
+    #[serde(default = "default_base_path")]
+    pub base_path: String,
+
+    /// Directory structure pattern
+    /// Placeholders: {provider}, {org}, {repo}
+    #[serde(default = "default_structure")]
+    pub structure: String,
+
+    /// Number of parallel operations
+    #[serde(default = "default_concurrency")]
+    pub concurrency: usize,
+
+    /// Sync behavior
+    #[serde(default)]
+    pub sync_mode: SyncMode,
+
+    /// Clone options
+    #[serde(default)]
+    pub clone: CloneOptions,
+
+    /// Filter options
+    #[serde(default)]
+    pub filters: FilterOptions,
+
+    /// Provider configurations
+    #[serde(default = "default_providers")]
+    pub providers: Vec<ProviderEntry>,
+}
+
+fn default_base_path() -> String {
+    "~/github".to_string()
+}
+
+fn default_structure() -> String {
+    "{org}/{repo}".to_string()
+}
+
+fn default_concurrency() -> usize {
+    4
+}
+
+fn default_providers() -> Vec<ProviderEntry> {
+    vec![ProviderEntry::github()]
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            base_path: default_base_path(),
+            structure: default_structure(),
+            concurrency: default_concurrency(),
+            sync_mode: SyncMode::default(),
+            clone: CloneOptions::default(),
+            filters: FilterOptions::default(),
+            providers: default_providers(),
+        }
+    }
+}
+
+impl Config {
+    /// Load configuration from a file, or return defaults if file doesn't exist.
+    pub fn load(path: &Path) -> Result<Self, AppError> {
+        if path.exists() {
+            let content = std::fs::read_to_string(path).map_err(|e| {
+                AppError::config(format!("Failed to read config file: {}", e))
+            })?;
+            Self::parse(&content)
+        } else {
+            Ok(Config::default())
+        }
+    }
+
+    /// Parse configuration from a TOML string.
+    pub fn parse(content: &str) -> Result<Self, AppError> {
+        let config: Config = toml::from_str(content)
+            .map_err(|e| AppError::config(format!("Failed to parse config: {}", e)))?;
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Validate the configuration.
+    pub fn validate(&self) -> Result<(), AppError> {
+        // Validate concurrency
+        if self.concurrency == 0 || self.concurrency > 32 {
+            return Err(AppError::config(
+                "concurrency must be between 1 and 32",
+            ));
+        }
+
+        // Validate providers
+        if self.providers.is_empty() {
+            return Err(AppError::config(
+                "At least one provider must be configured",
+            ));
+        }
+
+        for (i, provider) in self.providers.iter().enumerate() {
+            provider.validate().map_err(|e| {
+                AppError::config(format!("Provider {} error: {}", i + 1, e))
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Expand ~ in base_path to the actual home directory.
+    pub fn expanded_base_path(&self) -> Result<PathBuf, AppError> {
+        let expanded = shellexpand::tilde(&self.base_path);
+        Ok(PathBuf::from(expanded.as_ref()))
+    }
+
+    /// Generate the local path for a repository.
+    ///
+    /// # Arguments
+    /// * `provider` - Provider name (e.g., "github")
+    /// * `org` - Organization or user name
+    /// * `repo` - Repository name
+    pub fn repo_path(&self, provider: &str, org: &str, repo: &str) -> Result<PathBuf, AppError> {
+        let base = self.expanded_base_path()?;
+        let relative = self
+            .structure
+            .replace("{provider}", provider)
+            .replace("{org}", org)
+            .replace("{repo}", repo);
+        Ok(base.join(relative))
+    }
+
+    /// Generate the default configuration file content.
+    pub fn default_toml() -> String {
+        r#"# Gisa Configuration
+# See: https://github.com/yourusername/gisa
+
+# Base directory for all cloned repos
+base_path = "~/github"
+
+# Directory structure pattern
+# Placeholders: {provider}, {org}, {repo}
+structure = "{org}/{repo}"
+
+# Number of parallel clone/sync operations (1-32)
+concurrency = 4
+
+# Sync behavior: "fetch" (safe) or "pull" (updates working tree)
+sync_mode = "fetch"
+
+[clone]
+# Clone depth (0 = full history)
+depth = 0
+
+# Clone submodules
+recurse_submodules = false
+
+[filters]
+# Include archived repositories
+include_archived = false
+
+# Include forked repositories
+include_forks = false
+
+# Filter to specific organizations (empty = all)
+# orgs = ["my-org", "other-org"]
+
+# Exclude specific repos
+# exclude_repos = ["org/repo-to-skip"]
+
+# Provider configuration (default: GitHub.com with gh CLI auth)
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+prefer_ssh = true
+
+# Example: GitHub Enterprise
+# [[providers]]
+# kind = "github-enterprise"
+# name = "Work GitHub"
+# api_url = "https://github.mycompany.com/api/v3"
+# auth = "env"
+# token_env = "WORK_GITHUB_TOKEN"
+# base_path = "~/work/code"
+"#
+        .to_string()
+    }
+
+    /// Returns enabled providers only.
+    pub fn enabled_providers(&self) -> impl Iterator<Item = &ProviderEntry> {
+        self.providers.iter().filter(|p| p.enabled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.base_path, "~/github");
+        assert_eq!(config.concurrency, 4);
+        assert_eq!(config.sync_mode, SyncMode::Fetch);
+        assert!(!config.filters.include_archived);
+        assert!(!config.filters.include_forks);
+        assert_eq!(config.providers.len(), 1);
+    }
+
+    #[test]
+    fn test_load_minimal_config() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "base_path = \"~/custom\"").unwrap();
+
+        let config = Config::load(file.path()).unwrap();
+        assert_eq!(config.base_path, "~/custom");
+        assert_eq!(config.concurrency, 4); // Default preserved
+    }
+
+    #[test]
+    fn test_load_full_config() {
+        let content = r#"
+base_path = "~/repos"
+structure = "{provider}/{org}/{repo}"
+concurrency = 8
+sync_mode = "pull"
+
+[clone]
+depth = 1
+recurse_submodules = true
+
+[filters]
+include_archived = true
+include_forks = true
+orgs = ["my-org"]
+exclude_repos = ["my-org/skip-this"]
+
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+"#;
+
+        let config = Config::parse(content).unwrap();
+        assert_eq!(config.base_path, "~/repos");
+        assert_eq!(config.structure, "{provider}/{org}/{repo}");
+        assert_eq!(config.concurrency, 8);
+        assert_eq!(config.sync_mode, SyncMode::Pull);
+        assert_eq!(config.clone.depth, 1);
+        assert!(config.clone.recurse_submodules);
+        assert!(config.filters.include_archived);
+        assert!(config.filters.include_forks);
+        assert_eq!(config.filters.orgs, vec!["my-org"]);
+        assert_eq!(config.filters.exclude_repos, vec!["my-org/skip-this"]);
+    }
+
+    #[test]
+    fn test_load_multi_provider_config() {
+        let content = r#"
+base_path = "~/code"
+
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+
+[[providers]]
+kind = "github-enterprise"
+name = "Work"
+api_url = "https://github.work.com/api/v3"
+auth = "env"
+token_env = "WORK_TOKEN"
+"#;
+
+        let config = Config::parse(content).unwrap();
+        assert_eq!(config.providers.len(), 2);
+        assert_eq!(config.providers[0].kind, crate::types::ProviderKind::GitHub);
+        assert_eq!(
+            config.providers[1].kind,
+            crate::types::ProviderKind::GitHubEnterprise
+        );
+        assert_eq!(config.providers[1].name, Some("Work".to_string()));
+    }
+
+    #[test]
+    fn test_missing_file_returns_defaults() {
+        let config = Config::load(Path::new("/nonexistent/config.toml")).unwrap();
+        assert_eq!(config.base_path, "~/github");
+    }
+
+    #[test]
+    fn test_repo_path_generation() {
+        let config = Config {
+            base_path: "/home/user/github".to_string(),
+            structure: "{org}/{repo}".to_string(),
+            ..Config::default()
+        };
+
+        let path = config.repo_path("github", "my-org", "my-repo").unwrap();
+        assert_eq!(path, PathBuf::from("/home/user/github/my-org/my-repo"));
+    }
+
+    #[test]
+    fn test_repo_path_with_provider() {
+        let config = Config {
+            base_path: "/home/user/code".to_string(),
+            structure: "{provider}/{org}/{repo}".to_string(),
+            ..Config::default()
+        };
+
+        let path = config.repo_path("github", "rust-lang", "rust").unwrap();
+        assert_eq!(path, PathBuf::from("/home/user/code/github/rust-lang/rust"));
+    }
+
+    #[test]
+    fn test_validation_rejects_zero_concurrency() {
+        let config = Config {
+            concurrency: 0,
+            ..Config::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("concurrency"));
+    }
+
+    #[test]
+    fn test_validation_rejects_high_concurrency() {
+        let config = Config {
+            concurrency: 100,
+            ..Config::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_rejects_empty_providers() {
+        let config = Config {
+            providers: vec![],
+            ..Config::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("provider"));
+    }
+
+    #[test]
+    fn test_sync_mode_from_str() {
+        assert_eq!("fetch".parse::<SyncMode>().unwrap(), SyncMode::Fetch);
+        assert_eq!("pull".parse::<SyncMode>().unwrap(), SyncMode::Pull);
+        assert_eq!("FETCH".parse::<SyncMode>().unwrap(), SyncMode::Fetch);
+        assert!("invalid".parse::<SyncMode>().is_err());
+    }
+
+    #[test]
+    fn test_default_toml_is_valid() {
+        let toml = Config::default_toml();
+        let result = Config::parse(&toml);
+        assert!(result.is_ok(), "Default TOML should be valid: {:?}", result);
+    }
+
+    #[test]
+    fn test_enabled_providers_filter() {
+        let config = Config {
+            providers: vec![
+                ProviderEntry {
+                    enabled: true,
+                    ..ProviderEntry::github()
+                },
+                ProviderEntry {
+                    enabled: false,
+                    ..ProviderEntry::github()
+                },
+                ProviderEntry {
+                    enabled: true,
+                    ..ProviderEntry::github()
+                },
+            ],
+            ..Config::default()
+        };
+
+        let enabled: Vec<_> = config.enabled_providers().collect();
+        assert_eq!(enabled.len(), 2);
+    }
+
+    #[test]
+    fn test_expanded_base_path() {
+        let config = Config {
+            base_path: "~/github".to_string(),
+            ..Config::default()
+        };
+        let expanded = config.expanded_base_path().unwrap();
+        assert!(!expanded.to_string_lossy().contains("~"));
+    }
+}

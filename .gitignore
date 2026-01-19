@@ -1,0 +1,24 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Test artifacts
+*.profraw
+*.profdata
+
+# Environment
+.env
+.env.local
+
+# Local config (if contains secrets)
+# gisa.config.toml  # Uncomment if config may contain tokens
