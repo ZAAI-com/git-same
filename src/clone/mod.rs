@@ -6,8 +6,8 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::clone::{CloneManager, CloneManagerOptions, NoProgress};
-//! use gisa::git::ShellGit;
+//! use git_same::clone::{CloneManager, CloneManagerOptions, NoProgress};
+//! use git_same::git::ShellGit;
 //! use std::path::Path;
 //!
 //! # async fn example() {
@@ -32,6 +32,4 @@
 
 pub mod parallel;
 
-pub use parallel::{
-    CloneManager, CloneManagerOptions, CloneProgress, CloneResult, NoProgress,
-};
+pub use parallel::{CloneManager, CloneManagerOptions, CloneProgress, CloneResult, NoProgress};

@@ -153,7 +153,9 @@ mod tests {
         let next = parse_link_header(header);
         assert_eq!(
             next,
-            Some("https://api.github.com/organizations/12345/repos?page=2&per_page=100".to_string())
+            Some(
+                "https://api.github.com/organizations/12345/repos?page=2&per_page=100".to_string()
+            )
         );
     }
 }

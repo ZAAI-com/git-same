@@ -6,10 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Identifies which Git hosting provider a repository belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ProviderKind {
     /// GitHub.com (public)
     #[serde(rename = "github")]
+    #[default]
     GitHub,
     /// GitHub Enterprise Server (self-hosted)
     #[serde(rename = "github-enterprise")]
@@ -69,12 +70,6 @@ impl ProviderKind {
     }
 }
 
-impl Default for ProviderKind {
-    fn default() -> Self {
-        ProviderKind::GitHub
-    }
-}
-
 impl fmt::Display for ProviderKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
@@ -110,28 +105,49 @@ mod tests {
     #[test]
     fn test_display() {
         assert_eq!(format!("{}", ProviderKind::GitHub), "GitHub");
-        assert_eq!(format!("{}", ProviderKind::GitHubEnterprise), "GitHub Enterprise");
+        assert_eq!(
+            format!("{}", ProviderKind::GitHubEnterprise),
+            "GitHub Enterprise"
+        );
         assert_eq!(format!("{}", ProviderKind::GitLab), "GitLab");
         assert_eq!(format!("{}", ProviderKind::Bitbucket), "Bitbucket");
     }
 
     #[test]
     fn test_from_str() {
-        assert_eq!("github".parse::<ProviderKind>().unwrap(), ProviderKind::GitHub);
+        assert_eq!(
+            "github".parse::<ProviderKind>().unwrap(),
+            ProviderKind::GitHub
+        );
         assert_eq!("gh".parse::<ProviderKind>().unwrap(), ProviderKind::GitHub);
-        assert_eq!("GITHUB".parse::<ProviderKind>().unwrap(), ProviderKind::GitHub);
+        assert_eq!(
+            "GITHUB".parse::<ProviderKind>().unwrap(),
+            ProviderKind::GitHub
+        );
 
         assert_eq!(
             "github-enterprise".parse::<ProviderKind>().unwrap(),
             ProviderKind::GitHubEnterprise
         );
-        assert_eq!("ghe".parse::<ProviderKind>().unwrap(), ProviderKind::GitHubEnterprise);
+        assert_eq!(
+            "ghe".parse::<ProviderKind>().unwrap(),
+            ProviderKind::GitHubEnterprise
+        );
 
-        assert_eq!("gitlab".parse::<ProviderKind>().unwrap(), ProviderKind::GitLab);
+        assert_eq!(
+            "gitlab".parse::<ProviderKind>().unwrap(),
+            ProviderKind::GitLab
+        );
         assert_eq!("gl".parse::<ProviderKind>().unwrap(), ProviderKind::GitLab);
 
-        assert_eq!("bitbucket".parse::<ProviderKind>().unwrap(), ProviderKind::Bitbucket);
-        assert_eq!("bb".parse::<ProviderKind>().unwrap(), ProviderKind::Bitbucket);
+        assert_eq!(
+            "bitbucket".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Bitbucket
+        );
+        assert_eq!(
+            "bb".parse::<ProviderKind>().unwrap(),
+            ProviderKind::Bitbucket
+        );
     }
 
     #[test]
@@ -143,9 +159,18 @@ mod tests {
 
     #[test]
     fn test_default_api_urls() {
-        assert_eq!(ProviderKind::GitHub.default_api_url(), "https://api.github.com");
-        assert_eq!(ProviderKind::GitLab.default_api_url(), "https://gitlab.com/api/v4");
-        assert_eq!(ProviderKind::Bitbucket.default_api_url(), "https://api.bitbucket.org/2.0");
+        assert_eq!(
+            ProviderKind::GitHub.default_api_url(),
+            "https://api.github.com"
+        );
+        assert_eq!(
+            ProviderKind::GitLab.default_api_url(),
+            "https://gitlab.com/api/v4"
+        );
+        assert_eq!(
+            ProviderKind::Bitbucket.default_api_url(),
+            "https://api.bitbucket.org/2.0"
+        );
         // GitHub Enterprise has empty default (must be configured)
         assert_eq!(ProviderKind::GitHubEnterprise.default_api_url(), "");
     }

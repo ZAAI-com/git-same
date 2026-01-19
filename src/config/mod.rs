@@ -1,7 +1,7 @@
-//! Configuration management for gisa.
+//! Configuration management for git-same.
 //!
 //! This module handles loading, parsing, and validating configuration
-//! from `gisa.config.toml` files.
+//! from `git-same.config.toml` files.
 //!
 //! # Example Configuration
 //!

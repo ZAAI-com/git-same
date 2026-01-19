@@ -99,12 +99,7 @@ pub trait GitOperations: Send + Sync {
     /// * `url` - The clone URL (SSH or HTTPS)
     /// * `target` - Target directory path
     /// * `options` - Clone options (depth, branch, submodules)
-    fn clone_repo(
-        &self,
-        url: &str,
-        target: &Path,
-        options: &CloneOptions,
-    ) -> Result<(), GitError>;
+    fn clone_repo(&self, url: &str, target: &Path, options: &CloneOptions) -> Result<(), GitError>;
 
     /// Fetches updates from the remote.
     ///
@@ -539,11 +534,7 @@ mod tests {
         fn test_mock_call_log_tracking() {
             let mock = MockGit::new();
 
-            let _ = mock.clone_repo(
-                "url1",
-                Path::new("/path1"),
-                &CloneOptions::default(),
-            );
+            let _ = mock.clone_repo("url1", Path::new("/path1"), &CloneOptions::default());
             let _ = mock.fetch(Path::new("/path2"));
             let _ = mock.pull(Path::new("/path3"));
             let _ = mock.status(Path::new("/path4"));

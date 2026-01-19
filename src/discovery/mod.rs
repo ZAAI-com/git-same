@@ -169,11 +169,7 @@ impl DiscoveryOrchestrator {
             }
 
             // Skip hidden directories
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with('.')
-            {
+            if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
 
@@ -202,9 +198,7 @@ impl DiscoveryOrchestrator {
 }
 
 /// Merges discovered repos from multiple providers.
-pub fn merge_repos(
-    repos_by_provider: Vec<(String, Vec<OwnedRepo>)>,
-) -> Vec<(String, OwnedRepo)> {
+pub fn merge_repos(repos_by_provider: Vec<(String, Vec<OwnedRepo>)>) -> Vec<(String, OwnedRepo)> {
     let mut result = Vec::new();
 
     for (provider, repos) in repos_by_provider {
@@ -279,10 +273,7 @@ mod tests {
         let orchestrator = DiscoveryOrchestrator::new(filters, "{org}/{repo}".to_string());
         let git = MockGit::new();
 
-        let repos = vec![
-            test_repo("repo1", "org"),
-            test_repo("repo2", "org"),
-        ];
+        let repos = vec![test_repo("repo1", "org"), test_repo("repo2", "org")];
 
         let plan = orchestrator.plan_clone(Path::new("/nonexistent"), repos, "github", &git);
 
@@ -343,8 +334,7 @@ mod tests {
         let orchestrator = DiscoveryOrchestrator::new(filters, "{org}/{repo}".to_string());
 
         let repos = vec![test_repo("repo", "org")];
-        let (to_sync, skipped) =
-            orchestrator.plan_sync(temp.path(), repos, "github", &git, false);
+        let (to_sync, skipped) = orchestrator.plan_sync(temp.path(), repos, "github", &git, false);
 
         assert_eq!(to_sync.len(), 1);
         assert_eq!(skipped.len(), 0);
@@ -385,10 +375,7 @@ mod tests {
         let repo1 = test_repo("repo", "org");
         let repo2 = test_repo("repo", "org"); // Duplicate
 
-        let repos = vec![
-            ("github".to_string(), repo1),
-            ("gitlab".to_string(), repo2),
-        ];
+        let repos = vec![("github".to_string(), repo1), ("gitlab".to_string(), repo2)];
 
         let deduped = deduplicate_repos(repos);
         assert_eq!(deduped.len(), 1);

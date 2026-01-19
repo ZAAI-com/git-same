@@ -6,9 +6,9 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::sync::{SyncManager, SyncManagerOptions, SyncMode, LocalRepo, NoSyncProgress};
-//! use gisa::git::ShellGit;
-//! use gisa::types::{OwnedRepo, Repo};
+//! use git_same::sync::{SyncManager, SyncManagerOptions, SyncMode, LocalRepo, NoSyncProgress};
+//! use git_same::git::ShellGit;
+//! use git_same::types::{OwnedRepo, Repo};
 //! use std::path::PathBuf;
 //!
 //! # async fn example() {

@@ -8,7 +8,7 @@
 //! # Example
 //!
 //! ```
-//! use gisa::errors::{AppError, Result};
+//! use git_same::errors::{AppError, Result};
 //!
 //! fn do_something() -> Result<()> {
 //!     Err(AppError::config("missing required field"))

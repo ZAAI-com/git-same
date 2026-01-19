@@ -138,6 +138,7 @@ impl Default for Output {
 
 /// Progress reporter for discovery operations.
 pub struct DiscoveryProgressBar {
+    #[allow(dead_code)]
     multi: MultiProgress,
     main_bar: ProgressBar,
     repo_count: Arc<AtomicUsize>,
@@ -223,6 +224,7 @@ impl DiscoveryProgress for DiscoveryProgressBar {
 
 /// Progress reporter for clone operations.
 pub struct CloneProgressBar {
+    #[allow(dead_code)]
     multi: MultiProgress,
     main_bar: ProgressBar,
     verbosity: Verbosity,
@@ -260,10 +262,8 @@ impl CloneProgressBar {
 impl CloneProgress for CloneProgressBar {
     fn on_start(&self, repo: &OwnedRepo, _index: usize, _total: usize) {
         if self.verbosity >= Verbosity::Verbose {
-            self.main_bar.set_message(format!(
-                "Cloning {}...",
-                style(repo.full_name()).cyan()
-            ));
+            self.main_bar
+                .set_message(format!("Cloning {}...", style(repo.full_name()).cyan()));
         }
     }
 
@@ -307,6 +307,7 @@ impl CloneProgress for CloneProgressBar {
 
 /// Progress reporter for sync operations.
 pub struct SyncProgressBar {
+    #[allow(dead_code)]
     multi: MultiProgress,
     main_bar: ProgressBar,
     verbosity: Verbosity,
@@ -348,10 +349,8 @@ impl SyncProgressBar {
 impl SyncProgress for SyncProgressBar {
     fn on_start(&self, repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {
         if self.verbosity >= Verbosity::Verbose {
-            self.main_bar.set_message(format!(
-                "Syncing {}...",
-                style(repo.full_name()).cyan()
-            ));
+            self.main_bar
+                .set_message(format!("Syncing {}...", style(repo.full_name()).cyan()));
         }
     }
 
@@ -367,7 +366,11 @@ impl SyncProgress for SyncProgressBar {
             self.updates_count.fetch_add(1, Ordering::SeqCst);
         }
         if self.verbosity >= Verbosity::Debug {
-            let status = if result.updated { "updated" } else { "up to date" };
+            let status = if result.updated {
+                "updated"
+            } else {
+                "up to date"
+            };
             self.main_bar.suspend(|| {
                 println!(
                     "{} {} {}",

@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::git::{ShellGit, GitOperations, CloneOptions};
+//! use git_same::git::{ShellGit, GitOperations, CloneOptions};
 //! use std::path::Path;
 //!
 //! let git = ShellGit::new();

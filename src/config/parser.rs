@@ -130,12 +130,27 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration from a file, or return defaults if file doesn't exist.
-    pub fn load(path: &Path) -> Result<Self, AppError> {
+    /// Returns the default config file path (~/.config/git-same/config.toml).
+    pub fn default_path() -> PathBuf {
+        if let Some(config_dir) = directories::ProjectDirs::from("", "", "git-same") {
+            config_dir.config_dir().join("config.toml")
+        } else {
+            // Fallback to home directory
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".config/git-same/config.toml")
+        }
+    }
+
+    /// Load configuration from the default path, or return defaults if file doesn't exist.
+    pub fn load() -> Result<Self, AppError> {
+        Self::load_from(&Self::default_path())
+    }
+
+    /// Load configuration from a specific file, or return defaults if file doesn't exist.
+    pub fn load_from(path: &Path) -> Result<Self, AppError> {
         if path.exists() {
-            let content = std::fs::read_to_string(path).map_err(|e| {
-                AppError::config(format!("Failed to read config file: {}", e))
-            })?;
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| AppError::config(format!("Failed to read config file: {}", e)))?;
             Self::parse(&content)
         } else {
             Ok(Config::default())
@@ -154,22 +169,18 @@ impl Config {
     pub fn validate(&self) -> Result<(), AppError> {
         // Validate concurrency
         if self.concurrency == 0 || self.concurrency > 32 {
-            return Err(AppError::config(
-                "concurrency must be between 1 and 32",
-            ));
+            return Err(AppError::config("concurrency must be between 1 and 32"));
         }
 
         // Validate providers
         if self.providers.is_empty() {
-            return Err(AppError::config(
-                "At least one provider must be configured",
-            ));
+            return Err(AppError::config("At least one provider must be configured"));
         }
 
         for (i, provider) in self.providers.iter().enumerate() {
-            provider.validate().map_err(|e| {
-                AppError::config(format!("Provider {} error: {}", i + 1, e))
-            })?;
+            provider
+                .validate()
+                .map_err(|e| AppError::config(format!("Provider {} error: {}", i + 1, e)))?;
         }
 
         Ok(())
@@ -199,8 +210,8 @@ impl Config {
 
     /// Generate the default configuration file content.
     pub fn default_toml() -> String {
-        r#"# Gisa Configuration
-# See: https://github.com/yourusername/gisa
+        r#"# Git-Same Configuration
+# See: https://github.com/zaai-com/git-same
 
 # Base directory for all cloned repos
 base_path = "~/github"
@@ -281,7 +292,7 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         writeln!(file, "base_path = \"~/custom\"").unwrap();
 
-        let config = Config::load(file.path()).unwrap();
+        let config = Config::load_from(file.path()).unwrap();
         assert_eq!(config.base_path, "~/custom");
         assert_eq!(config.concurrency, 4); // Default preserved
     }
@@ -351,7 +362,7 @@ token_env = "WORK_TOKEN"
 
     #[test]
     fn test_missing_file_returns_defaults() {
-        let config = Config::load(Path::new("/nonexistent/config.toml")).unwrap();
+        let config = Config::load_from(Path::new("/nonexistent/config.toml")).unwrap();
         assert_eq!(config.base_path, "~/github");
     }
 

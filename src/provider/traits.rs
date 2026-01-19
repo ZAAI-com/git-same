@@ -215,8 +215,8 @@ mod tests {
 
     #[test]
     fn test_credentials_builder() {
-        let creds = Credentials::new("token123", "https://api.github.com")
-            .with_username("testuser");
+        let creds =
+            Credentials::new("token123", "https://api.github.com").with_username("testuser");
 
         assert_eq!(creds.token, "token123");
         assert_eq!(creds.api_base_url, "https://api.github.com");
@@ -309,8 +309,7 @@ mod tests {
 
     #[test]
     fn test_should_include_org_with_filter() {
-        let options =
-            DiscoveryOptions::new().with_orgs(vec!["allowed-org".to_string()]);
+        let options = DiscoveryOptions::new().with_orgs(vec!["allowed-org".to_string()]);
 
         assert!(options.should_include_org("allowed-org"));
         assert!(!options.should_include_org("other-org"));

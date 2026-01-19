@@ -1,20 +1,19 @@
-//! Gisa - Mirror GitHub org/repo structure locally
+//! Git-Same - Mirror GitHub org/repo structure locally
 //!
-//! Main entry point for the gisa CLI application.
+//! Main entry point for the git-same CLI application.
 
-use gisa::auth::get_auth;
-use gisa::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
-use gisa::clone::{CloneManager, CloneManagerOptions, NoProgress as NoCloneProgress};
-use gisa::config::{Config, SyncMode as ConfigSyncMode};
-use gisa::discovery::DiscoveryOrchestrator;
-use gisa::errors::{AppError, Result};
-use gisa::git::ShellGit;
-use gisa::output::{
-    format_count, format_error, format_success, CloneProgressBar, DiscoveryProgressBar, Output,
-    SyncProgressBar, Verbosity,
+use git_same::auth::get_auth;
+use git_same::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
+use git_same::clone::{CloneManager, CloneManagerOptions};
+use git_same::config::Config;
+use git_same::discovery::DiscoveryOrchestrator;
+use git_same::errors::{AppError, Result};
+use git_same::git::{GitOperations, ShellGit};
+use git_same::output::{
+    format_count, CloneProgressBar, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
 };
-use gisa::provider::{create_provider, Credentials, NoProgress as NoDiscoveryProgress};
-use gisa::sync::{LocalRepo, NoSyncProgress, SyncManager, SyncManagerOptions, SyncMode};
+use git_same::provider::create_provider;
+use git_same::sync::{SyncManager, SyncManagerOptions, SyncMode};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -34,11 +33,10 @@ async fn main() -> ExitCode {
         Err(e) => {
             output.error(&e.to_string());
             if verbosity >= Verbosity::Verbose {
-                if let Some(action) = e.suggested_action() {
-                    eprintln!("  Suggestion: {}", action);
-                }
+                eprintln!("  Suggestion: {}", e.suggested_action());
             }
-            ExitCode::from(e.exit_code())
+            // Exit codes should fit in u8 (0-255)
+            ExitCode::from(e.exit_code().clamp(1, 255) as u8)
         }
     }
 }
@@ -59,7 +57,7 @@ async fn run_command(cli: &Cli, output: &Output) -> Result<()> {
         Command::Pull(args) => cmd_sync(args, &config, output, SyncMode::Pull).await,
         Command::Status(args) => cmd_status(args, &config, output).await,
         Command::Completions(args) => {
-            gisa::cli::generate_completions(args.shell);
+            git_same::cli::generate_completions(args.shell);
             Ok(())
         }
     }
@@ -79,19 +77,18 @@ async fn cmd_init(args: &InitArgs, output: &Output) -> Result<()> {
 
     // Create parent directory
     if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            AppError::io(format!("Failed to create config directory: {}", e))
-        })?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::path(format!("Failed to create config directory: {}", e)))?;
     }
 
     // Write default config
     let default_config = Config::default_toml();
     std::fs::write(&config_path, default_config)
-        .map_err(|e| AppError::io(format!("Failed to write config: {}", e)))?;
+        .map_err(|e| AppError::path(format!("Failed to write config: {}", e)))?;
 
     output.success(&format!("Created config at {}", config_path.display()));
-    output.info("Edit this file to customize gisa behavior");
-    output.info("Run 'gisa clone <path>' to clone your repositories");
+    output.info("Edit this file to customize git-same behavior");
+    output.info("Run 'git-same clone <path>' to clone your repositories");
 
     Ok(())
 }
@@ -103,11 +100,19 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     // Get authentication
     output.info("Authenticating...");
     let auth = get_auth(None)?;
-    output.verbose(&format!("Authenticated as {:?} via {}", auth.username, auth.method));
+    output.verbose(&format!(
+        "Authenticated as {:?} via {}",
+        auth.username, auth.method
+    ));
+
+    // Get first enabled provider from config
+    let provider_entry = config
+        .enabled_providers()
+        .next()
+        .ok_or_else(|| AppError::config("No enabled providers configured"))?;
 
     // Create provider
-    let credentials = Credentials::new(auth.token);
-    let provider = create_provider(gisa::types::ProviderKind::GitHub, credentials, None)?;
+    let provider = create_provider(provider_entry, &auth.token)?;
 
     // Create discovery orchestrator
     let mut filters = config.filters.clone();
@@ -128,7 +133,9 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     // Discover repositories
     output.info("Discovering repositories...");
     let progress_bar = DiscoveryProgressBar::new(verbosity);
-    let repos = orchestrator.discover(provider.as_ref(), &progress_bar).await?;
+    let repos = orchestrator
+        .discover(provider.as_ref(), &progress_bar)
+        .await?;
     progress_bar.finish();
 
     if repos.is_empty() {
@@ -141,9 +148,8 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     // Create base path
     let base_path = expand_path(&args.base_path);
     if !base_path.exists() {
-        std::fs::create_dir_all(&base_path).map_err(|e| {
-            AppError::io(format!("Failed to create base directory: {}", e))
-        })?;
+        std::fs::create_dir_all(&base_path)
+            .map_err(|e| AppError::path(format!("Failed to create base directory: {}", e)))?;
     }
 
     // Plan clone operation
@@ -160,7 +166,10 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
         output.info(&format_count(plan.to_clone.len(), "repositories to clone"));
     }
     if !plan.to_sync.is_empty() {
-        output.info(&format_count(plan.to_sync.len(), "repositories already exist"));
+        output.info(&format_count(
+            plan.to_sync.len(),
+            "repositories already exist",
+        ));
     }
     if !plan.skipped.is_empty() {
         output.verbose(&format_count(plan.skipped.len(), "repositories skipped"));
@@ -180,7 +189,7 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     }
 
     // Create clone manager
-    let clone_options = gisa::git::CloneOptions {
+    let clone_options = git_same::git::CloneOptions {
         depth: args.depth.unwrap_or(config.clone.depth),
         branch: if config.clone.branch.is_empty() {
             None
@@ -207,10 +216,7 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
 
     // Report results
     if summary.has_failures() {
-        output.warn(&format!(
-            "{} repositories failed to clone",
-            summary.failed
-        ));
+        output.warn(&format!("{} repositories failed to clone", summary.failed));
     } else {
         output.success(&format!(
             "Successfully cloned {} repositories",
@@ -222,23 +228,30 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
 }
 
 /// Sync (fetch or pull) repositories.
-async fn cmd_sync(
-    args: &SyncArgs,
-    config: &Config,
-    output: &Output,
-    mode: SyncMode,
-) -> Result<()> {
+async fn cmd_sync(args: &SyncArgs, config: &Config, output: &Output, mode: SyncMode) -> Result<()> {
     let verbosity = Verbosity::from(if output.is_json() { 0 } else { 1 });
-    let operation = if mode == SyncMode::Pull { "Pull" } else { "Fetch" };
+    let operation = if mode == SyncMode::Pull {
+        "Pull"
+    } else {
+        "Fetch"
+    };
 
     // Get authentication
     output.info("Authenticating...");
     let auth = get_auth(None)?;
-    output.verbose(&format!("Authenticated as {:?} via {}", auth.username, auth.method));
+    output.verbose(&format!(
+        "Authenticated as {:?} via {}",
+        auth.username, auth.method
+    ));
+
+    // Get first enabled provider from config
+    let provider_entry = config
+        .enabled_providers()
+        .next()
+        .ok_or_else(|| AppError::config("No enabled providers configured"))?;
 
     // Create provider
-    let credentials = Credentials::new(auth.token);
-    let provider = create_provider(gisa::types::ProviderKind::GitHub, credentials, None)?;
+    let provider = create_provider(provider_entry, &auth.token)?;
 
     // Create discovery orchestrator
     let mut filters = config.filters.clone();
@@ -251,7 +264,9 @@ async fn cmd_sync(
     // Discover repositories
     output.info("Discovering repositories...");
     let progress_bar = DiscoveryProgressBar::new(verbosity);
-    let repos = orchestrator.discover(provider.as_ref(), &progress_bar).await?;
+    let repos = orchestrator
+        .discover(provider.as_ref(), &progress_bar)
+        .await?;
     progress_bar.finish();
 
     if repos.is_empty() {
@@ -277,16 +292,16 @@ async fn cmd_sync(
         if skipped.is_empty() {
             output.warn("No repositories found to sync");
         } else {
-            output.info(&format!(
-                "All {} repositories were skipped",
-                skipped.len()
-            ));
+            output.info(&format!("All {} repositories were skipped", skipped.len()));
         }
         return Ok(());
     }
 
     // Show plan summary
-    output.info(&format_count(to_sync.len(), &format!("repositories to {}", operation.to_lowercase())));
+    output.info(&format_count(
+        to_sync.len(),
+        &format!("repositories to {}", operation.to_lowercase()),
+    ));
     if !skipped.is_empty() {
         output.verbose(&format_count(skipped.len(), "repositories skipped"));
     }
@@ -294,7 +309,11 @@ async fn cmd_sync(
     if args.dry_run {
         output.info("Dry run - no changes made");
         for repo in &to_sync {
-            println!("  Would {}: {}", operation.to_lowercase(), repo.repo.full_name());
+            println!(
+                "  Would {}: {}",
+                operation.to_lowercase(),
+                repo.repo.full_name()
+            );
         }
         return Ok(());
     }
@@ -326,9 +345,7 @@ async fn cmd_sync(
     } else {
         output.success(&format!(
             "{}ed {} repositories ({} with updates)",
-            operation,
-            summary.success,
-            with_updates
+            operation, summary.success, with_updates
         ));
     }
 
@@ -421,7 +438,7 @@ async fn cmd_status(args: &StatusArgs, config: &Config, output: &Output) -> Resu
                 }
             }
             Err(e) => {
-                output.verbose(&format!("  {} - error: {}", format!("{}/{}", org, name), e));
+                output.verbose(&format!("  {}/{} - error: {}", org, name, e));
             }
         }
     }
@@ -429,10 +446,16 @@ async fn cmd_status(args: &StatusArgs, config: &Config, output: &Output) -> Resu
     // Summary
     println!();
     if dirty_count > 0 {
-        output.warn(&format!("{} repositories have uncommitted changes", dirty_count));
+        output.warn(&format!(
+            "{} repositories have uncommitted changes",
+            dirty_count
+        ));
     }
     if behind_count > 0 {
-        output.info(&format!("{} repositories are behind upstream", behind_count));
+        output.info(&format!(
+            "{} repositories are behind upstream",
+            behind_count
+        ));
     }
     if dirty_count == 0 && behind_count == 0 {
         output.success("All repositories are clean and up to date");
@@ -442,7 +465,7 @@ async fn cmd_status(args: &StatusArgs, config: &Config, output: &Output) -> Resu
 }
 
 /// Expands ~ and environment variables in a path.
-fn expand_path(path: &PathBuf) -> PathBuf {
+fn expand_path(path: &std::path::Path) -> PathBuf {
     let path_str = path.to_string_lossy();
     let expanded = shellexpand::tilde(&path_str);
     PathBuf::from(expanded.as_ref())

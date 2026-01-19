@@ -255,10 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_provider_orgs() {
-        let provider = MockProvider::new().with_orgs(vec![
-            test_org("org1"),
-            test_org("org2"),
-        ]);
+        let provider = MockProvider::new().with_orgs(vec![test_org("org1"), test_org("org2")]);
 
         let orgs = provider.get_organizations().await.unwrap();
         assert_eq!(orgs.len(), 2);
@@ -272,7 +269,10 @@ mod tests {
 
         let result = provider.validate_credentials().await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ProviderError::Authentication(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ProviderError::Authentication(_)
+        ));
     }
 
     #[tokio::test]
@@ -321,10 +321,10 @@ mod tests {
         let provider = MockProvider::new()
             .with_username("testuser")
             .with_orgs(vec![test_org("my-org")])
-            .with_org_repos("my-org", vec![
-                Repo::test("active", "my-org"),
-                archived_repo,
-            ]);
+            .with_org_repos(
+                "my-org",
+                vec![Repo::test("active", "my-org"), archived_repo],
+            );
 
         let options = DiscoveryOptions::new().with_archived(false);
         let progress = NoProgress;

@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::auth::{get_auth, AuthResult};
+//! use git_same::auth::{get_auth, AuthResult};
 //!
 //! let auth = get_auth(None).expect("Failed to authenticate");
 //! println!("Authenticated as {:?} via {}", auth.username, auth.method);
@@ -154,10 +154,7 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
         }
 
         AuthMethod::Env => {
-            let var_name = provider
-                .token_env
-                .as_deref()
-                .unwrap_or("GITHUB_TOKEN");
+            let var_name = provider.token_env.as_deref().unwrap_or("GITHUB_TOKEN");
 
             let token = env_token::get_token(var_name)?;
 
@@ -169,9 +166,10 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
         }
 
         AuthMethod::Token => {
-            let token = provider.token.clone().ok_or_else(|| {
-                AppError::auth("Token auth configured but no token provided")
-            })?;
+            let token = provider
+                .token
+                .clone()
+                .ok_or_else(|| AppError::auth("Token auth configured but no token provided"))?;
 
             Ok(AuthResult {
                 token,
@@ -185,7 +183,9 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
 /// Extract hostname from an API URL.
 fn extract_host(url: &str) -> Option<String> {
     // Simple extraction - could use url crate for more robust parsing
-    let url = url.trim_start_matches("https://").trim_start_matches("http://");
+    let url = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
     let host = url.split('/').next()?;
     Some(host.to_string())
 }
@@ -250,8 +250,7 @@ mod tests {
 
         // The result depends on whether gh is installed
         // If no gh, it should use config token or return error
-        if result.is_ok() {
-            let auth = result.unwrap();
+        if let Ok(auth) = result {
             // Could be GhCli if gh is available, or ConfigToken
             assert!(!auth.token.is_empty());
         }
@@ -273,7 +272,10 @@ mod tests {
 
         let auth = result.unwrap();
         assert_eq!(auth.token, "test_provider_token");
-        assert_eq!(auth.method, ResolvedAuthMethod::EnvVar(unique_var.to_string()));
+        assert_eq!(
+            auth.method,
+            ResolvedAuthMethod::EnvVar(unique_var.to_string())
+        );
 
         std::env::remove_var(unique_var);
     }

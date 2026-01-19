@@ -24,7 +24,10 @@ pub struct GitHubProvider {
 
 impl GitHubProvider {
     /// Creates a new GitHub provider.
-    pub fn new(credentials: Credentials, display_name: impl Into<String>) -> Result<Self, ProviderError> {
+    pub fn new(
+        credentials: Credentials,
+        display_name: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static("gisa-cli/0.1.0"));
         headers.insert(
@@ -261,8 +264,7 @@ mod tests {
         let provider = GitHubProvider::new(test_credentials(), "GitHub").unwrap();
         assert!(provider.is_github_com());
 
-        let enterprise_creds =
-            Credentials::new("token", "https://github.company.com/api/v3");
+        let enterprise_creds = Credentials::new("token", "https://github.company.com/api/v3");
         let provider = GitHubProvider::new(enterprise_creds, "GHE").unwrap();
         assert!(!provider.is_github_com());
     }
@@ -270,10 +272,7 @@ mod tests {
     #[test]
     fn test_api_url_construction() {
         let provider = GitHubProvider::new(test_credentials(), "GitHub").unwrap();
-        assert_eq!(
-            provider.api_url("/user"),
-            "https://api.github.com/user"
-        );
+        assert_eq!(provider.api_url("/user"), "https://api.github.com/user");
         assert_eq!(
             provider.api_url("/orgs/test/repos"),
             "https://api.github.com/orgs/test/repos"

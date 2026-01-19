@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::completions::{generate_completions, ShellType};
+//! use git_same::completions::{generate_completions, ShellType};
 //!
 //! // Generate bash completions (prints to stdout)
 //! generate_completions(ShellType::Bash);

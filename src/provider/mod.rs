@@ -10,10 +10,10 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::provider::{create_provider, DiscoveryOptions, NoProgress};
-//! use gisa::config::ProviderEntry;
+//! use git_same::provider::{create_provider, DiscoveryOptions, NoProgress};
+//! use git_same::config::ProviderEntry;
 //!
-//! # async fn example() -> Result<(), gisa::errors::AppError> {
+//! # async fn example() -> Result<(), git_same::errors::AppError> {
 //! let entry = ProviderEntry::github();
 //! let provider = create_provider(&entry, "ghp_token123")?;
 //!
@@ -39,17 +39,14 @@ use crate::errors::{AppError, ProviderError};
 use crate::types::ProviderKind;
 
 /// Creates a provider instance based on configuration.
-pub fn create_provider(
-    entry: &ProviderEntry,
-    token: &str,
-) -> Result<Box<dyn Provider>, AppError> {
+pub fn create_provider(entry: &ProviderEntry, token: &str) -> Result<Box<dyn Provider>, AppError> {
     let api_url = entry.effective_api_url();
 
     match entry.kind {
         ProviderKind::GitHub | ProviderKind::GitHubEnterprise => {
             let credentials = Credentials::new(token, api_url);
             let provider = github::GitHubProvider::new(credentials, entry.display_name())
-                .map_err(|e| AppError::Provider(e))?;
+                .map_err(AppError::Provider)?;
             Ok(Box::new(provider))
         }
         ProviderKind::GitLab => Err(AppError::Provider(ProviderError::NotImplemented(

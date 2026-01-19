@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use gisa::output::{Output, Verbosity, CloneProgressBar};
+//! use git_same::output::{Output, Verbosity, CloneProgressBar};
 //!
 //! // Create output handler
 //! let output = Output::new(Verbosity::Normal, false);

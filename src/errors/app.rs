@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_exit_codes_are_distinct() {
-        let errors = vec![
+        let errors = [
             AppError::Config("test".to_string()),
             AppError::Auth("test".to_string()),
             AppError::Provider(ProviderError::Network("test".to_string())),

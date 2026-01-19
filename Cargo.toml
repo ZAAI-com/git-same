@@ -1,13 +1,39 @@
 [package]
-name = "gisa"
-version = "0.1.0"
+name = "git-same"
+version = "0.2.0"
 edition = "2021"
-authors = ["Gisa Contributors"]
+authors = ["Git-Same Contributors"]
 description = "Mirror GitHub org/repo structure locally - supports multiple providers"
 license = "MIT"
-repository = "https://github.com/yourusername/gisa"
+repository = "https://github.com/zaai-com/git-same"
 keywords = ["git", "github", "cli", "clone", "sync"]
 categories = ["command-line-utilities", "development-tools"]
+
+# Main binary (always installed)
+[[bin]]
+name = "git-same"
+path = "src/main.rs"
+
+# Aliases - optional, install with: cargo install git-same --features=aliases
+[[bin]]
+name = "gitsame"
+path = "src/main.rs"
+required-features = ["aliases"]
+
+[[bin]]
+name = "gitsa"
+path = "src/main.rs"
+required-features = ["aliases"]
+
+[[bin]]
+name = "gisa"
+path = "src/main.rs"
+required-features = ["aliases"]
+
+[features]
+default = []
+# Install all command aliases (gitsame, gitsa, gisa)
+aliases = []
 
 [dependencies]
 # CLI parsing
@@ -29,7 +55,7 @@ toml = "0.8"
 indicatif = "0.17"
 console = "0.15"
 
-# XDG directories (~/.config/gisa)
+# XDG directories (~/.config/git-same)
 directories = "5"
 
 # Error handling

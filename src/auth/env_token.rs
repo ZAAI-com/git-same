@@ -10,12 +10,8 @@ pub const DEFAULT_TOKEN_VARS: &[&str] = &["GITHUB_TOKEN", "GH_TOKEN", "GISA_TOKE
 
 /// Get token from a specific environment variable.
 pub fn get_token(var_name: &str) -> Result<String, AppError> {
-    env::var(var_name).map_err(|_| {
-        AppError::auth(format!(
-            "Environment variable {} is not set",
-            var_name
-        ))
-    })
+    env::var(var_name)
+        .map_err(|_| AppError::auth(format!("Environment variable {} is not set", var_name)))
 }
 
 /// Get token from any of the default environment variables.

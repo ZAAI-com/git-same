@@ -1,18 +1,21 @@
 //! CLI argument parsing using clap.
 //!
-//! This module defines the command-line interface for gisa,
+//! This module defines the command-line interface for git-same,
 //! including all subcommands and their options.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
-/// Gisa - Mirror GitHub org/repo structure locally
+/// Git-Same - Mirror GitHub org/repo structure locally
 ///
 /// Discovers all GitHub organizations and repositories you have access to,
 /// then clones/syncs them to maintain a local mirror of your org structure.
+///
+/// Available as: git-same, gitsame, gitsa, gisa
+/// Also works as: git same (git subcommand)
 #[derive(Parser, Debug)]
-#[command(name = "gisa")]
+#[command(name = "git-same")]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
@@ -36,10 +39,10 @@ pub struct Cli {
     pub command: Command,
 }
 
-/// Gisa subcommands
+/// Git-Same subcommands
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Initialize gisa configuration
+    /// Initialize git-same configuration
     Init(InitArgs),
 
     /// Clone repositories to local filesystem
@@ -295,8 +298,8 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_status() {
-        let cli = Cli::try_parse_from(["gisa", "status", "~/github", "--dirty", "--detailed"])
-            .unwrap();
+        let cli =
+            Cli::try_parse_from(["gisa", "status", "~/github", "--dirty", "--detailed"]).unwrap();
 
         match cli.command {
             Command::Status(args) => {
@@ -333,8 +336,7 @@ mod tests {
 
     #[test]
     fn test_cli_global_flags() {
-        let cli =
-            Cli::try_parse_from(["gisa", "-vvv", "--json", "clone", "~/github"]).unwrap();
+        let cli = Cli::try_parse_from(["gisa", "-vvv", "--json", "clone", "~/github"]).unwrap();
 
         assert_eq!(cli.verbose, 3);
         assert!(cli.json);

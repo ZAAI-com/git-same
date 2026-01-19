@@ -136,30 +136,22 @@ impl GitError {
     pub fn suggested_action(&self) -> &'static str {
         match self {
             GitError::GitNotFound => "Install git from https://git-scm.com/downloads",
-            GitError::CloneFailed { .. } => {
-                "Check the repository URL and your network connection"
-            }
+            GitError::CloneFailed { .. } => "Check the repository URL and your network connection",
             GitError::FetchFailed { .. } | GitError::PullFailed { .. } => {
                 "Check your network connection and repository access"
             }
-            GitError::DirtyRepository { .. } => {
-                "Commit or stash your changes before syncing"
-            }
+            GitError::DirtyRepository { .. } => "Commit or stash your changes before syncing",
             GitError::NotARepository { .. } => {
                 "The directory exists but is not a git repository. Remove it to clone fresh"
             }
-            GitError::PermissionDenied(_) => {
-                "Check file permissions and your authentication"
-            }
+            GitError::PermissionDenied(_) => "Check file permissions and your authentication",
             GitError::SshKeyMissing { .. } => {
                 "Add your SSH key to the git hosting service, or use HTTPS authentication"
             }
             GitError::SshAuthFailed { .. } => {
                 "Check your SSH key configuration with 'ssh -T git@github.com'"
             }
-            GitError::CommandFailed(_) => {
-                "Check the error message and try again"
-            }
+            GitError::CommandFailed(_) => "Check the error message and try again",
             GitError::Timeout { .. } => {
                 "The operation took too long. Try with a smaller repository or better connection"
             }

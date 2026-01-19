@@ -251,12 +251,7 @@ impl<G: GitOperations + 'static> CloneManager<G> {
     }
 
     /// Clones a single repository synchronously.
-    pub fn clone_single(
-        &self,
-        base_path: &Path,
-        repo: &OwnedRepo,
-        provider: &str,
-    ) -> CloneResult {
+    pub fn clone_single(&self, base_path: &Path, repo: &OwnedRepo, provider: &str) -> CloneResult {
         let target_path = self.compute_path(base_path, repo, provider);
         let url = self.get_clone_url(repo);
 
@@ -270,7 +265,10 @@ impl<G: GitOperations + 'static> CloneManager<G> {
                 if let Err(e) = std::fs::create_dir_all(parent) {
                     OpResult::Failed(format!("Failed to create directory: {}", e))
                 } else {
-                    match self.git.clone_repo(url, &target_path, &self.options.clone_options) {
+                    match self
+                        .git
+                        .clone_repo(url, &target_path, &self.options.clone_options)
+                    {
                         Ok(()) => OpResult::Success,
                         Err(e) => OpResult::Failed(e.to_string()),
                     }
@@ -407,7 +405,10 @@ mod tests {
         let result = manager.clone_single(temp.path(), &repo, "github");
 
         assert!(result.result.is_skipped());
-        assert_eq!(result.result.skip_reason(), Some("directory already exists"));
+        assert_eq!(
+            result.result.skip_reason(),
+            Some("directory already exists")
+        );
     }
 
     #[test]
@@ -439,7 +440,11 @@ mod tests {
         let result = manager.clone_single(temp.path(), &repo, "github");
 
         assert!(result.result.is_failed());
-        assert!(result.result.error_message().unwrap().contains("network error"));
+        assert!(result
+            .result
+            .error_message()
+            .unwrap()
+            .contains("network error"));
     }
 
     struct CountingProgress {
@@ -493,7 +498,9 @@ mod tests {
         ];
 
         let progress = CountingProgress::new();
-        let (summary, results) = manager.clone_repos(temp.path(), repos, "github", &progress).await;
+        let (summary, results) = manager
+            .clone_repos(temp.path(), repos, "github", &progress)
+            .await;
 
         assert_eq!(summary.success, 3);
         assert_eq!(summary.failed, 0);
@@ -515,7 +522,9 @@ mod tests {
         let repos = vec![test_repo("repo1", "org"), test_repo("repo2", "org")];
 
         let progress = NoProgress;
-        let (summary, _results) = manager.clone_repos(temp.path(), repos, "github", &progress).await;
+        let (summary, _results) = manager
+            .clone_repos(temp.path(), repos, "github", &progress)
+            .await;
 
         assert_eq!(summary.success, 0);
         assert_eq!(summary.skipped, 2);
@@ -534,7 +543,9 @@ mod tests {
         let repos = vec![test_repo("repo1", "org")];
 
         let progress = CountingProgress::new();
-        let (summary, _results) = manager.clone_repos(temp.path(), repos, "github", &progress).await;
+        let (summary, _results) = manager
+            .clone_repos(temp.path(), repos, "github", &progress)
+            .await;
 
         assert_eq!(summary.failed, 1);
         assert_eq!(progress.errors.load(Ordering::SeqCst), 1);

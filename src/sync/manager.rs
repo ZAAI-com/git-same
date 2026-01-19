@@ -32,8 +32,22 @@ pub struct NoSyncProgress;
 
 impl SyncProgress for NoSyncProgress {
     fn on_start(&self, _repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {}
-    fn on_fetch_complete(&self, _repo: &OwnedRepo, _result: &FetchResult, _index: usize, _total: usize) {}
-    fn on_pull_complete(&self, _repo: &OwnedRepo, _result: &PullResult, _index: usize, _total: usize) {}
+    fn on_fetch_complete(
+        &self,
+        _repo: &OwnedRepo,
+        _result: &FetchResult,
+        _index: usize,
+        _total: usize,
+    ) {
+    }
+    fn on_pull_complete(
+        &self,
+        _repo: &OwnedRepo,
+        _result: &PullResult,
+        _index: usize,
+        _total: usize,
+    ) {
+    }
     fn on_error(&self, _repo: &OwnedRepo, _error: &str, _index: usize, _total: usize) {}
     fn on_skip(&self, _repo: &OwnedRepo, _reason: &str, _index: usize, _total: usize) {}
 }
@@ -270,9 +284,9 @@ impl<G: GitOperations + 'static> SyncManager<G> {
 
                     let result = match pull_result {
                         Ok(Ok(r)) if r.success => OpResult::Success,
-                        Ok(Ok(r)) => OpResult::Failed(
-                            r.error.unwrap_or_else(|| "Pull failed".to_string()),
-                        ),
+                        Ok(Ok(r)) => {
+                            OpResult::Failed(r.error.unwrap_or_else(|| "Pull failed".to_string()))
+                        }
                         Ok(Err(e)) => OpResult::Failed(e.to_string()),
                         Err(e) => OpResult::Failed(format!("Task panicked: {}", e)),
                     };
@@ -595,7 +609,11 @@ mod tests {
         let result = manager.sync_single(&repo);
 
         assert!(result.result.is_failed());
-        assert!(result.result.error_message().unwrap().contains("network error"));
+        assert!(result
+            .result
+            .error_message()
+            .unwrap()
+            .contains("network error"));
     }
 
     struct CountingSyncProgress {

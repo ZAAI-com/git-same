@@ -1,6 +1,6 @@
-//! # Gisa - Mirror GitHub org/repo structure locally
+//! # Git-Same - Mirror GitHub org/repo structure locally
 //!
-//! Gisa (short for git-same) is a CLI tool that discovers all GitHub organizations
+//! Git-Same is a CLI tool that discovers all GitHub organizations
 //! and repositories you have access to, then clones them to your local filesystem
 //! maintaining the org/repo directory structure.
 //!
@@ -12,26 +12,38 @@
 //! - **Incremental Sync**: Only fetches/pulls what has changed
 //! - **Progress Reporting**: Beautiful progress bars and status updates
 //!
+//! ## Available Commands
+//!
+//! The tool can be invoked using any of these names:
+//! - `git-same` (main command)
+//! - `git same` (as a git subcommand)
+//! - `gitsame`
+//! - `gitsa`
+//! - `gisa`
+//!
 //! ## Example
 //!
 //! ```bash
 //! # Initialize configuration
-//! gisa init
+//! git-same init
 //!
 //! # Clone all repositories (dry run first)
-//! gisa clone ~/github --dry-run
+//! git-same clone ~/github --dry-run
 //!
 //! # Clone for real
-//! gisa clone ~/github
+//! git-same clone ~/github
 //!
 //! # Fetch updates
-//! gisa fetch ~/github
+//! git-same fetch ~/github
 //!
 //! # Pull updates (modifies working tree)
-//! gisa pull ~/github
+//! git-same pull ~/github
 //!
 //! # Show status
-//! gisa status ~/github
+//! git-same status ~/github
+//!
+//! # Also works as git subcommand
+//! git same clone ~/github
 //! ```
 
 pub mod auth;
@@ -62,7 +74,9 @@ pub mod prelude {
     pub use crate::git::{
         CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus, ShellGit,
     };
-    pub use crate::output::{CloneProgressBar, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity};
+    pub use crate::output::{
+        CloneProgressBar, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
+    };
     pub use crate::provider::{
         create_provider, Credentials, DiscoveryOptions, DiscoveryProgress, NoProgress, Provider,
         RateLimitInfo,

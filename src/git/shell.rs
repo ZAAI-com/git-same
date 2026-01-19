@@ -149,12 +149,7 @@ impl ShellGit {
 }
 
 impl GitOperations for ShellGit {
-    fn clone_repo(
-        &self,
-        url: &str,
-        target: &Path,
-        options: &CloneOptions,
-    ) -> Result<(), GitError> {
+    fn clone_repo(&self, url: &str, target: &Path, options: &CloneOptions) -> Result<(), GitError> {
         let mut args = vec!["clone"];
 
         // Add depth if specified
@@ -193,7 +188,9 @@ impl GitOperations for ShellGit {
 
     fn fetch(&self, repo_path: &Path) -> Result<FetchResult, GitError> {
         // Get current HEAD before fetch
-        let before = self.run_git_output(&["rev-parse", "HEAD"], Some(repo_path)).ok();
+        let before = self
+            .run_git_output(&["rev-parse", "HEAD"], Some(repo_path))
+            .ok();
 
         // Run fetch
         let output = self.run_git(&["fetch", "--all", "--prune"], Some(repo_path))?;
@@ -252,7 +249,8 @@ impl GitOperations for ShellGit {
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let fast_forward = stdout.contains("Fast-forward") || stdout.contains("Already up to date");
+            let fast_forward =
+                stdout.contains("Fast-forward") || stdout.contains("Already up to date");
 
             Ok(PullResult {
                 success: true,
@@ -337,7 +335,8 @@ mod tests {
     #[test]
     fn test_parse_branch_info_ahead() {
         let git = ShellGit::new();
-        let (branch, ahead, behind) = git.parse_branch_info("## feature...origin/feature [ahead 3]");
+        let (branch, ahead, behind) =
+            git.parse_branch_info("## feature...origin/feature [ahead 3]");
         assert_eq!(branch, "feature");
         assert_eq!(ahead, 3);
         assert_eq!(behind, 0);
