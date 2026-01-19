@@ -9,31 +9,25 @@ repository = "https://github.com/zaai-com/git-same"
 keywords = ["git", "github", "cli", "clone", "sync"]
 categories = ["command-line-utilities", "development-tools"]
 
-# Main binary (always installed)
+# All binaries are installed by default
 [[bin]]
 name = "git-same"
 path = "src/main.rs"
 
-# Aliases - optional, install with: cargo install git-same --features=aliases
 [[bin]]
 name = "gitsame"
 path = "src/main.rs"
-required-features = ["aliases"]
 
 [[bin]]
 name = "gitsa"
 path = "src/main.rs"
-required-features = ["aliases"]
 
 [[bin]]
 name = "gisa"
 path = "src/main.rs"
-required-features = ["aliases"]
 
 [features]
 default = []
-# Install all command aliases (gitsame, gitsa, gisa)
-aliases = []
 
 [dependencies]
 # CLI parsing

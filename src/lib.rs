@@ -14,12 +14,12 @@
 //!
 //! ## Available Commands
 //!
-//! The tool can be invoked using any of these names:
-//! - `git-same` (main command)
-//! - `git same` (as a git subcommand)
-//! - `gitsame`
-//! - `gitsa`
-//! - `gisa`
+//! The tool can be invoked using any of these names (all installed by default):
+//! - `git-same` - Main command
+//! - `gitsame` - No hyphen variant
+//! - `gitsa` - Short form
+//! - `gisa` - Shortest variant
+//! - `git same` - Git subcommand (requires git-same in PATH)
 //!
 //! ## Example
 //!
