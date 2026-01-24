@@ -18,6 +18,7 @@
 
 pub mod env_token;
 pub mod gh_cli;
+pub mod ssh;
 
 use crate::config::{AuthMethod, ProviderEntry};
 use crate::errors::AppError;
@@ -98,16 +99,26 @@ pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
         }
     }
 
-    // No authentication found
-    Err(AppError::auth(
+    // No authentication found - provide helpful error message
+    let ssh_note = if ssh::has_ssh_keys() {
+        "\n\nNote: SSH keys detected. While SSH keys work for git clone/push,\n\
+         you still need a GitHub token for API access (discovering repos).\n\
+         The SSH keys will be used automatically for cloning."
+    } else {
+        ""
+    };
+
+    Err(AppError::auth(format!(
         "No GitHub authentication found.\n\n\
          Please authenticate using one of these methods:\n\n\
          1. GitHub CLI (recommended):\n   \
             gh auth login\n\n\
          2. Environment variable:\n   \
-            export GITHUB_TOKEN=ghp_xxxx\n\n\
+            export GITHUB_TOKEN=ghp_xxxx\n\
+         {}\n\
          For more info: https://cli.github.com/manual/gh_auth_login",
-    ))
+        ssh_note
+    )))
 }
 
 /// Get authentication for a specific provider configuration.

@@ -91,6 +91,14 @@ pub struct CloneArgs {
     #[arg(short = 'd', long)]
     pub depth: Option<u32>,
 
+    /// Clone a specific branch instead of the default
+    #[arg(short = 'b', long)]
+    pub branch: Option<String>,
+
+    /// Clone submodules recursively
+    #[arg(long)]
+    pub recurse_submodules: bool,
+
     /// Include archived repositories
     #[arg(long)]
     pub include_archived: bool,
@@ -122,6 +130,14 @@ pub struct CloneArgs {
     /// Provider to use (default: all configured)
     #[arg(short, long)]
     pub provider: Option<String>,
+
+    /// Force re-discovery (ignore cache)
+    #[arg(long)]
+    pub refresh: bool,
+
+    /// Skip using cache entirely
+    #[arg(long)]
+    pub no_cache: bool,
 }
 
 /// Arguments for fetch and pull commands

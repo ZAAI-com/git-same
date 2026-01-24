@@ -1,18 +1,30 @@
-# Rust build artifacts
+# Rust
 /target/
+**/*.rs.bk
+*.pdb
+
+# Cargo
 Cargo.lock
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-
-# macOS
 .DS_Store
 
+# Config (don't commit user configs)
+config.toml
+*.local.toml
+
+# Cache
+.cache/
+*.cache
+
 # Test artifacts
+/tmp/
+/test-output/
 *.profraw
 *.profdata
 
@@ -20,5 +32,5 @@ Cargo.lock
 .env
 .env.local
 
-# Local config (if contains secrets)
-# gisa.config.toml  # Uncomment if config may contain tokens
+# Conductor
+.context/

@@ -84,7 +84,7 @@ For personal repos only, use: `affiliation=owner&type=owner`
 | 1 | GitHub CLI | `gh auth token` | Secure, managed tokens, SSO support | Requires `gh` installed |
 | 2 | SSH Keys | Uses existing `~/.ssh` keys | Already configured for most devs | Only for git operations, not API |
 | 3 | PAT (env) | `GITHUB_TOKEN` or `GISA_TOKEN` | Simple, CI-friendly | User manages token security |
-| 4 | PAT (config) | Stored in `.gisarc` | Persistent | Less secure if committed |
+| 4 | PAT (config) | Stored in `gisa.config.toml` | Persistent | Less secure if committed |
 
 ### Recommended: GitHub CLI Integration
 
@@ -123,10 +123,12 @@ Required scopes:
 ```bash
 # Environment variable
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
 
-# Or in .gisarc
-auth:
-  token: ghp_xxxxxxxxxxxx  # Not recommended for shared configs
+```toml
+# Or in gisa.config.toml (not recommended for shared configs)
+[auth]
+token = "ghp_xxxxxxxxxxxx"
 ```
 
 ## Pagination Handling
@@ -246,7 +248,7 @@ For large organizations, consider caching discovery results:
 | --- | --- | --- |
 | `gh` CLI (recommended) | OS keychain (macOS Keychain, Windows Credential Manager, Linux secret-service) | GitHub CLI |
 | Environment variable | Shell session / CI secrets | User / CI system |
-| `.gisarc` config | Project directory | User (not recommended) |
+| `gisa.config.toml` | Project directory | User (not recommended) |
 
 **Why this approach:**
 - No token management code to maintain in Gisa
@@ -262,13 +264,13 @@ gisa sync ~/github
     │
     ├─→ Check: $GITHUB_TOKEN or $GISA_TOKEN set? → Use env var
     │
-    └─→ Check: .gisarc has auth.token? → Use config token (warn user)
+    └─→ Check: gisa.config.toml has auth.token? → Use config token (warn user)
 ```
 
 ## Security Considerations
 
 1. **Never log tokens** — Mask in debug output
 2. **Prefer ****`gh`**** CLI** — It handles secure storage
-3. **Warn about ****`.gisarc`**** tokens** — Suggest `.gitignore`
+3. **Warn about ****`gisa.config.toml`**** tokens** — Suggest `.gitignore`
 4. **Minimal scopes** — Request only `repo` and `read:org`
 5. **Token rotation** — Support for short-lived tokens via `gh`

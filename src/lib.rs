@@ -47,6 +47,7 @@
 //! ```
 
 pub mod auth;
+pub mod cache;
 pub mod cli;
 pub mod clone;
 pub mod completions;
@@ -62,6 +63,7 @@ pub mod types;
 /// Re-export commonly used types for convenience.
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
+    pub use crate::cache::{CacheManager, DiscoveryCache};
     pub use crate::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
     pub use crate::clone::{CloneManager, CloneManagerOptions, CloneProgress, CloneResult};
     pub use crate::completions::{generate_completions, ShellType};

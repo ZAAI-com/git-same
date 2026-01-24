@@ -6,6 +6,7 @@
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::errors::ProviderError;
 
@@ -30,12 +31,29 @@ pub fn parse_link_header(link: &str) -> Option<String> {
     None
 }
 
+/// Calculate wait time until rate limit reset
+fn calculate_wait_time(reset_timestamp: &str) -> Option<Duration> {
+    if let Ok(reset_secs) = reset_timestamp.parse::<u64>() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        if reset_secs > now {
+            return Some(Duration::from_secs(reset_secs - now));
+        }
+    }
+    None
+}
+
 /// Fetches all pages from a GitHub API endpoint using Link header pagination.
 ///
 /// # Arguments
 /// * `client` - The HTTP client to use
 /// * `token` - The authentication token
 /// * `initial_url` - The URL to start fetching from
+///
+/// This function implements exponential backoff for rate limit errors and transient failures.
 pub async fn fetch_all_pages<T: DeserializeOwned>(
     client: &Client,
     token: &str,
@@ -50,51 +68,83 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
 
     let mut page_count = 0;
     const MAX_PAGES: usize = 100; // Safety limit
+    const MAX_RETRIES: u32 = 3;
 
     while let Some(current_url) = url {
-        let response = client
-            .get(&current_url)
-            .header(AUTHORIZATION, format!("Bearer {}", token))
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        let mut retry_count = 0;
+        let mut backoff_ms = 1000; // Start with 1 second
 
-        let status = response.status();
+        let (next_url_opt, items) = loop {
+            let response = client
+                .get(&current_url)
+                .header(AUTHORIZATION, format!("Bearer {}", token))
+                .send()
+                .await
+                .map_err(|e| ProviderError::Network(e.to_string()))?;
 
-        // Check for rate limiting
-        if status.as_u16() == 403 {
-            if let Some(remaining) = response.headers().get("x-ratelimit-remaining") {
-                if remaining.to_str().unwrap_or("1") == "0" {
-                    let reset = response
-                        .headers()
-                        .get("x-ratelimit-reset")
-                        .and_then(|h| h.to_str().ok())
-                        .unwrap_or("unknown");
-                    return Err(ProviderError::RateLimited {
-                        reset_time: reset.to_string(),
-                    });
+            let status = response.status();
+
+            // Check for rate limiting
+            if status.as_u16() == 403 {
+                if let Some(remaining) = response.headers().get("x-ratelimit-remaining") {
+                    if remaining.to_str().unwrap_or("1") == "0" {
+                        let reset = response
+                            .headers()
+                            .get("x-ratelimit-reset")
+                            .and_then(|h| h.to_str().ok())
+                            .unwrap_or("unknown");
+
+                        // Try to parse reset time and wait
+                        if let Some(wait_time) = calculate_wait_time(reset) {
+                            if retry_count < MAX_RETRIES {
+                                retry_count += 1;
+                                // Add a small buffer to the wait time
+                                let wait_with_buffer = wait_time + Duration::from_secs(5);
+                                tokio::time::sleep(wait_with_buffer).await;
+                                continue; // Retry the request
+                            }
+                        }
+
+                        return Err(ProviderError::RateLimited {
+                            reset_time: reset.to_string(),
+                        });
+                    }
                 }
             }
-        }
 
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(ProviderError::from_status(status.as_u16(), body));
-        }
+            // Retry on 5xx errors with exponential backoff
+            if status.is_server_error() && retry_count < MAX_RETRIES {
+                retry_count += 1;
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms *= 2; // Exponential backoff: 1s, 2s, 4s
+                continue;
+            }
 
-        // Get next page URL before consuming response body
-        url = response
-            .headers()
-            .get("Link")
-            .and_then(|h| h.to_str().ok())
-            .and_then(parse_link_header);
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(ProviderError::from_status(status.as_u16(), body));
+            }
 
-        // Parse response body
-        let items: Vec<T> = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
+            // Get next page URL before consuming response body
+            let next_url = response
+                .headers()
+                .get("Link")
+                .and_then(|h| h.to_str().ok())
+                .and_then(parse_link_header);
 
+            // Parse response body
+            let items: Vec<T> = response
+                .json()
+                .await
+                .map_err(|e| ProviderError::Parse(e.to_string()))?;
+
+            break (next_url, items);
+        };
+
+        // Use the next URL from the loop
+        url = next_url_opt;
+
+        // Extend results with items from this page
         results.extend(items);
 
         page_count += 1;

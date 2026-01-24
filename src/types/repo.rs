@@ -99,7 +99,7 @@ fn rand_id() -> u64 {
 ///
 /// This type pairs a repository with the owner that it was discovered under,
 /// which may be an organization or the user's personal account.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnedRepo {
     /// Organization name or username
     pub owner: String,

@@ -3,6 +3,7 @@
 //! Main entry point for the git-same CLI application.
 
 use git_same::auth::get_auth;
+use git_same::cache::CacheManager;
 use git_same::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
 use git_same::clone::{CloneManager, CloneManagerOptions};
 use git_same::config::Config;
@@ -130,13 +131,53 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
 
     let orchestrator = DiscoveryOrchestrator::new(filters, config.structure.clone());
 
-    // Discover repositories
-    output.info("Discovering repositories...");
-    let progress_bar = DiscoveryProgressBar::new(verbosity);
-    let repos = orchestrator
-        .discover(provider.as_ref(), &progress_bar)
-        .await?;
-    progress_bar.finish();
+    // Check cache unless --no-cache or --refresh
+    let mut repos = Vec::new();
+    let use_cache = !args.no_cache;
+    let force_refresh = args.refresh;
+
+    if use_cache && !force_refresh {
+        if let Ok(cache_manager) = CacheManager::new() {
+            if let Ok(Some(cache)) = cache_manager.load() {
+                output.verbose(&format!(
+                    "Using cached discovery ({} repos, {} seconds old)",
+                    cache.repo_count,
+                    cache.age_secs()
+                ));
+                // Extract repos from cache
+                for provider_repos in cache.repos.values() {
+                    repos.extend(provider_repos.clone());
+                }
+            }
+        }
+    }
+
+    // If no cache or forced refresh, discover from API
+    if repos.is_empty() {
+        output.info("Discovering repositories...");
+        let progress_bar = DiscoveryProgressBar::new(verbosity);
+        repos = orchestrator
+            .discover(provider.as_ref(), &progress_bar)
+            .await?;
+        progress_bar.finish();
+
+        // Save to cache unless --no-cache
+        if use_cache {
+            if let Ok(cache_manager) = CacheManager::new() {
+                let mut repos_by_provider = std::collections::HashMap::new();
+                let provider_name = provider_entry
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| provider_entry.kind.to_string());
+                repos_by_provider.insert(provider_name, repos.clone());
+                let cache = git_same::cache::DiscoveryCache::new(
+                    auth.username.clone().unwrap_or_default(),
+                    repos_by_provider,
+                );
+                let _ = cache_manager.save(&cache);
+            }
+        }
+    }
 
     if repos.is_empty() {
         output.warn("No repositories found matching filters");
@@ -191,12 +232,15 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     // Create clone manager
     let clone_options = git_same::git::CloneOptions {
         depth: args.depth.unwrap_or(config.clone.depth),
-        branch: if config.clone.branch.is_empty() {
-            None
-        } else {
-            Some(config.clone.branch.clone())
-        },
-        recurse_submodules: config.clone.recurse_submodules,
+        // CLI args override config
+        branch: args.branch.clone().or_else(|| {
+            if config.clone.branch.is_empty() {
+                None
+            } else {
+                Some(config.clone.branch.clone())
+            }
+        }),
+        recurse_submodules: args.recurse_submodules || config.clone.recurse_submodules,
     };
 
     let manager_options = CloneManagerOptions::new()
