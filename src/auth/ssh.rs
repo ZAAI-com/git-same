@@ -11,7 +11,7 @@ use std::process::Command;
 pub fn has_github_ssh_access() -> bool {
     // Try to test SSH connection to GitHub
     let output = Command::new("ssh")
-        .args(["-T", "git@github.com", "-o", "StrictHostKeyChecking=no"])
+        .args(["-T", "-o", "StrictHostKeyChecking=accept-new", "git@github.com"])
         .output();
 
     if let Ok(output) = output {

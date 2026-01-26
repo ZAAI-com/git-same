@@ -102,16 +102,16 @@ pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
     // No authentication found - provide helpful error message
     let ssh_note = if ssh::has_ssh_keys() {
         "\n\nNote: SSH keys detected. While SSH keys work for git clone/push,\n\
-         you still need a GitHub token for API access (discovering repos).\n\
+         you still need a provider API token for repository discovery.\n\
          The SSH keys will be used automatically for cloning."
     } else {
         ""
     };
 
     Err(AppError::auth(format!(
-        "No GitHub authentication found.\n\n\
+        "No authentication found for your Git provider.\n\n\
          Please authenticate using one of these methods:\n\n\
-         1. GitHub CLI (recommended):\n   \
+         1. Provider CLI (recommended, e.g. GitHub CLI):\n   \
             gh auth login\n\n\
          2. Environment variable:\n   \
             export GITHUB_TOKEN=ghp_xxxx\n\

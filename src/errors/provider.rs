@@ -76,7 +76,7 @@ impl ProviderError {
     pub fn suggested_action(&self) -> &'static str {
         match self {
             ProviderError::Authentication(_) => {
-                "Run 'gh auth login' to re-authenticate, or check your GITHUB_TOKEN"
+                "Re-authenticate with your Git provider or verify your access token/credentials"
             }
             ProviderError::RateLimited { .. } => {
                 "Wait for the rate limit to reset, or use a different authentication token"
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_suggested_action_for_auth() {
         let err = ProviderError::Authentication("token expired".to_string());
-        assert!(err.suggested_action().contains("gh auth login"));
+        assert!(err.suggested_action().contains("Re-authenticate"));
     }
 
     #[test]

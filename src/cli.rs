@@ -155,7 +155,7 @@ pub struct SyncArgs {
     pub concurrency: Option<usize>,
 
     /// Skip repositories with uncommitted changes
-    #[arg(long, default_value = "true")]
+    #[arg(long, default_value_t = true)]
     pub skip_dirty: bool,
 
     /// Filter to specific organizations (can be repeated)

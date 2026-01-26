@@ -155,7 +155,7 @@ impl<G: GitOperations + 'static> CloneManager<G> {
         base_path: &Path,
         repos: Vec<OwnedRepo>,
         provider: &str,
-        progress: &dyn CloneProgress,
+        progress: Arc<dyn CloneProgress>,
     ) -> (OpSummary, Vec<CloneResult>) {
         let total = repos.len();
         let semaphore = Arc::new(Semaphore::new(self.options.concurrency));
@@ -168,11 +168,11 @@ impl<G: GitOperations + 'static> CloneManager<G> {
             let target_path = self.compute_path(base_path, &repo, provider);
             let url = self.get_clone_url(&repo).to_string();
             let dry_run = self.options.dry_run;
-
-            // Notify progress - clone starting
-            progress.on_start(&repo, index, total);
+            let progress = Arc::clone(&progress);
 
             let handle = tokio::spawn(async move {
+                // Notify progress - clone starting
+                progress.on_start(&repo, index, total);
                 let result = if dry_run {
                     OpResult::Skipped("dry run".to_string())
                 } else if target_path.exists() {
@@ -497,9 +497,9 @@ mod tests {
             test_repo("repo3", "org"),
         ];
 
-        let progress = CountingProgress::new();
+        let progress = Arc::new(CountingProgress::new());
         let (summary, results) = manager
-            .clone_repos(temp.path(), repos, "github", &progress)
+            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
             .await;
 
         assert_eq!(summary.success, 3);
@@ -521,9 +521,9 @@ mod tests {
 
         let repos = vec![test_repo("repo1", "org"), test_repo("repo2", "org")];
 
-        let progress = NoProgress;
+        let progress = Arc::new(NoProgress);
         let (summary, _results) = manager
-            .clone_repos(temp.path(), repos, "github", &progress)
+            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
             .await;
 
         assert_eq!(summary.success, 0);
@@ -542,9 +542,9 @@ mod tests {
 
         let repos = vec![test_repo("repo1", "org")];
 
-        let progress = CountingProgress::new();
+        let progress = Arc::new(CountingProgress::new());
         let (summary, _results) = manager
-            .clone_repos(temp.path(), repos, "github", &progress)
+            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
             .await;
 
         assert_eq!(summary.failed, 1);

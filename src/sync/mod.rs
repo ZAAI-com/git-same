@@ -23,7 +23,9 @@
 //! let repos: Vec<LocalRepo> = vec![];
 //! let progress = NoSyncProgress;
 //!
-//! let (summary, results) = manager.sync_repos(repos, &progress).await;
+//! let (summary, results) = manager
+//!     .sync_repos(repos, std::sync::Arc::new(progress))
+//!     .await;
 //!
 //! println!("Synced {} repos, {} had updates", summary.success,
 //!     results.iter().filter(|r| r.had_updates).count());

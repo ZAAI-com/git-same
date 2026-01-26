@@ -128,6 +128,11 @@ impl Output {
     pub fn is_json(&self) -> bool {
         self.json
     }
+
+    /// Returns the current verbosity level.
+    pub fn verbosity(&self) -> Verbosity {
+        self.verbosity
+    }
 }
 
 impl Default for Output {

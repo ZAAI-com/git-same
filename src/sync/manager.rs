@@ -170,7 +170,7 @@ impl<G: GitOperations + 'static> SyncManager<G> {
     pub async fn sync_repos(
         &self,
         repos: Vec<LocalRepo>,
-        progress: &dyn SyncProgress,
+        progress: Arc<dyn SyncProgress>,
     ) -> (OpSummary, Vec<SyncResult>) {
         let total = repos.len();
         let semaphore = Arc::new(Semaphore::new(self.options.concurrency));
@@ -182,11 +182,11 @@ impl<G: GitOperations + 'static> SyncManager<G> {
             let mode = self.options.mode;
             let skip_dirty = self.options.skip_dirty;
             let dry_run = self.options.dry_run;
-
-            // Notify progress - sync starting
-            progress.on_start(&local_repo.repo, &local_repo.path, index, total);
+            let progress = Arc::clone(&progress);
 
             let handle = tokio::spawn(async move {
+                // Notify progress - sync starting
+                progress.on_start(&local_repo.repo, &local_repo.path, index, total);
                 let path = local_repo.path.clone();
 
                 // Check if path exists and is a repo
@@ -686,8 +686,8 @@ mod tests {
             local_repo("repo3", "org", temp3.path()),
         ];
 
-        let progress = CountingSyncProgress::new();
-        let (summary, results) = manager.sync_repos(repos, &progress).await;
+        let progress = Arc::new(CountingSyncProgress::new());
+        let (summary, results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
 
         assert_eq!(summary.success, 3);
         assert_eq!(results.len(), 3);
@@ -705,8 +705,8 @@ mod tests {
 
         let repos = vec![local_repo("repo", "org", temp.path())];
 
-        let progress = NoSyncProgress;
-        let (summary, _results) = manager.sync_repos(repos, &progress).await;
+        let progress = Arc::new(NoSyncProgress);
+        let (summary, _results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
 
         assert_eq!(summary.skipped, 1);
     }
@@ -726,8 +726,8 @@ mod tests {
 
         let repos = vec![local_repo("repo", "org", temp.path())];
 
-        let progress = CountingSyncProgress::new();
-        let (summary, results) = manager.sync_repos(repos, &progress).await;
+        let progress = Arc::new(CountingSyncProgress::new());
+        let (summary, results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
 
         assert_eq!(summary.success, 1);
         assert!(results[0].had_updates);

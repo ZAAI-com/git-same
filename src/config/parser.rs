@@ -167,9 +167,14 @@ impl Config {
 
     /// Validate the configuration.
     pub fn validate(&self) -> Result<(), AppError> {
+        const MAX_CONCURRENCY: usize = 32;
+
         // Validate concurrency
-        if self.concurrency == 0 || self.concurrency > 32 {
-            return Err(AppError::config("concurrency must be between 1 and 32"));
+        if !(1..=MAX_CONCURRENCY).contains(&self.concurrency) {
+            return Err(AppError::config(format!(
+                "concurrency must be between 1 and {}",
+                MAX_CONCURRENCY
+            )));
         }
 
         // Validate providers
@@ -221,6 +226,7 @@ base_path = "~/github"
 structure = "{org}/{repo}"
 
 # Number of parallel clone/sync operations (1-32)
+# Keeping this bounded helps avoid provider rate limits and local resource contention.
 concurrency = 4
 
 # Sync behavior: "fetch" (safe) or "pull" (updates working tree)

@@ -17,6 +17,7 @@ use git_same::provider::create_provider;
 use git_same::sync::{SyncManager, SyncManagerOptions, SyncMode};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -96,7 +97,11 @@ async fn cmd_init(args: &InitArgs, output: &Output) -> Result<()> {
 
 /// Clone repositories.
 async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result<()> {
-    let verbosity = Verbosity::from(if output.is_json() { 0 } else { 1 });
+    let verbosity = if output.is_json() {
+        Verbosity::Quiet
+    } else {
+        output.verbosity()
+    };
 
     // Get authentication
     output.info("Authenticating...");
@@ -252,9 +257,9 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
     let manager = CloneManager::new(git, manager_options);
 
     // Execute clone
-    let progress = CloneProgressBar::new(plan.to_clone.len(), verbosity);
+    let progress = Arc::new(CloneProgressBar::new(plan.to_clone.len(), verbosity));
     let (summary, _results) = manager
-        .clone_repos(&base_path, plan.to_clone, "github", &progress)
+        .clone_repos(&base_path, plan.to_clone, "github", Arc::clone(&progress))
         .await;
     progress.finish(summary.success, summary.failed, summary.skipped);
 
@@ -273,7 +278,11 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
 
 /// Sync (fetch or pull) repositories.
 async fn cmd_sync(args: &SyncArgs, config: &Config, output: &Output, mode: SyncMode) -> Result<()> {
-    let verbosity = Verbosity::from(if output.is_json() { 0 } else { 1 });
+    let verbosity = if output.is_json() {
+        Verbosity::Quiet
+    } else {
+        output.verbosity()
+    };
     let operation = if mode == SyncMode::Pull {
         "Pull"
     } else {
@@ -371,8 +380,8 @@ async fn cmd_sync(args: &SyncArgs, config: &Config, output: &Output, mode: SyncM
     let manager = SyncManager::new(git, manager_options);
 
     // Execute sync
-    let progress = SyncProgressBar::new(to_sync.len(), verbosity, operation);
-    let (summary, results) = manager.sync_repos(to_sync, &progress).await;
+    let progress = Arc::new(SyncProgressBar::new(to_sync.len(), verbosity, operation));
+    let (summary, results) = manager.sync_repos(to_sync, Arc::clone(&progress)).await;
     progress.finish(summary.success, summary.failed, summary.skipped);
 
     // Count updates

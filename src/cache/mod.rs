@@ -66,7 +66,11 @@ impl DiscoveryCache {
             .unwrap()
             .as_secs();
 
-        let age = now.saturating_sub(self.last_discovery);
+        if now < self.last_discovery {
+            return false;
+        }
+
+        let age = now - self.last_discovery;
         age < ttl.as_secs()
     }
 
@@ -180,8 +184,8 @@ impl CacheManager {
 impl Default for CacheManager {
     fn default() -> Self {
         Self::new().unwrap_or_else(|_| {
-            // Fallback to current directory if we can't determine config dir
-            Self::with_path(PathBuf::from("cache.json"))
+            // Fallback to temp directory if we can't determine config dir
+            Self::with_path(std::env::temp_dir().join("git-same-cache.json"))
         })
     }
 }

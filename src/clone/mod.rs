@@ -23,7 +23,7 @@
 //! let progress = NoProgress;
 //!
 //! let (summary, results) = manager
-//!     .clone_repos(Path::new("~/github"), repos, "github", &progress)
+//!     .clone_repos(Path::new("~/github"), repos, "github", std::sync::Arc::new(progress))
 //!     .await;
 //!
 //! println!("Cloned {} repos, {} failed", summary.success, summary.failed);

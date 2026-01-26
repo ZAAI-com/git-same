@@ -139,7 +139,7 @@ impl DiscoveryOrchestrator {
         let has_provider = self.structure.contains("{provider}");
         let depth = if has_provider { 3 } else { 2 };
 
-        self.scan_dir(base_path, git, &mut repos, 0, depth);
+        self.scan_dir(base_path, base_path, git, &mut repos, 0, depth);
 
         repos
     }
@@ -147,6 +147,7 @@ impl DiscoveryOrchestrator {
     /// Recursively scans directories for git repos.
     fn scan_dir<G: GitOperations>(
         &self,
+        base_path: &Path,
         path: &Path,
         git: &G,
         repos: &mut Vec<(PathBuf, String, String)>,
@@ -175,7 +176,7 @@ impl DiscoveryOrchestrator {
 
             if current_depth + 1 == max_depth && git.is_repo(&entry_path) {
                 // This is a repo at the expected depth
-                let rel_path = entry_path.strip_prefix(path).unwrap_or(&entry_path);
+                let rel_path = entry_path.strip_prefix(base_path).unwrap_or(&entry_path);
                 let parts: Vec<_> = rel_path.components().collect();
 
                 if parts.len() >= 2 {
@@ -191,7 +192,7 @@ impl DiscoveryOrchestrator {
                 }
             } else {
                 // Recurse into subdirectory
-                self.scan_dir(&entry_path, git, repos, current_depth + 1, max_depth);
+                self.scan_dir(base_path, &entry_path, git, repos, current_depth + 1, max_depth);
             }
         }
     }
