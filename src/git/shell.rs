@@ -7,27 +7,18 @@ use crate::errors::GitError;
 use crate::git::traits::{CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus};
 use std::path::Path;
 use std::process::{Command, Output};
+use tracing::{debug, trace};
 
 /// Shell-based git operations.
 ///
 /// This implementation executes git commands via the shell and parses their output.
-#[derive(Debug, Clone, Default)]
-pub struct ShellGit {
-    /// Optional timeout for git commands (in seconds)
-    pub timeout_secs: Option<u64>,
-}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShellGit;
 
 impl ShellGit {
     /// Creates a new ShellGit instance.
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a new ShellGit with a timeout.
-    pub fn with_timeout(timeout_secs: u64) -> Self {
-        Self {
-            timeout_secs: Some(timeout_secs),
-        }
+        Self
     }
 
     /// Runs a git command and returns the output.
@@ -150,6 +141,15 @@ impl ShellGit {
 
 impl GitOperations for ShellGit {
     fn clone_repo(&self, url: &str, target: &Path, options: &CloneOptions) -> Result<(), GitError> {
+        debug!(
+            url,
+            target = %target.display(),
+            depth = options.depth,
+            branch = options.branch.as_deref().unwrap_or("default"),
+            recurse_submodules = options.recurse_submodules,
+            "Starting git clone"
+        );
+
         let mut args = vec!["clone"];
 
         // Add depth if specified
@@ -176,27 +176,34 @@ impl GitOperations for ShellGit {
         let target_str = target.to_string_lossy();
         args.push(&target_str);
 
+        trace!(args = ?args, "Executing git command");
         let output = self.run_git(&args, None)?;
 
         if output.status.success() {
+            debug!(url, target = %target.display(), "Clone completed successfully");
             Ok(())
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            debug!(url, error = %stderr, "Clone failed");
             Err(GitError::clone_failed(url, stderr))
         }
     }
 
     fn fetch(&self, repo_path: &Path) -> Result<FetchResult, GitError> {
+        debug!(repo = %repo_path.display(), "Starting git fetch");
+
         // Get current HEAD before fetch
         let before = self
             .run_git_output(&["rev-parse", "HEAD"], Some(repo_path))
             .ok();
 
         // Run fetch
+        trace!(repo = %repo_path.display(), "Executing fetch --all --prune");
         let output = self.run_git(&["fetch", "--all", "--prune"], Some(repo_path))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            debug!(repo = %repo_path.display(), error = %stderr, "Fetch failed");
             return Err(GitError::fetch_failed(repo_path, stderr));
         }
 
@@ -226,6 +233,13 @@ impl GitOperations for ShellGit {
             Some(0)
         };
 
+        debug!(
+            repo = %repo_path.display(),
+            updated,
+            new_commits = new_commits.unwrap_or(0),
+            "Fetch completed"
+        );
+
         Ok(FetchResult {
             updated,
             new_commits,
@@ -233,10 +247,13 @@ impl GitOperations for ShellGit {
     }
 
     fn pull(&self, repo_path: &Path) -> Result<PullResult, GitError> {
+        debug!(repo = %repo_path.display(), "Starting git pull");
+
         // First check status
         let status = self.status(repo_path)?;
 
         if status.is_dirty {
+            debug!(repo = %repo_path.display(), "Skipping pull: working tree is dirty");
             return Ok(PullResult {
                 success: false,
                 fast_forward: false,
@@ -245,12 +262,15 @@ impl GitOperations for ShellGit {
         }
 
         // Try fast-forward only pull
+        trace!(repo = %repo_path.display(), "Executing pull --ff-only");
         let output = self.run_git(&["pull", "--ff-only"], Some(repo_path))?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let fast_forward =
                 stdout.contains("Fast-forward") || stdout.contains("Already up to date");
+
+            debug!(repo = %repo_path.display(), fast_forward, "Pull completed successfully");
 
             Ok(PullResult {
                 success: true,
@@ -262,12 +282,14 @@ impl GitOperations for ShellGit {
 
             // Check if it's a non-fast-forward situation
             if stderr.contains("Not possible to fast-forward") {
+                debug!(repo = %repo_path.display(), "Pull failed: branch has diverged");
                 Ok(PullResult {
                     success: false,
                     fast_forward: false,
                     error: Some("Cannot fast-forward, local branch has diverged".to_string()),
                 })
             } else {
+                debug!(repo = %repo_path.display(), error = %stderr, "Pull failed");
                 Err(GitError::pull_failed(repo_path, stderr))
             }
         }
@@ -307,11 +329,8 @@ mod tests {
 
     #[test]
     fn test_shell_git_creation() {
-        let git = ShellGit::new();
-        assert!(git.timeout_secs.is_none());
-
-        let git_with_timeout = ShellGit::with_timeout(30);
-        assert_eq!(git_with_timeout.timeout_secs, Some(30));
+        let _git = ShellGit::new();
+        // ShellGit is a zero-sized type with no fields
     }
 
     #[test]

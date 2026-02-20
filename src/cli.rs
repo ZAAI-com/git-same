@@ -154,9 +154,9 @@ pub struct SyncArgs {
     #[arg(short, long)]
     pub concurrency: Option<usize>,
 
-    /// Skip repositories with uncommitted changes
-    #[arg(long, default_value_t = true)]
-    pub skip_dirty: bool,
+    /// Don't skip repositories with uncommitted changes (sync them anyway)
+    #[arg(long)]
+    pub no_skip_dirty: bool,
 
     /// Filter to specific organizations (can be repeated)
     #[arg(short, long)]
@@ -302,11 +302,24 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_pull() {
-        let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--skip-dirty"]).unwrap();
+        let cli = Cli::try_parse_from(["gisa", "pull", "~/github"]).unwrap();
 
         match cli.command {
             Command::Pull(args) => {
-                assert!(args.skip_dirty);
+                // By default, skip_dirty is enabled (no_skip_dirty is false)
+                assert!(!args.no_skip_dirty);
+            }
+            _ => panic!("Expected Pull command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_pull_no_skip_dirty() {
+        let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-dirty"]).unwrap();
+
+        match cli.command {
+            Command::Pull(args) => {
+                assert!(args.no_skip_dirty);
             }
             _ => panic!("Expected Pull command"),
         }

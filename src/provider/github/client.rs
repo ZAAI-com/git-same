@@ -3,12 +3,16 @@
 use async_trait::async_trait;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use reqwest::Client;
+use tracing::{debug, trace};
 
 use super::pagination::fetch_all_pages;
 use super::GITHUB_API_URL;
 use crate::errors::ProviderError;
 use crate::provider::traits::*;
 use crate::types::{Org, OwnedRepo, ProviderKind, Repo};
+
+/// Default timeout for API requests in seconds.
+const DEFAULT_TIMEOUT_SECS: u64 = 60;
 
 /// GitHub provider implementation.
 ///
@@ -23,10 +27,19 @@ pub struct GitHubProvider {
 }
 
 impl GitHubProvider {
-    /// Creates a new GitHub provider.
+    /// Creates a new GitHub provider with default timeout.
     pub fn new(
         credentials: Credentials,
         display_name: impl Into<String>,
+    ) -> Result<Self, ProviderError> {
+        Self::with_timeout(credentials, display_name, DEFAULT_TIMEOUT_SECS)
+    }
+
+    /// Creates a new GitHub provider with custom timeout.
+    pub fn with_timeout(
+        credentials: Credentials,
+        display_name: impl Into<String>,
+        timeout_secs: u64,
     ) -> Result<Self, ProviderError> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static("gisa-cli/0.1.0"));
@@ -41,7 +54,7 @@ impl GitHubProvider {
 
         let client = Client::builder()
             .default_headers(headers)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()
             .map_err(|e| ProviderError::Configuration(e.to_string()))?;
 
@@ -59,6 +72,8 @@ impl GitHubProvider {
 
     /// Makes an authenticated GET request.
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, ProviderError> {
+        trace!(url, "Making authenticated GET request");
+
         let response = self
             .client
             .get(url)
@@ -68,8 +83,11 @@ impl GitHubProvider {
             .map_err(|e| ProviderError::Network(e.to_string()))?;
 
         let status = response.status();
+        trace!(url, status = %status, "Received response");
+
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
+            debug!(url, status = %status, "API request failed");
             return Err(ProviderError::from_status(status.as_u16(), body));
         }
 
@@ -167,16 +185,26 @@ impl Provider for GitHubProvider {
         options: &DiscoveryOptions,
         progress: &dyn DiscoveryProgress,
     ) -> Result<Vec<OwnedRepo>, ProviderError> {
+        debug!(provider = %self.display_name, "Starting repository discovery");
+
         let username = self.get_username().await?;
+        debug!(username, "Authenticated user");
+
         let mut all_repos = Vec::new();
 
         // Get organizations
         let orgs = self.get_organizations().await?;
+        let orgs_count = orgs.len();
         let filtered_orgs: Vec<_> = orgs
             .into_iter()
             .filter(|o| options.should_include_org(&o.login))
             .collect();
 
+        debug!(
+            total_orgs = orgs_count,
+            filtered_orgs = filtered_orgs.len(),
+            "Discovered organizations"
+        );
         progress.on_orgs_discovered(filtered_orgs.len());
 
         // Fetch repos for each org

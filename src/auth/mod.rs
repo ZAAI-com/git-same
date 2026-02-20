@@ -22,6 +22,7 @@ pub mod ssh;
 
 use crate::config::{AuthMethod, ProviderEntry};
 use crate::errors::AppError;
+use tracing::{debug, warn};
 
 /// Authentication result containing the token and metadata.
 #[derive(Debug, Clone)]
@@ -62,25 +63,46 @@ impl std::fmt::Display for ResolvedAuthMethod {
 /// # Arguments
 /// * `config_token` - Optional token from config file (last resort)
 pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
+    debug!("Resolving authentication (priority: gh CLI → env vars → config token)");
+
     // Try gh CLI first
-    if gh_cli::is_installed() && gh_cli::is_authenticated() {
+    let gh_installed = gh_cli::is_installed();
+    let gh_authenticated = gh_installed && gh_cli::is_authenticated();
+    debug!(gh_installed, gh_authenticated, "Checking GitHub CLI status");
+
+    if gh_installed && gh_authenticated {
         match gh_cli::get_token() {
             Ok(token) => {
                 let username = gh_cli::get_username().ok();
+                debug!(
+                    username = username.as_deref().unwrap_or("<unknown>"),
+                    "Authenticated via GitHub CLI"
+                );
                 return Ok(AuthResult {
                     token,
                     method: ResolvedAuthMethod::GhCli,
                     username,
                 });
             }
-            Err(_) => {
-                // Fall through to next method
+            Err(e) => {
+                // gh CLI is installed and authenticated but token retrieval failed
+                // This can happen with permission issues or corrupted auth state
+                warn!(
+                    error = %e,
+                    "gh CLI token retrieval failed, trying alternative methods"
+                );
+                eprintln!(
+                    "Note: gh CLI token retrieval failed ({}), trying alternative methods",
+                    e
+                );
             }
         }
     }
 
     // Try environment variables
+    debug!("Checking environment variables for token");
     if let Ok((token, var_name)) = env_token::get_token_from_defaults() {
+        debug!(var_name, "Authenticated via environment variable");
         return Ok(AuthResult {
             token,
             method: ResolvedAuthMethod::EnvVar(var_name.to_string()),
@@ -91,6 +113,7 @@ pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
     // Try config token
     if let Some(token) = config_token {
         if !token.is_empty() {
+            debug!("Authenticated via config file token");
             return Ok(AuthResult {
                 token: token.to_string(),
                 method: ResolvedAuthMethod::ConfigToken,
@@ -123,6 +146,12 @@ pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
 
 /// Get authentication for a specific provider configuration.
 pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, AppError> {
+    debug!(
+        auth_method = ?provider.auth,
+        api_url = provider.api_url.as_deref().unwrap_or("default"),
+        "Resolving authentication for provider"
+    );
+
     match provider.auth {
         AuthMethod::GhCli => {
             // For GitHub Enterprise, we might need to specify the host
@@ -130,8 +159,10 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
                 // Extract host from API URL
                 if let Some(host) = extract_host(api_url) {
                     if host != "api.github.com" {
+                        debug!(host, "Attempting GitHub Enterprise authentication");
                         // Try to get token for specific host
                         if let Ok(token) = gh_cli::get_token_for_host(&host) {
+                            debug!(host, "Authenticated via gh CLI for enterprise host");
                             return Ok(AuthResult {
                                 token,
                                 method: ResolvedAuthMethod::GhCli,
@@ -144,11 +175,13 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
 
             // Default gh auth
             if !gh_cli::is_installed() {
+                debug!("gh CLI not installed");
                 return Err(AppError::auth(
                     "GitHub CLI is not installed. Install from https://cli.github.com/",
                 ));
             }
             if !gh_cli::is_authenticated() {
+                debug!("gh CLI not authenticated");
                 return Err(AppError::auth(
                     "GitHub CLI is not authenticated. Run: gh auth login",
                 ));
@@ -156,6 +189,10 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
 
             let token = gh_cli::get_token()?;
             let username = gh_cli::get_username().ok();
+            debug!(
+                username = username.as_deref().unwrap_or("<unknown>"),
+                "Authenticated via gh CLI"
+            );
 
             Ok(AuthResult {
                 token,
@@ -166,8 +203,10 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
 
         AuthMethod::Env => {
             let var_name = provider.token_env.as_deref().unwrap_or("GITHUB_TOKEN");
+            debug!(var_name, "Attempting environment variable authentication");
 
             let token = env_token::get_token(var_name)?;
+            debug!(var_name, "Authenticated via environment variable");
 
             Ok(AuthResult {
                 token,
@@ -177,10 +216,12 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
         }
 
         AuthMethod::Token => {
+            debug!("Using config file token authentication");
             let token = provider
                 .token
                 .clone()
                 .ok_or_else(|| AppError::auth("Token auth configured but no token provided"))?;
+            debug!("Authenticated via config token");
 
             Ok(AuthResult {
                 token,

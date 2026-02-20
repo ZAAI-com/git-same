@@ -8,10 +8,21 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Check if SSH is likely configured for GitHub.
+///
+/// Uses BatchMode to avoid interactive prompts. If the host key is not
+/// already known, this returns false (user should run `ssh -T git@github.com`
+/// manually to verify and accept the host key).
 pub fn has_github_ssh_access() -> bool {
     // Try to test SSH connection to GitHub
+    // BatchMode=yes prevents interactive prompts (for host key verification, passwords, etc.)
+    // ConnectTimeout=5 prevents hanging on network issues
     let output = Command::new("ssh")
-        .args(["-T", "-o", "StrictHostKeyChecking=accept-new", "git@github.com"])
+        .args([
+            "-T",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=5",
+            "git@github.com",
+        ])
         .output();
 
     if let Ok(output) = output {

@@ -67,7 +67,7 @@ fn test_fetch_help() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Fetch updates"));
     assert!(stdout.contains("--dry-run"));
-    assert!(stdout.contains("--skip-dirty"));
+    assert!(stdout.contains("--no-skip-dirty"));
 }
 
 #[test]

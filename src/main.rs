@@ -5,7 +5,7 @@
 use git_same::auth::get_auth;
 use git_same::cache::CacheManager;
 use git_same::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
-use git_same::clone::{CloneManager, CloneManagerOptions};
+use git_same::clone::{CloneManager, CloneManagerOptions, MAX_CONCURRENCY};
 use git_same::config::Config;
 use git_same::discovery::DiscoveryOrchestrator;
 use git_same::errors::{AppError, Result};
@@ -18,10 +18,48 @@ use git_same::sync::{SyncManager, SyncManagerOptions, SyncMode};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use tracing::debug;
+
+/// Warn if requested concurrency exceeds the maximum.
+/// Returns the effective concurrency to use.
+fn warn_if_concurrency_capped(requested: usize, output: &Output) -> usize {
+    if requested > MAX_CONCURRENCY {
+        output.warn(&format!(
+            "Requested concurrency {} exceeds maximum {}. Using {} instead.",
+            requested, MAX_CONCURRENCY, MAX_CONCURRENCY
+        ));
+        MAX_CONCURRENCY
+    } else {
+        requested
+    }
+}
+
+/// Initialize structured logging based on GISA_LOG environment variable.
+///
+/// Examples:
+/// - `GISA_LOG=debug` - Enable debug logging for all modules
+/// - `GISA_LOG=git_same=debug` - Enable debug logging for git-same only
+/// - `GISA_LOG=git_same::auth=trace` - Enable trace logging for auth module
+/// - `GISA_LOG=warn` - Only show warnings and errors
+fn init_logging() {
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+    // Use GISA_LOG env var, defaulting to "warn" if not set
+    let filter = EnvFilter::try_from_env("GISA_LOG").unwrap_or_else(|_| EnvFilter::new("warn"));
+
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(true).with_level(true).compact())
+        .with(filter)
+        .init();
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // Initialize logging early
+    init_logging();
+
     let cli = Cli::parse_args();
+    debug!(command = ?cli.command, "Parsed CLI arguments");
 
     // Create output handler
     let verbosity = Verbosity::from(cli.verbosity());
@@ -179,7 +217,9 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
                     auth.username.clone().unwrap_or_default(),
                     repos_by_provider,
                 );
-                let _ = cache_manager.save(&cache);
+                if let Err(e) = cache_manager.save(&cache) {
+                    output.verbose(&format!("Warning: Failed to save discovery cache: {}", e));
+                }
             }
         }
     }
@@ -248,8 +288,11 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
         recurse_submodules: args.recurse_submodules || config.clone.recurse_submodules,
     };
 
+    let requested_concurrency = args.concurrency.unwrap_or(config.concurrency);
+    let effective_concurrency = warn_if_concurrency_capped(requested_concurrency, output);
+
     let manager_options = CloneManagerOptions::new()
-        .with_concurrency(args.concurrency.unwrap_or(config.concurrency))
+        .with_concurrency(effective_concurrency)
         .with_clone_options(clone_options)
         .with_structure(config.structure.clone())
         .with_ssh(!args.https);
@@ -258,8 +301,9 @@ async fn cmd_clone(args: &CloneArgs, config: &Config, output: &Output) -> Result
 
     // Execute clone
     let progress = Arc::new(CloneProgressBar::new(plan.to_clone.len(), verbosity));
+    let progress_dyn: Arc<dyn git_same::clone::CloneProgress> = progress.clone();
     let (summary, _results) = manager
-        .clone_repos(&base_path, plan.to_clone, "github", Arc::clone(&progress))
+        .clone_repos(&base_path, plan.to_clone, "github", progress_dyn)
         .await;
     progress.finish(summary.success, summary.failed, summary.skipped);
 
@@ -338,8 +382,9 @@ async fn cmd_sync(args: &SyncArgs, config: &Config, output: &Output, mode: SyncM
 
     // Plan sync operation
     let git = ShellGit::new();
+    let skip_dirty = !args.no_skip_dirty;
     let (to_sync, skipped) =
-        orchestrator.plan_sync(&base_path, repos, "github", &git, args.skip_dirty);
+        orchestrator.plan_sync(&base_path, repos, "github", &git, skip_dirty);
 
     if to_sync.is_empty() {
         if skipped.is_empty() {
@@ -372,16 +417,20 @@ async fn cmd_sync(args: &SyncArgs, config: &Config, output: &Output, mode: SyncM
     }
 
     // Create sync manager
+    let requested_concurrency = args.concurrency.unwrap_or(config.concurrency);
+    let effective_concurrency = warn_if_concurrency_capped(requested_concurrency, output);
+
     let manager_options = SyncManagerOptions::new()
-        .with_concurrency(args.concurrency.unwrap_or(config.concurrency))
+        .with_concurrency(effective_concurrency)
         .with_mode(mode)
-        .with_skip_dirty(args.skip_dirty);
+        .with_skip_dirty(skip_dirty);
 
     let manager = SyncManager::new(git, manager_options);
 
     // Execute sync
     let progress = Arc::new(SyncProgressBar::new(to_sync.len(), verbosity, operation));
-    let (summary, results) = manager.sync_repos(to_sync, Arc::clone(&progress)).await;
+    let progress_dyn: Arc<dyn git_same::sync::SyncProgress> = progress.clone();
+    let (summary, results) = manager.sync_repos(to_sync, progress_dyn).await;
     progress.finish(summary.success, summary.failed, summary.skipped);
 
     // Count updates

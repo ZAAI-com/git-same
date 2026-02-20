@@ -7,9 +7,12 @@ use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Clone-specific options.
+/// Clone-specific configuration options (from config file).
+///
+/// Note: This is distinct from `git::CloneOptions` which is used for
+/// the actual git clone operation parameters.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CloneOptions {
+pub struct ConfigCloneOptions {
     /// Shallow clone depth (0 = full history)
     #[serde(default)]
     pub depth: u32,
@@ -88,7 +91,8 @@ pub struct Config {
 
     /// Clone options
     #[serde(default)]
-    pub clone: CloneOptions,
+    #[serde(rename = "clone")]
+    pub clone: ConfigCloneOptions,
 
     /// Filter options
     #[serde(default)]
@@ -122,7 +126,7 @@ impl Default for Config {
             structure: default_structure(),
             concurrency: default_concurrency(),
             sync_mode: SyncMode::default(),
-            clone: CloneOptions::default(),
+            clone: ConfigCloneOptions::default(),
             filters: FilterOptions::default(),
             providers: default_providers(),
         }

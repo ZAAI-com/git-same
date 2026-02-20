@@ -10,13 +10,23 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{debug, warn};
 
 /// Default cache TTL (1 hour)
 const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 
+/// Current cache format version.
+/// Increment this when making breaking changes to the cache format.
+pub const CACHE_VERSION: u32 = 1;
+
 /// Discovery cache data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryCache {
+    /// Cache format version for forward compatibility.
+    /// If missing during deserialization, defaults to 0 (pre-versioned cache).
+    #[serde(default)]
+    pub version: u32,
+
     /// When the discovery was last performed (Unix timestamp)
     pub last_discovery: u64,
 
@@ -50,13 +60,26 @@ impl DiscoveryCache {
             .unwrap()
             .as_secs();
 
+        debug!(
+            version = CACHE_VERSION,
+            repo_count,
+            org_count = orgs.len(),
+            "Creating new discovery cache"
+        );
+
         Self {
+            version: CACHE_VERSION,
             last_discovery: now,
             username,
             orgs,
             repo_count,
             repos,
         }
+    }
+
+    /// Check if this cache is compatible with the current version.
+    pub fn is_compatible(&self) -> bool {
+        self.version == CACHE_VERSION
     }
 
     /// Check if the cache is still valid
@@ -132,6 +155,7 @@ impl CacheManager {
     /// Load the cache if it exists and is valid
     pub fn load(&self) -> Result<Option<DiscoveryCache>> {
         if !self.cache_path.exists() {
+            debug!(path = %self.cache_path.display(), "Cache file does not exist");
             return Ok(None);
         }
 
@@ -141,10 +165,25 @@ impl CacheManager {
         let cache: DiscoveryCache = serde_json::from_str(&content)
             .context("Failed to parse cache file")?;
 
+        // Check version compatibility
+        if !cache.is_compatible() {
+            warn!(
+                cache_version = cache.version,
+                current_version = CACHE_VERSION,
+                "Cache version mismatch, ignoring stale cache"
+            );
+            return Ok(None);
+        }
+
         if cache.is_valid(self.ttl) {
+            debug!(
+                age_secs = cache.age_secs(),
+                repo_count = cache.repo_count,
+                "Loaded valid cache"
+            );
             Ok(Some(cache))
         } else {
-            // Cache expired
+            debug!(age_secs = cache.age_secs(), "Cache expired");
             Ok(None)
         }
     }
@@ -160,8 +199,16 @@ impl CacheManager {
         let json = serde_json::to_string_pretty(cache)
             .context("Failed to serialize cache")?;
 
-        fs::write(&self.cache_path, json)
+        fs::write(&self.cache_path, &json)
             .context("Failed to write cache file")?;
+
+        debug!(
+            path = %self.cache_path.display(),
+            version = cache.version,
+            repo_count = cache.repo_count,
+            bytes = json.len(),
+            "Saved cache to disk"
+        );
 
         Ok(())
     }
@@ -193,7 +240,7 @@ impl Default for CacheManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ProviderKind, Repo};
+    use crate::types::Repo;
     use std::thread::sleep;
     use tempfile::TempDir;
 
@@ -229,11 +276,30 @@ mod tests {
 
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
 
+        assert_eq!(cache.version, CACHE_VERSION);
         assert_eq!(cache.username, "testuser");
         assert_eq!(cache.repo_count, 2);
         assert_eq!(cache.orgs.len(), 2);
         assert!(cache.orgs.contains(&"org1".to_string()));
         assert!(cache.orgs.contains(&"org2".to_string()));
+        assert!(cache.is_compatible());
+    }
+
+    #[test]
+    fn test_cache_version_compatibility() {
+        let repos = HashMap::new();
+        let mut cache = DiscoveryCache::new("testuser".to_string(), repos);
+
+        // Current version should be compatible
+        assert!(cache.is_compatible());
+
+        // Old version should not be compatible
+        cache.version = 0;
+        assert!(!cache.is_compatible());
+
+        // Future version should not be compatible
+        cache.version = CACHE_VERSION + 1;
+        assert!(!cache.is_compatible());
     }
 
     #[test]

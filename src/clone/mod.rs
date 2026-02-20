@@ -32,4 +32,7 @@
 
 pub mod parallel;
 
-pub use parallel::{CloneManager, CloneManagerOptions, CloneProgress, CloneResult, NoProgress};
+pub use parallel::{
+    CloneManager, CloneManagerOptions, CloneProgress, CloneResult, NoProgress, MAX_CONCURRENCY,
+    MIN_CONCURRENCY,
+};

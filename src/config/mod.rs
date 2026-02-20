@@ -17,5 +17,5 @@
 mod parser;
 mod provider_config;
 
-pub use parser::{CloneOptions, Config, FilterOptions, SyncMode};
+pub use parser::{Config, ConfigCloneOptions, FilterOptions, SyncMode};
 pub use provider_config::{AuthMethod, ProviderEntry};

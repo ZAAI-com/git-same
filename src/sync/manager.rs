@@ -2,6 +2,7 @@
 //!
 //! This module handles syncing existing local repositories with their remotes.
 
+use crate::clone::{MAX_CONCURRENCY, MIN_CONCURRENCY};
 use crate::git::{FetchResult, GitOperations, PullResult, RepoStatus};
 use crate::types::{OpResult, OpSummary, OwnedRepo};
 use std::path::{Path, PathBuf};
@@ -75,6 +76,10 @@ pub struct SyncResult {
     pub had_updates: bool,
     /// Repository status before sync
     pub status: Option<RepoStatus>,
+    /// Fetch result (if fetch was performed)
+    pub fetch_result: Option<FetchResult>,
+    /// Pull result (if pull was performed)
+    pub pull_result: Option<PullResult>,
 }
 
 /// A repository with its local path for syncing.
@@ -126,9 +131,9 @@ impl SyncManagerOptions {
         Self::default()
     }
 
-    /// Sets the concurrency level.
+    /// Sets the concurrency level, clamped to [MIN_CONCURRENCY, MAX_CONCURRENCY].
     pub fn with_concurrency(mut self, concurrency: usize) -> Self {
-        self.concurrency = concurrency.max(1);
+        self.concurrency = concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         self
     }
 
@@ -198,6 +203,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         result: OpResult::Skipped("path does not exist".to_string()),
                         had_updates: false,
                         status: None,
+                        fetch_result: None,
+                        pull_result: None,
                     };
                 }
 
@@ -222,6 +229,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                                 result: OpResult::Skipped("working tree is dirty".to_string()),
                                 had_updates: false,
                                 status,
+                                fetch_result: None,
+                                pull_result: None,
                             };
                         }
                     }
@@ -236,6 +245,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         result: OpResult::Skipped("dry run".to_string()),
                         had_updates: false,
                         status,
+                        fetch_result: None,
+                        pull_result: None,
                     };
                 }
 
@@ -257,6 +268,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                             result: OpResult::Failed(e.to_string()),
                             had_updates: false,
                             status,
+                            fetch_result: None,
+                            pull_result: None,
                         };
                     }
                     Err(e) => {
@@ -267,6 +280,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                             result: OpResult::Failed(format!("Task panicked: {}", e)),
                             had_updates: false,
                             status,
+                            fetch_result: None,
+                            pull_result: None,
                         };
                     }
                 };
@@ -275,20 +290,21 @@ impl<G: GitOperations + 'static> SyncManager<G> {
 
                 // If pull mode and has updates, do pull
                 if mode == SyncMode::Pull && had_updates {
-                    let pull_result = tokio::task::spawn_blocking({
+                    let pull_task_result = tokio::task::spawn_blocking({
                         let git = git.clone();
                         let path = path.clone();
                         move || git.pull(&path)
                     })
                     .await;
 
-                    let result = match pull_result {
-                        Ok(Ok(r)) if r.success => OpResult::Success,
-                        Ok(Ok(r)) => {
-                            OpResult::Failed(r.error.unwrap_or_else(|| "Pull failed".to_string()))
-                        }
-                        Ok(Err(e)) => OpResult::Failed(e.to_string()),
-                        Err(e) => OpResult::Failed(format!("Task panicked: {}", e)),
+                    let (result, actual_pull_result) = match pull_task_result {
+                        Ok(Ok(r)) if r.success => (OpResult::Success, Some(r)),
+                        Ok(Ok(r)) => (
+                            OpResult::Failed(r.error.clone().unwrap_or_else(|| "Pull failed".to_string())),
+                            Some(r),
+                        ),
+                        Ok(Err(e)) => (OpResult::Failed(e.to_string()), None),
+                        Err(e) => (OpResult::Failed(format!("Task panicked: {}", e)), None),
                     };
 
                     drop(permit);
@@ -298,6 +314,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         result,
                         had_updates,
                         status,
+                        fetch_result: Some(fetch_result),
+                        pull_result: actual_pull_result,
                     }
                 } else {
                     drop(permit);
@@ -307,6 +325,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         result: OpResult::Success,
                         had_updates,
                         status,
+                        fetch_result: Some(fetch_result),
+                        pull_result: None,
                     }
                 }
             });
@@ -321,27 +341,20 @@ impl<G: GitOperations + 'static> SyncManager<G> {
         for (index, handle) in handles.into_iter().enumerate() {
             match handle.await {
                 Ok(sync_result) => {
-                    // Notify progress based on result
+                    // Notify progress based on result using actual operation results
                     match &sync_result.result {
                         OpResult::Success => {
-                            if self.options.mode == SyncMode::Pull && sync_result.had_updates {
+                            if let Some(ref pull_result) = sync_result.pull_result {
                                 progress.on_pull_complete(
                                     &sync_result.repo,
-                                    &PullResult {
-                                        success: true,
-                                        fast_forward: true,
-                                        error: None,
-                                    },
+                                    pull_result,
                                     index,
                                     total,
                                 );
-                            } else {
+                            } else if let Some(ref fetch_result) = sync_result.fetch_result {
                                 progress.on_fetch_complete(
                                     &sync_result.repo,
-                                    &FetchResult {
-                                        updated: sync_result.had_updates,
-                                        new_commits: None,
-                                    },
+                                    fetch_result,
                                     index,
                                     total,
                                 );
@@ -379,6 +392,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 result: OpResult::Skipped("path does not exist".to_string()),
                 had_updates: false,
                 status: None,
+                fetch_result: None,
+                pull_result: None,
             };
         }
 
@@ -395,6 +410,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         result: OpResult::Skipped("working tree is dirty".to_string()),
                         had_updates: false,
                         status,
+                        fetch_result: None,
+                        pull_result: None,
                     };
                 }
             }
@@ -408,6 +425,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 result: OpResult::Skipped("dry run".to_string()),
                 had_updates: false,
                 status,
+                fetch_result: None,
+                pull_result: None,
             };
         }
 
@@ -421,6 +440,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                     result: OpResult::Failed(e.to_string()),
                     had_updates: false,
                     status,
+                    fetch_result: None,
+                    pull_result: None,
                 };
             }
         };
@@ -436,13 +457,17 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                     result: OpResult::Success,
                     had_updates,
                     status,
+                    fetch_result: Some(fetch_result),
+                    pull_result: Some(r),
                 },
                 Ok(r) => SyncResult {
                     repo: local_repo.repo.clone(),
                     path: path.clone(),
-                    result: OpResult::Failed(r.error.unwrap_or_else(|| "Pull failed".to_string())),
+                    result: OpResult::Failed(r.error.clone().unwrap_or_else(|| "Pull failed".to_string())),
                     had_updates,
                     status,
+                    fetch_result: Some(fetch_result),
+                    pull_result: Some(r),
                 },
                 Err(e) => SyncResult {
                     repo: local_repo.repo.clone(),
@@ -450,6 +475,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                     result: OpResult::Failed(e.to_string()),
                     had_updates,
                     status,
+                    fetch_result: Some(fetch_result),
+                    pull_result: None,
                 },
             }
         } else {
@@ -459,6 +486,8 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 result: OpResult::Success,
                 had_updates,
                 status,
+                fetch_result: Some(fetch_result),
+                pull_result: None,
             }
         }
     }
@@ -687,7 +716,8 @@ mod tests {
         ];
 
         let progress = Arc::new(CountingSyncProgress::new());
-        let (summary, results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
+        let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
+        let (summary, results) = manager.sync_repos(repos, progress_dyn).await;
 
         assert_eq!(summary.success, 3);
         assert_eq!(results.len(), 3);
@@ -705,8 +735,8 @@ mod tests {
 
         let repos = vec![local_repo("repo", "org", temp.path())];
 
-        let progress = Arc::new(NoSyncProgress);
-        let (summary, _results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
+        let progress: Arc<dyn SyncProgress> = Arc::new(NoSyncProgress);
+        let (summary, _results) = manager.sync_repos(repos, progress).await;
 
         assert_eq!(summary.skipped, 1);
     }
@@ -727,7 +757,8 @@ mod tests {
         let repos = vec![local_repo("repo", "org", temp.path())];
 
         let progress = Arc::new(CountingSyncProgress::new());
-        let (summary, results) = manager.sync_repos(repos, Arc::clone(&progress)).await;
+        let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
+        let (summary, results) = manager.sync_repos(repos, progress_dyn).await;
 
         assert_eq!(summary.success, 1);
         assert!(results[0].had_updates);

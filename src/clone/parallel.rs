@@ -9,6 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+/// Maximum allowed concurrency to prevent resource exhaustion.
+/// Higher values can cause "too many open files" errors and network saturation.
+pub const MAX_CONCURRENCY: usize = 16;
+
+/// Minimum concurrency (at least one clone at a time).
+pub const MIN_CONCURRENCY: usize = 1;
+
 /// Progress callback for clone operations.
 pub trait CloneProgress: Send + Sync {
     /// Called when a clone starts.
@@ -80,10 +87,24 @@ impl CloneManagerOptions {
         Self::default()
     }
 
-    /// Sets the concurrency level.
+    /// Sets the concurrency level, clamped to [MIN_CONCURRENCY, MAX_CONCURRENCY].
+    ///
+    /// Returns the options with the effective concurrency set.
+    /// Use [`effective_concurrency`] to check if the value was capped.
     pub fn with_concurrency(mut self, concurrency: usize) -> Self {
-        self.concurrency = concurrency.max(1);
+        self.concurrency = concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         self
+    }
+
+    /// Checks if a requested concurrency exceeds the maximum.
+    ///
+    /// Returns `Some(MAX_CONCURRENCY)` if capping occurred, `None` otherwise.
+    pub fn check_concurrency_cap(requested: usize) -> Option<usize> {
+        if requested > MAX_CONCURRENCY {
+            Some(MAX_CONCURRENCY)
+        } else {
+            None
+        }
     }
 
     /// Sets the clone options.
@@ -327,7 +348,33 @@ mod tests {
     #[test]
     fn test_concurrency_minimum() {
         let options = CloneManagerOptions::new().with_concurrency(0);
-        assert_eq!(options.concurrency, 1); // Minimum is 1
+        assert_eq!(options.concurrency, MIN_CONCURRENCY); // Minimum is 1
+    }
+
+    #[test]
+    fn test_concurrency_maximum() {
+        let options = CloneManagerOptions::new().with_concurrency(100);
+        assert_eq!(options.concurrency, MAX_CONCURRENCY); // Capped at max
+    }
+
+    #[test]
+    fn test_concurrency_within_bounds() {
+        let options = CloneManagerOptions::new().with_concurrency(8);
+        assert_eq!(options.concurrency, 8); // Within bounds, unchanged
+    }
+
+    #[test]
+    fn test_check_concurrency_cap() {
+        assert_eq!(CloneManagerOptions::check_concurrency_cap(8), None);
+        assert_eq!(CloneManagerOptions::check_concurrency_cap(16), None);
+        assert_eq!(
+            CloneManagerOptions::check_concurrency_cap(17),
+            Some(MAX_CONCURRENCY)
+        );
+        assert_eq!(
+            CloneManagerOptions::check_concurrency_cap(100),
+            Some(MAX_CONCURRENCY)
+        );
     }
 
     #[test]
@@ -498,8 +545,9 @@ mod tests {
         ];
 
         let progress = Arc::new(CountingProgress::new());
+        let progress_dyn: Arc<dyn CloneProgress> = progress.clone();
         let (summary, results) = manager
-            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
+            .clone_repos(temp.path(), repos, "github", progress_dyn)
             .await;
 
         assert_eq!(summary.success, 3);
@@ -521,9 +569,9 @@ mod tests {
 
         let repos = vec![test_repo("repo1", "org"), test_repo("repo2", "org")];
 
-        let progress = Arc::new(NoProgress);
+        let progress: Arc<dyn CloneProgress> = Arc::new(NoProgress);
         let (summary, _results) = manager
-            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
+            .clone_repos(temp.path(), repos, "github", progress)
             .await;
 
         assert_eq!(summary.success, 0);
@@ -543,8 +591,9 @@ mod tests {
         let repos = vec![test_repo("repo1", "org")];
 
         let progress = Arc::new(CountingProgress::new());
+        let progress_dyn: Arc<dyn CloneProgress> = progress.clone();
         let (summary, _results) = manager
-            .clone_repos(temp.path(), repos, "github", Arc::clone(&progress))
+            .clone_repos(temp.path(), repos, "github", progress_dyn)
             .await;
 
         assert_eq!(summary.failed, 1);
