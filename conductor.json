@@ -1,0 +1,24 @@
+{
+  "name": "Git-Same",
+  "description": "Mirror GitHub org/repo structure locally - supports multiple providers",
+  "scripts": {
+    "setup": "./toolkit/Conductor/setup.sh",
+    "run": "./toolkit/Conductor/run.sh"
+  },
+  "stack": {
+    "language": "Rust",
+    "cli": "Clap v4",
+    "async": "Tokio",
+    "http": "Reqwest"
+  },
+  "commands": {
+    "build": "cargo build --release",
+    "test": "cargo test",
+    "run": "./target/release/gisa",
+    "init": "./target/release/gisa init",
+    "clone": "./target/release/gisa clone",
+    "status": "./target/release/gisa status",
+    "fetch": "./target/release/gisa fetch",
+    "pull": "./target/release/gisa pull"
+  }
+}
