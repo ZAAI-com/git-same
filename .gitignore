@@ -34,3 +34,6 @@ config.toml
 
 # Conductor
 .context/
+
+# Claude Code
+.claude/settings.local.json

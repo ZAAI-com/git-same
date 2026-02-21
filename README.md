@@ -319,19 +319,70 @@ git-same clone ~/github --https
 ```bash
 git clone https://github.com/zaai-com/git-same
 cd git-same
+
+# Development build
+cargo build
+
+# Release build (optimized, stripped, with LTO)
 cargo build --release
 ```
+
+Binaries are output to `target/release/` (or `target/debug/`): `git-same`, `gitsame`, `gitsa`, `gisa`.
 
 ### Running tests
 
 ```bash
+# Run all tests
 cargo test
+
+# Run with all features enabled
+cargo test --all-features
+
+# Run tests that require GitHub authentication
+cargo test -- --ignored
+
+# Run with verbose output
+cargo test -- --nocapture
 ```
 
-### Linting
+### Linting and formatting
 
 ```bash
-cargo clippy -- -D warnings
+# Lint
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Check formatting
+cargo fmt --all -- --check
+```
+
+### Installing locally
+
+```bash
+# Install from source to ~/.cargo/bin/
+cargo install --path .
+```
+
+This installs all 4 binary aliases (`git-same`, `gitsame`, `gitsa`, `gisa`). Make sure `~/.cargo/bin` is in your `$PATH`.
+
+### Rebuilding
+
+```bash
+# Incremental rebuild
+cargo build --release
+
+# Clean rebuild
+cargo clean && cargo build --release
+```
+
+### Uninstalling
+
+```bash
+# Remove binaries
+cargo uninstall git-same
+
+# Remove config and cache
+rm -rf ~/.config/git-same/
+rm -rf ~/.cache/git-same/
 ```
 
 ## License
