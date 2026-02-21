@@ -201,3 +201,16 @@ pub async fn run(args: &CloneArgs, config: &Config, output: &Output) -> Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // Clone command orchestrates auth -> provider -> discovery -> clone.
+    // Unit tests are not feasible because `run()` calls `get_auth(None)?`
+    // which requires real credentials (GitHub CLI, env vars, or config token).
+    //
+    // Component-level tests exist in:
+    // - src/core/operations/clone.rs (CloneManager)
+    // - src/discovery/mod.rs (DiscoveryOrchestrator)
+    //
+    // Integration coverage: tests/integration_test.rs
+}

@@ -37,3 +37,51 @@ pub(crate) fn expand_path(path: &Path) -> PathBuf {
     let expanded = shellexpand::tilde(&path_str);
     PathBuf::from(expanded.as_ref())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapters::output::{Output, Verbosity};
+
+    fn quiet_output() -> Output {
+        Output::new(Verbosity::Quiet, false)
+    }
+
+    #[test]
+    fn test_concurrency_within_limit() {
+        let output = quiet_output();
+        assert_eq!(warn_if_concurrency_capped(4, &output), 4);
+    }
+
+    #[test]
+    fn test_concurrency_at_limit() {
+        let output = quiet_output();
+        assert_eq!(
+            warn_if_concurrency_capped(MAX_CONCURRENCY, &output),
+            MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn test_concurrency_above_limit() {
+        let output = quiet_output();
+        assert_eq!(
+            warn_if_concurrency_capped(MAX_CONCURRENCY + 10, &output),
+            MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn test_expand_path_absolute() {
+        let path = Path::new("/tmp/some/path");
+        assert_eq!(expand_path(path), PathBuf::from("/tmp/some/path"));
+    }
+
+    #[test]
+    fn test_expand_path_tilde() {
+        let path = Path::new("~/foo");
+        let expanded = expand_path(path);
+        assert!(!expanded.to_string_lossy().contains('~'));
+        assert!(expanded.to_string_lossy().ends_with("/foo"));
+    }
+}

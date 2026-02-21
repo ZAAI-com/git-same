@@ -28,3 +28,10 @@ pub async fn run_command(cli: &Cli, output: &Output) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // `run_command` depends on Config::load() and dispatches to command handlers.
+    // Each handler is tested at its own level (see src/commands/).
+    // Full dispatch path is covered by integration tests (tests/integration_test.rs).
+}

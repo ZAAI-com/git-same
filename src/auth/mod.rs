@@ -234,11 +234,11 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
 
 /// Extract hostname from an API URL.
 fn extract_host(url: &str) -> Option<String> {
-    // Simple extraction - could use url crate for more robust parsing
-    let url = url
-        .trim_start_matches("https://")
-        .trim_start_matches("http://");
-    let host = url.split('/').next()?;
+    let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let host = without_scheme.split('/').next()?;
+    if host.is_empty() {
+        return None;
+    }
     Some(host.to_string())
 }
 
@@ -272,6 +272,32 @@ mod tests {
         assert_eq!(
             extract_host("http://localhost:8080/api"),
             Some("localhost:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_host_no_scheme() {
+        assert_eq!(
+            extract_host("api.github.com/v3"),
+            Some("api.github.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_host_empty() {
+        assert_eq!(extract_host(""), None);
+    }
+
+    #[test]
+    fn test_extract_host_scheme_only() {
+        assert_eq!(extract_host("https://"), None);
+    }
+
+    #[test]
+    fn test_extract_host_with_port() {
+        assert_eq!(
+            extract_host("https://github.example.com:8443/api/v3"),
+            Some("github.example.com:8443".to_string())
         );
     }
 

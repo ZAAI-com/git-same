@@ -119,3 +119,49 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adapters::output::Verbosity;
+    use crate::cli::StatusArgs;
+    use tempfile::TempDir;
+
+    fn quiet_output() -> Output {
+        Output::new(Verbosity::Quiet, false)
+    }
+
+    #[tokio::test]
+    async fn test_status_nonexistent_path() {
+        let args = StatusArgs {
+            base_path: "/nonexistent/path/that/does/not/exist".into(),
+            dirty: false,
+            behind: false,
+            detailed: false,
+            org: vec![],
+        };
+        let config = Config::default();
+        let output = quiet_output();
+
+        let result = run(&args, &config, &output).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_status_empty_dir() {
+        let temp = TempDir::new().unwrap();
+        let args = StatusArgs {
+            base_path: temp.path().to_path_buf(),
+            dirty: false,
+            behind: false,
+            detailed: false,
+            org: vec![],
+        };
+        let config = Config::default();
+        let output = quiet_output();
+
+        // Empty dir has no repos — should succeed but warn
+        let result = run(&args, &config, &output).await;
+        assert!(result.is_ok());
+    }
+}

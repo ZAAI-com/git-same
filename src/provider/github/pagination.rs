@@ -10,6 +10,15 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::errors::ProviderError;
 
+/// Maximum pages to fetch (100 items/page = 10,000 items max).
+const MAX_PAGES: usize = 100;
+
+/// Maximum retry attempts for transient failures. Uses exponential backoff.
+const MAX_RETRIES: u32 = 3;
+
+/// Initial backoff in ms. Doubles each retry: 1s -> 2s -> 4s.
+const INITIAL_BACKOFF_MS: u64 = 1000;
+
 /// Parses the GitHub Link header to find the next page URL.
 ///
 /// GitHub Link headers look like:
@@ -31,7 +40,31 @@ pub fn parse_link_header(link: &str) -> Option<String> {
     None
 }
 
-/// Calculate wait time until rate limit reset
+/// Format a Unix timestamp as a human-readable reset time string.
+fn format_reset_time(reset_timestamp: &str) -> String {
+    if let Ok(secs) = reset_timestamp.parse::<i64>() {
+        if let Some(dt) = chrono::DateTime::from_timestamp(secs, 0) {
+            let wait = dt.signed_duration_since(chrono::Utc::now());
+            let mins = wait.num_minutes();
+            let secs_rem = wait.num_seconds() % 60;
+            return if mins > 0 {
+                format!(
+                    "{} (resets in {}m {}s)",
+                    dt.format("%H:%M:%S UTC"),
+                    mins,
+                    secs_rem
+                )
+            } else if secs_rem > 0 {
+                format!("{} (resets in {}s)", dt.format("%H:%M:%S UTC"), secs_rem)
+            } else {
+                format!("{} (resets now)", dt.format("%H:%M:%S UTC"))
+            };
+        }
+    }
+    reset_timestamp.to_string()
+}
+
+/// Calculate wait time until rate limit reset.
 fn calculate_wait_time(reset_timestamp: &str) -> Option<Duration> {
     if let Ok(reset_secs) = reset_timestamp.parse::<u64>() {
         let now = SystemTime::now()
@@ -67,12 +100,10 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
     ));
 
     let mut page_count = 0;
-    const MAX_PAGES: usize = 100; // Safety limit
-    const MAX_RETRIES: u32 = 3;
 
     while let Some(current_url) = url {
         let mut retry_count = 0;
-        let mut backoff_ms = 1000; // Start with 1 second
+        let mut backoff_ms = INITIAL_BACKOFF_MS;
 
         let (next_url_opt, items) = loop {
             let response = client
@@ -106,7 +137,7 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
                         }
 
                         return Err(ProviderError::RateLimited {
-                            reset_time: reset.to_string(),
+                            reset_time: format_reset_time(reset),
                         });
                     }
                 }
@@ -207,5 +238,23 @@ mod tests {
                 "https://api.github.com/organizations/12345/repos?page=2&per_page=100".to_string()
             )
         );
+    }
+
+    #[test]
+    fn test_format_reset_time_future() {
+        let future = (chrono::Utc::now() + chrono::Duration::minutes(5)).timestamp();
+        let result = format_reset_time(&future.to_string());
+        assert!(result.contains("UTC"));
+        assert!(result.contains("resets in"));
+    }
+
+    #[test]
+    fn test_format_reset_time_invalid() {
+        assert_eq!(format_reset_time("unknown"), "unknown");
+    }
+
+    #[test]
+    fn test_format_reset_time_empty() {
+        assert_eq!(format_reset_time(""), "");
     }
 }

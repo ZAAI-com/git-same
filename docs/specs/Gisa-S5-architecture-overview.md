@@ -208,43 +208,75 @@ Tests are inline within each module using `#[cfg(test)] mod tests` blocks. Integ
 
 ```
 src/
-├── main.rs                  # Entry point, command routing
+├── main.rs                  # Entry point, logging/bootstrap only
 ├── cli.rs                   # Clap CLI definition
-├── lib.rs                   # Library root, prelude
-├── auth/                    # Multi-strategy authentication
+├── lib.rs                   # Library root, module exports/prelude
+├── app/                     # Runtime command dispatch
+│   ├── mod.rs
+│   └── run.rs
+├── commands/                # Subcommand handlers (init/clone/sync/status)
+│   ├── mod.rs
+│   ├── init.rs
+│   ├── clone.rs
+│   ├── sync.rs
+│   └── status.rs
+├── core/                    # Core operation logic
+│   ├── mod.rs
+│   └── operations/
+│       ├── mod.rs
+│       ├── clone.rs         # Clone manager + progress traits
+│       └── sync.rs          # Sync manager + progress traits
+├── adapters/                # External integration namespaces (re-export layer)
+│   ├── mod.rs
+│   ├── auth.rs
+│   ├── cache.rs
+│   ├── config.rs
+│   ├── git.rs
+│   ├── output.rs
+│   └── provider.rs
+├── auth/                    # Multi-strategy authentication impl
 │   ├── mod.rs
 │   ├── gh_cli.rs
 │   ├── env_token.rs
 │   └── ssh.rs
-├── cache/                   # TTL-based discovery cache
+├── cache/                   # TTL-based discovery cache impl
 │   └── mod.rs
-├── clone/                   # Parallel clone operations
-│   └── parallel.rs
+├── clone/                   # Public clone API exports
+│   └── mod.rs
 ├── completions/             # Shell completion generation
 │   └── mod.rs
 ├── config/                  # TOML config parsing
+│   ├── mod.rs
 │   ├── parser.rs
 │   └── provider_config.rs
-├── discovery/               # Repo discovery & action planning
-│   └── mod.rs
+├── discovery/               # Discovery orchestration + planning split
+│   ├── mod.rs
+│   ├── orchestrator.rs
+│   └── planning.rs
 ├── errors/                  # Error hierarchy (app, git, provider)
+│   ├── mod.rs
 │   ├── app.rs
 │   ├── git.rs
 │   └── provider.rs
 ├── git/                     # Git operations trait & shell impl
+│   ├── mod.rs
 │   ├── traits.rs
 │   └── shell.rs
 ├── output/                  # Progress bars & verbosity
+│   ├── mod.rs
 │   └── progress.rs
 ├── provider/                # Provider trait & implementations
+│   ├── mod.rs
 │   ├── traits.rs
 │   ├── github/
+│   │   ├── mod.rs
 │   │   ├── client.rs
 │   │   └── pagination.rs
 │   └── mock.rs
-├── sync/                    # Concurrent fetch/pull
-│   └── manager.rs
+├── sync/                    # Public sync API exports
+│   └── mod.rs
 └── types/                   # Core data types
+    ├── mod.rs
     ├── repo.rs
     └── provider.rs
 ```

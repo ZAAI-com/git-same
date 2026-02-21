@@ -34,3 +34,80 @@ pub async fn run(args: &InitArgs, output: &Output) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::InitArgs;
+    use tempfile::TempDir;
+
+    fn quiet_output() -> Output {
+        Output::new(crate::adapters::output::Verbosity::Quiet, false)
+    }
+
+    #[tokio::test]
+    async fn test_init_creates_config() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+        let args = InitArgs {
+            force: false,
+            path: Some(config_path.clone()),
+        };
+        let output = quiet_output();
+
+        let result = run(&args, &output).await;
+        assert!(result.is_ok());
+        assert!(config_path.exists());
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        assert!(!content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_init_fails_if_exists_without_force() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(&config_path, "existing").unwrap();
+
+        let args = InitArgs {
+            force: false,
+            path: Some(config_path),
+        };
+        let output = quiet_output();
+
+        let result = run(&args, &output).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_init_overwrites_with_force() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("config.toml");
+        std::fs::write(&config_path, "old content").unwrap();
+
+        let args = InitArgs {
+            force: true,
+            path: Some(config_path.clone()),
+        };
+        let output = quiet_output();
+
+        let result = run(&args, &output).await;
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        assert_ne!(content, "old content");
+    }
+
+    #[tokio::test]
+    async fn test_init_creates_parent_dirs() {
+        let temp = TempDir::new().unwrap();
+        let config_path = temp.path().join("nested/deep/config.toml");
+        let args = InitArgs {
+            force: false,
+            path: Some(config_path.clone()),
+        };
+        let output = quiet_output();
+
+        let result = run(&args, &output).await;
+        assert!(result.is_ok());
+        assert!(config_path.exists());
+    }
+}

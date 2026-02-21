@@ -146,3 +146,16 @@ pub async fn run(args: &SyncArgs, config: &Config, output: &Output, mode: SyncMo
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    // Sync command orchestrates auth -> provider -> discovery -> sync.
+    // Unit tests are not feasible because `run()` calls `get_auth(None)?`
+    // which requires real credentials (GitHub CLI, env vars, or config token).
+    //
+    // Component-level tests exist in:
+    // - src/core/operations/sync.rs (SyncManager)
+    // - src/discovery/mod.rs (DiscoveryOrchestrator)
+    //
+    // Integration coverage: tests/integration_test.rs
+}
