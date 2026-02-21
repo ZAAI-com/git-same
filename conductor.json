@@ -3,7 +3,8 @@
   "description": "Mirror GitHub org/repo structure locally - supports multiple providers",
   "scripts": {
     "setup": "./toolkit/Conductor/setup.sh",
-    "run": "./toolkit/Conductor/run.sh"
+    "run": "./toolkit/Conductor/run.sh",
+    "archive": "./toolkit/Conductor/archive.sh"
   },
   "stack": {
     "language": "Rust",

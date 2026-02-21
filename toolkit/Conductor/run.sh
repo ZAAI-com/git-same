@@ -8,15 +8,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR"
 
-GISA="./target/release/gisa"
+CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
+GISA="$CARGO_BIN_DIR/gisa"
 CONFIG_FILE="$HOME/.config/git-same/config.toml"
 TEST_DIR="${1:-/tmp/gisa-prototype-test}"
 
-# Check if binary exists, build if not
-if [ ! -f "$GISA" ]; then
-    echo "Binary not found. Running setup first..."
-    "$SCRIPT_DIR/setup.sh"
+# Check if binary is installed, install with Option 1 if not
+if [ ! -x "$GISA" ]; then
+    echo "gisa not found at: $GISA"
+    echo "Installing with: cargo install --path ."
+    cargo install --path .
     echo ""
+fi
+
+if [ ! -x "$GISA" ]; then
+    echo "ERROR: gisa installation failed."
+    exit 1
 fi
 
 echo "========================================"
