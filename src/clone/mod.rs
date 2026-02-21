@@ -30,9 +30,7 @@
 //! # }
 //! ```
 
-pub mod parallel;
-
-pub use parallel::{
+pub use crate::core::operations::clone::{
     CloneManager, CloneManagerOptions, CloneProgress, CloneResult, NoProgress, MAX_CONCURRENCY,
     MIN_CONCURRENCY,
 };

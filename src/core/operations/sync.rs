@@ -2,12 +2,13 @@
 //!
 //! This module handles syncing existing local repositories with their remotes.
 
-use crate::clone::{MAX_CONCURRENCY, MIN_CONCURRENCY};
 use crate::git::{FetchResult, GitOperations, PullResult, RepoStatus};
 use crate::types::{OpResult, OpSummary, OwnedRepo};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+
+use super::clone::{MAX_CONCURRENCY, MIN_CONCURRENCY};
 
 /// Progress callback for sync operations.
 pub trait SyncProgress: Send + Sync {

@@ -1,9 +1,9 @@
 //! Init command handler.
 
+use crate::adapters::config::Config;
+use crate::adapters::output::Output;
 use crate::cli::InitArgs;
-use crate::config::Config;
 use crate::errors::{AppError, Result};
-use crate::output::Output;
 
 /// Initialize gisa configuration.
 pub async fn run(args: &InitArgs, output: &Output) -> Result<()> {

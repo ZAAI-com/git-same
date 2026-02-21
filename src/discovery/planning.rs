@@ -1,8 +1,8 @@
 //! Local planning and filesystem scanning behavior.
 
 use super::DiscoveryOrchestrator;
+use crate::core::operations::sync::LocalRepo;
 use crate::git::GitOperations;
-use crate::sync::LocalRepo;
 use crate::types::{ActionPlan, OwnedRepo};
 use std::path::{Path, PathBuf};
 

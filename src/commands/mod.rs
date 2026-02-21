@@ -13,8 +13,8 @@ pub use init::run as run_init;
 pub use status::run as run_status;
 pub use sync::run as run_sync;
 
-use crate::clone::MAX_CONCURRENCY;
-use crate::output::Output;
+use crate::adapters::output::Output;
+use crate::core::operations::clone::MAX_CONCURRENCY;
 use std::path::{Path, PathBuf};
 
 /// Warn if requested concurrency exceeds the maximum.

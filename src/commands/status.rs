@@ -1,12 +1,12 @@
 //! Status command handler.
 
 use super::expand_path;
+use crate::adapters::config::Config;
+use crate::adapters::git::{GitOperations, ShellGit};
+use crate::adapters::output::{format_count, Output};
 use crate::cli::StatusArgs;
-use crate::config::Config;
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
-use crate::git::{GitOperations, ShellGit};
-use crate::output::{format_count, Output};
 
 /// Show status of repositories.
 pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<()> {

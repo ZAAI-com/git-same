@@ -1,11 +1,11 @@
 //! Command dispatch for the CLI runtime.
 
+use crate::adapters::config::Config;
+use crate::adapters::output::Output;
 use crate::cli::{Cli, Command};
 use crate::commands::{run_clone, run_init, run_status, run_sync};
-use crate::config::Config;
+use crate::core::operations::sync::SyncMode;
 use crate::errors::Result;
-use crate::output::Output;
-use crate::sync::SyncMode;
 
 /// Run the specified command.
 pub async fn run_command(cli: &Cli, output: &Output) -> Result<()> {

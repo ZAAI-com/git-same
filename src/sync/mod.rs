@@ -32,8 +32,6 @@
 //! # }
 //! ```
 
-pub mod manager;
-
-pub use manager::{
+pub use crate::core::operations::sync::{
     LocalRepo, NoSyncProgress, SyncManager, SyncManagerOptions, SyncMode, SyncProgress, SyncResult,
 };

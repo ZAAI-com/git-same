@@ -1,16 +1,18 @@
 //! Clone command handler.
 
 use super::{expand_path, warn_if_concurrency_capped};
-use crate::auth::get_auth;
-use crate::cache::CacheManager;
+use crate::adapters::auth::get_auth;
+use crate::adapters::cache::{CacheManager, DiscoveryCache};
+use crate::adapters::config::Config;
+use crate::adapters::git::{CloneOptions, ShellGit};
+use crate::adapters::output::{
+    format_count, CloneProgressBar, DiscoveryProgressBar, Output, Verbosity,
+};
+use crate::adapters::provider::create_provider;
 use crate::cli::CloneArgs;
-use crate::clone::{CloneManager, CloneManagerOptions};
-use crate::config::Config;
+use crate::core::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
-use crate::git::ShellGit;
-use crate::output::{format_count, CloneProgressBar, DiscoveryProgressBar, Output, Verbosity};
-use crate::provider::create_provider;
 use std::sync::Arc;
 
 /// Clone repositories.
@@ -93,7 +95,7 @@ pub async fn run(args: &CloneArgs, config: &Config, output: &Output) -> Result<(
                     .clone()
                     .unwrap_or_else(|| provider_entry.kind.to_string());
                 repos_by_provider.insert(provider_name, repos.clone());
-                let cache = crate::cache::DiscoveryCache::new(
+                let cache = DiscoveryCache::new(
                     auth.username.clone().unwrap_or_default(),
                     repos_by_provider,
                 );
@@ -155,7 +157,7 @@ pub async fn run(args: &CloneArgs, config: &Config, output: &Output) -> Result<(
     }
 
     // Create clone manager
-    let clone_options = crate::git::CloneOptions {
+    let clone_options = CloneOptions {
         depth: args.depth.unwrap_or(config.clone.depth),
         // CLI args override config
         branch: args.branch.clone().or_else(|| {
@@ -181,7 +183,7 @@ pub async fn run(args: &CloneArgs, config: &Config, output: &Output) -> Result<(
 
     // Execute clone
     let progress = Arc::new(CloneProgressBar::new(plan.to_clone.len(), verbosity));
-    let progress_dyn: Arc<dyn crate::clone::CloneProgress> = progress.clone();
+    let progress_dyn: Arc<dyn CloneProgress> = progress.clone();
     let (summary, _results) = manager
         .clone_repos(&base_path, plan.to_clone, "github", progress_dyn)
         .await;

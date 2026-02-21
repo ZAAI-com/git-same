@@ -2,10 +2,10 @@
 //!
 //! This module provides progress bars and status reporting for long-running operations.
 
-use crate::clone::CloneProgress;
-use crate::git::FetchResult;
-use crate::provider::DiscoveryProgress;
-use crate::sync::SyncProgress;
+use crate::adapters::git::FetchResult;
+use crate::adapters::provider::DiscoveryProgress;
+use crate::core::operations::clone::CloneProgress;
+use crate::core::operations::sync::SyncProgress;
 use crate::types::OwnedRepo;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};

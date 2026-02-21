@@ -46,6 +46,7 @@
 //! git same clone ~/github
 //! ```
 
+pub mod adapters;
 pub mod app;
 pub mod auth;
 pub mod cache;
@@ -54,6 +55,7 @@ pub mod clone;
 pub mod commands;
 pub mod completions;
 pub mod config;
+pub mod core;
 pub mod discovery;
 pub mod errors;
 pub mod git;

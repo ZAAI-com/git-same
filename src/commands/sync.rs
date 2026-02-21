@@ -1,15 +1,17 @@
 //! Fetch/Pull command handler.
 
 use super::{expand_path, warn_if_concurrency_capped};
-use crate::auth::get_auth;
+use crate::adapters::auth::get_auth;
+use crate::adapters::config::Config;
+use crate::adapters::git::ShellGit;
+use crate::adapters::output::{
+    format_count, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
+};
+use crate::adapters::provider::create_provider;
 use crate::cli::SyncArgs;
-use crate::config::Config;
+use crate::core::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
-use crate::git::ShellGit;
-use crate::output::{format_count, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity};
-use crate::provider::create_provider;
-use crate::sync::{SyncManager, SyncManagerOptions, SyncMode};
 use std::sync::Arc;
 
 /// Sync (fetch or pull) repositories.
@@ -120,7 +122,7 @@ pub async fn run(args: &SyncArgs, config: &Config, output: &Output, mode: SyncMo
 
     // Execute sync
     let progress = Arc::new(SyncProgressBar::new(to_sync.len(), verbosity, operation));
-    let progress_dyn: Arc<dyn crate::sync::SyncProgress> = progress.clone();
+    let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
     let (summary, results) = manager.sync_repos(to_sync, progress_dyn).await;
     progress.finish(summary.success, summary.failed, summary.skipped);
 
