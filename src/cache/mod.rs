@@ -144,8 +144,7 @@ impl CacheManager {
             dir.config_dir().to_path_buf()
         } else {
             // Fallback to ~/.config/git-same
-            let home = std::env::var("HOME")
-                .context("HOME environment variable not set")?;
+            let home = std::env::var("HOME").context("HOME environment variable not set")?;
             PathBuf::from(home).join(".config").join("git-same")
         };
 
@@ -159,11 +158,10 @@ impl CacheManager {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(&self.cache_path)
-            .context("Failed to read cache file")?;
+        let content = fs::read_to_string(&self.cache_path).context("Failed to read cache file")?;
 
-        let cache: DiscoveryCache = serde_json::from_str(&content)
-            .context("Failed to parse cache file")?;
+        let cache: DiscoveryCache =
+            serde_json::from_str(&content).context("Failed to parse cache file")?;
 
         // Check version compatibility
         if !cache.is_compatible() {
@@ -192,15 +190,12 @@ impl CacheManager {
     pub fn save(&self, cache: &DiscoveryCache) -> Result<()> {
         // Ensure parent directory exists
         if let Some(parent) = self.cache_path.parent() {
-            fs::create_dir_all(parent)
-                .context("Failed to create cache directory")?;
+            fs::create_dir_all(parent).context("Failed to create cache directory")?;
         }
 
-        let json = serde_json::to_string_pretty(cache)
-            .context("Failed to serialize cache")?;
+        let json = serde_json::to_string_pretty(cache).context("Failed to serialize cache")?;
 
-        fs::write(&self.cache_path, &json)
-            .context("Failed to write cache file")?;
+        fs::write(&self.cache_path, &json).context("Failed to write cache file")?;
 
         debug!(
             path = %self.cache_path.display(),
@@ -216,8 +211,7 @@ impl CacheManager {
     /// Clear the cache file
     pub fn clear(&self) -> Result<()> {
         if self.cache_path.exists() {
-            fs::remove_file(&self.cache_path)
-                .context("Failed to remove cache file")?;
+            fs::remove_file(&self.cache_path).context("Failed to remove cache file")?;
         }
         Ok(())
     }
@@ -359,8 +353,7 @@ mod tests {
         let cache_path = temp_dir.path().join("cache.json");
 
         // Use a generous TTL to ensure cache is valid when first loaded
-        let manager = CacheManager::with_path(cache_path.clone())
-            .with_ttl(Duration::from_secs(1));
+        let manager = CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_secs(1));
 
         let repos = HashMap::new();
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
@@ -369,18 +362,24 @@ mod tests {
 
         // Cache should be valid well within TTL
         let loaded = manager.load().unwrap();
-        assert!(loaded.is_some(), "Cache should be valid immediately after save");
+        assert!(
+            loaded.is_some(),
+            "Cache should be valid immediately after save"
+        );
 
         // Now test with a very short TTL to ensure expiration works
-        let short_ttl_manager = CacheManager::with_path(cache_path.clone())
-            .with_ttl(Duration::from_millis(50));
+        let short_ttl_manager =
+            CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_millis(50));
 
         // Wait long enough to definitely expire
         sleep(Duration::from_millis(100));
 
         // Cache should be expired with short TTL
         let loaded = short_ttl_manager.load().unwrap();
-        assert!(loaded.is_none(), "Cache should be expired after waiting longer than TTL");
+        assert!(
+            loaded.is_none(),
+            "Cache should be expired after waiting longer than TTL"
+        );
     }
 
     #[test]

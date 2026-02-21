@@ -8,7 +8,7 @@ Mirror GitHub org/repo structure locally - supports multiple providers
 
 ## Features
 
-- **Multi-Provider Support**: Works with GitHub, GitHub Enterprise, GitLab, and Bitbucket
+- **Multi-Provider Support**: Works with GitHub and GitHub Enterprise (GitLab and Bitbucket planned)
 - **Parallel Operations**: Clones and syncs repositories concurrently
 - **Smart Filtering**: Filter by archived status, forks, organizations
 - **Incremental Sync**: Only fetches/pulls what has changed
@@ -187,7 +187,7 @@ base_path = "~/work/code"
 Initialize git-same configuration:
 
 ```bash
-git-same init [--path <config-path>] [--force]
+git-same init [-p <config-path>] [-f | --force]
 ```
 
 ### `clone`
@@ -198,17 +198,21 @@ Clone all discovered repositories:
 git-same clone <base-path> [OPTIONS]
 
 Options:
-  --org <ORG>...              Filter by organization
-  --include-archived          Include archived repositories
-  --include-forks             Include forked repositories
-  --dry-run                   Show what would be cloned
-  --concurrency <N>           Number of parallel clones
-  --depth <N>                 Clone depth (0 = full)
-  --branch <BRANCH>           Clone specific branch
-  --recurse-submodules        Clone submodules recursively
-  --https                     Use HTTPS instead of SSH
-  --no-cache                  Skip cache, always discover
-  --refresh                   Force refresh from API
+  -n, --dry-run               Show what would be cloned
+  -c, --concurrency <N>       Number of parallel clones (1-32, default: 4)
+  -d, --depth <N>             Clone depth (0 = full)
+  -b, --branch <BRANCH>       Clone specific branch
+  -o, --org <ORG>...          Filter by organization (repeatable)
+      --exclude-org <ORG>...  Exclude organization (repeatable)
+      --filter <REGEX>        Filter by repository name pattern
+      --exclude <REGEX>       Exclude by repository name pattern
+  -p, --provider <NAME>       Use specific provider
+      --include-archived      Include archived repositories
+      --include-forks         Include forked repositories
+      --recurse-submodules    Clone submodules recursively
+      --https                 Use HTTPS instead of SSH
+      --refresh               Force refresh from API
+      --no-cache              Skip cache, always discover
 ```
 
 ### `fetch`
@@ -219,10 +223,12 @@ Fetch updates for all repositories:
 git-same fetch <base-path> [OPTIONS]
 
 Options:
-  --org <ORG>...              Filter by organization
-  --skip-dirty                Skip repositories with uncommitted changes
-  --dry-run                   Show what would be fetched
-  --concurrency <N>           Number of parallel fetches
+  -n, --dry-run               Show what would be fetched
+  -c, --concurrency <N>       Number of parallel fetches (1-32)
+  -o, --org <ORG>...          Filter by organization (repeatable)
+      --exclude-org <ORG>...  Exclude organization (repeatable)
+      --filter <REGEX>        Filter by repository name pattern
+      --no-skip-dirty         Don't skip repos with uncommitted changes
 ```
 
 ### `pull`
@@ -233,10 +239,12 @@ Pull updates for all repositories:
 git-same pull <base-path> [OPTIONS]
 
 Options:
-  --org <ORG>...              Filter by organization
-  --skip-dirty                Skip repositories with uncommitted changes
-  --dry-run                   Show what would be pulled
-  --concurrency <N>           Number of parallel pulls
+  -n, --dry-run               Show what would be pulled
+  -c, --concurrency <N>       Number of parallel pulls (1-32)
+  -o, --org <ORG>...          Filter by organization (repeatable)
+      --exclude-org <ORG>...  Exclude organization (repeatable)
+      --filter <REGEX>        Filter by repository name pattern
+      --no-skip-dirty         Don't skip repos with uncommitted changes
 ```
 
 ### `status`
@@ -247,10 +255,10 @@ Show status of local repositories:
 git-same status <base-path> [OPTIONS]
 
 Options:
-  --org <ORG>...              Filter by organization
-  --dirty                     Show only dirty repositories
-  --behind                    Show only repositories behind upstream
-  --detailed                  Show detailed status information
+  -o, --org <ORG>...          Filter by organization (repeatable)
+  -d, --dirty                 Show only dirty repositories
+  -b, --behind                Show only repositories behind upstream
+      --detailed              Show detailed status information
 ```
 
 ### `completions`
@@ -387,7 +395,7 @@ rm -rf ~/.cache/git-same/
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details
+MIT License - see [LICENSE](../LICENSE) for details
 
 ## Contributing
 

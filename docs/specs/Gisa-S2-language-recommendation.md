@@ -38,7 +38,7 @@ For Gisa, the ideal language should excel at:
 - `git2` (libgit2) can be tricky to compile; shelling out to `git` is often simpler
 
 **Distribution**:
-- `cargo install gisa`
+- `cargo install git-same`
 - Homebrew formula (single binary)
 - Pre-built binaries for all platforms
 
@@ -243,9 +243,9 @@ The tradeoff is more boilerplate and less expressive error handling.
 [dependencies]
 clap = { version = "4", features = ["derive"] }      # CLI parsing
 tokio = { version = "1", features = ["full"] }       # Async runtime
-reqwest = { version = "0.11", features = ["json"] }  # HTTP client
-serde = { version = "1", features = ["derive"] }     # JSON serialization
-serde_yaml = "0.9"                                   # Config file parsing
+reqwest = { version = "0.12", features = ["json"] }  # HTTP client
+serde = { version = "1", features = ["derive"] }     # Serialization
+toml = "0.8"                                         # Config file parsing (TOML)
 indicatif = "0.17"                                   # Progress bars
 console = "0.15"                                     # Terminal colors/styling
 directories = "5"                                    # XDG paths
@@ -253,6 +253,8 @@ thiserror = "1"                                      # Error handling
 ```
 
 ## Example CLI Structure (Rust + Clap)
+
+> **Note:** This is the design-phase sketch. The actual implementation uses `--concurrency` (not `--jobs`) and separate `fetch`/`pull` commands instead of a unified `sync` command. See `docs/README.md` for the current CLI reference.
 
 ```rust
 use clap::{Parser, Subcommand};

@@ -19,8 +19,10 @@ pub fn has_github_ssh_access() -> bool {
     let output = Command::new("ssh")
         .args([
             "-T",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=5",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=5",
             "git@github.com",
         ])
         .output();

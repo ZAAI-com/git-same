@@ -82,9 +82,10 @@ For personal repos only, use: `affiliation=owner&type=owner`
 | Priority | Method | How it Works | Pros | Cons |
 | --- | --- | --- | --- | --- |
 | 1 | GitHub CLI | `gh auth token` | Secure, managed tokens, SSO support | Requires `gh` installed |
-| 2 | SSH Keys | Uses existing `~/.ssh` keys | Already configured for most devs | Only for git operations, not API |
-| 3 | PAT (env) | `GITHUB_TOKEN` or `GISA_TOKEN` | Simple, CI-friendly | User manages token security |
-| 4 | PAT (config) | Stored in `gisa.config.toml` | Persistent | Less secure if committed |
+| 2 | PAT (env) | `GITHUB_TOKEN`, `GH_TOKEN`, or `GISA_TOKEN` | Simple, CI-friendly | User manages token security |
+| 3 | PAT (config) | Stored in `config.toml` | Persistent | Less secure if committed |
+
+**Note:** SSH keys are used for git clone/push operations only, not for API authentication. See "SSH for Clone Operations" below.
 
 ### Recommended: GitHub CLI Integration
 
@@ -126,7 +127,7 @@ export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
 ```toml
-# Or in gisa.config.toml (not recommended for shared configs)
+# Or in config.toml (not recommended for shared configs)
 [auth]
 token = "ghp_xxxxxxxxxxxx"
 ```
@@ -178,7 +179,7 @@ X-RateLimit-Reset: 1609459200  # Unix timestamp
 ## Discovery Algorithm
 
 ```
-1. Authenticate (gh → SSH → PAT)
+1. Authenticate (gh CLI → env vars → config token)
 
 2. Fetch organizations
    orgs = fetchAllPages("/user/orgs")
@@ -217,18 +218,21 @@ X-RateLimit-Reset: 1609459200  # Unix timestamp
 
 For large organizations, consider caching discovery results:
 
-```yaml
-# .gisa-cache.json (auto-generated)
+```json
+// ~/.config/git-same/cache.json (auto-generated)
 {
-  "last_discovery": "2024-01-15T10:30:00Z",
+  "version": 1,
+  "last_discovery": 1705312200,
+  "username": "octocat",
   "orgs": ["org-a", "org-b"],
-  "repo_count": 234
+  "repo_count": 234,
+  "repos": { "github": [...] }
 }
 ```
 
-- Cache invalidation: 1 hour default, or `--refresh` flag
-- Incremental: store `pushed_at` to detect changes
-- Skip cache with `--no-cache`
+- Cache invalidation: 1 hour default (`DEFAULT_CACHE_TTL = 3600`)
+- Force refresh with `--refresh` flag
+- Skip cache entirely with `--no-cache` flag
 
 ## Error Scenarios
 
@@ -248,7 +252,7 @@ For large organizations, consider caching discovery results:
 | --- | --- | --- |
 | `gh` CLI (recommended) | OS keychain (macOS Keychain, Windows Credential Manager, Linux secret-service) | GitHub CLI |
 | Environment variable | Shell session / CI secrets | User / CI system |
-| `gisa.config.toml` | Project directory | User (not recommended) |
+| `config.toml` | Project directory | User (not recommended) |
 
 **Why this approach:**
 - No token management code to maintain in Gisa
@@ -258,19 +262,19 @@ For large organizations, consider caching discovery results:
 
 **Runtime flow:**
 ```
-gisa sync ~/github
+git-same fetch ~/github
     │
     ├─→ Check: `gh auth token` succeeds? → Use returned token
     │
-    ├─→ Check: $GITHUB_TOKEN or $GISA_TOKEN set? → Use env var
+    ├─→ Check: $GITHUB_TOKEN, $GH_TOKEN, or $GISA_TOKEN set? → Use env var
     │
-    └─→ Check: gisa.config.toml has auth.token? → Use config token (warn user)
+    └─→ Check: config.toml has auth.token? → Use config token (warn user)
 ```
 
 ## Security Considerations
 
 1. **Never log tokens** — Mask in debug output
 2. **Prefer ****`gh`**** CLI** — It handles secure storage
-3. **Warn about ****`gisa.config.toml`**** tokens** — Suggest `.gitignore`
+3. **Warn about ****`config.toml`**** tokens** — Suggest `.gitignore`
 4. **Minimal scopes** — Request only `repo` and `read:org`
 5. **Token rotation** — Support for short-lived tokens via `gh`

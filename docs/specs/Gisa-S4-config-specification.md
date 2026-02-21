@@ -2,14 +2,14 @@
 
 ## Config File
 
-**Filename**: `gisa.config.toml`
-**Location**: Project directory (where gisa is run)
+**Filename**: `config.toml`
+**Location**: `~/.config/git-same/config.toml`
 **Format**: TOML
 
 ## Full Configuration Example
 
 ```toml
-# gisa.config.toml
+# ~/.config/git-same/config.toml
 
 # Base directory for all cloned repos
 base_path = "~/github"
@@ -17,6 +17,7 @@ base_path = "~/github"
 # Directory structure pattern
 # {org} = organization name or GitHub username for personal repos
 # {repo} = repository name
+# {provider} = provider name (e.g., github)
 structure = "{org}/{repo}"
 
 # Number of parallel clone/sync operations
@@ -42,14 +43,11 @@ include_archived = false
 # Include forked repositories
 include_forks = false
 
-# Filter by visibility (future V2)
-# visibility = "all"  # "all", "public", "private"
+# Filter by specific orgs (empty = all)
+orgs = []
 
-# Filter by specific orgs (future V2)
-# orgs = ["org-a", "org-b"]
-
-# Exclude specific repos (future V2)
-# exclude_repos = ["org/repo-to-skip"]
+# Exclude specific repos
+exclude_repos = []
 ```
 
 ## Configuration Options
@@ -60,7 +58,7 @@ include_forks = false
 | --- | --- | --- | --- |
 | `base_path` | string | `"~/github"` | Root directory for cloned repos |
 | `structure` | string | `"{org}/{repo}"` | Directory structure pattern |
-| `concurrency` | integer | `4` | Parallel operations (1-16) |
+| `concurrency` | integer | `4` | Parallel operations (1-32) |
 | `sync_mode` | string | `"fetch"` | `"fetch"` or `"pull"` |
 
 ### Clone Options (`[clone]`)
@@ -77,6 +75,22 @@ include_forks = false
 | --- | --- | --- | --- |
 | `include_archived` | boolean | `false` | Clone archived repos |
 | `include_forks` | boolean | `false` | Clone forked repos |
+| `orgs` | string[] | `[]` | Filter to specific organizations |
+| `exclude_repos` | string[] | `[]` | Exclude specific repos by full name |
+
+### Provider Options (`[[providers]]`)
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `kind` | string | required | `"github"`, `"github-enterprise"` |
+| `name` | string | `""` | Display name for this provider |
+| `api_url` | string | `""` | API URL (required for GitHub Enterprise) |
+| `auth` | string | `"gh-cli"` | `"gh-cli"`, `"env"`, `"token"` |
+| `token_env` | string | `""` | Env var name (required when `auth = "env"`) |
+| `token` | string | `""` | Token value (required when `auth = "token"`) |
+| `prefer_ssh` | boolean | `true` | Use SSH URLs for cloning |
+| `base_path` | string | `""` | Override base path for this provider |
+| `enabled` | boolean | `true` | Whether this provider is active |
 
 ## CLI Flag Overrides
 
@@ -84,19 +98,16 @@ All config options can be overridden via CLI flags:
 
 ```bash
 # Override concurrency
-gisa clone ~/github --jobs 8
-
-# Override sync mode
-gisa sync ~/github --mode pull
+git-same clone ~/github --concurrency 8
 
 # Override filters
-gisa clone ~/github --include-archived --include-forks
+git-same clone ~/github --include-archived --include-forks
 
 # Shallow clone
-gisa clone ~/github --depth 1
+git-same clone ~/github --depth 1
 
 # Include submodules
-gisa clone ~/github --recurse-submodules
+git-same clone ~/github --recurse-submodules
 ```
 
 **Precedence**: CLI flags > config file > defaults
@@ -106,7 +117,7 @@ gisa clone ~/github --recurse-submodules
 For most users, a minimal config is sufficient:
 
 ```toml
-# gisa.config.toml
+# ~/.config/git-same/config.toml
 base_path = "~/github"
 ```
 
@@ -116,9 +127,9 @@ All other options use sensible defaults.
 
 ```bash
 # Create default config file
-gisa init
+git-same init
 
-# Creates gisa.config.toml with documented defaults
+# Creates ~/.config/git-same/config.toml with documented defaults
 ```
 
 ## Directory Structure Examples

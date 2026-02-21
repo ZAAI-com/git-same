@@ -300,7 +300,9 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                     let (result, actual_pull_result) = match pull_task_result {
                         Ok(Ok(r)) if r.success => (OpResult::Success, Some(r)),
                         Ok(Ok(r)) => (
-                            OpResult::Failed(r.error.clone().unwrap_or_else(|| "Pull failed".to_string())),
+                            OpResult::Failed(
+                                r.error.clone().unwrap_or_else(|| "Pull failed".to_string()),
+                            ),
                             Some(r),
                         ),
                         Ok(Err(e)) => (OpResult::Failed(e.to_string()), None),
@@ -463,7 +465,9 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 Ok(r) => SyncResult {
                     repo: local_repo.repo.clone(),
                     path: path.clone(),
-                    result: OpResult::Failed(r.error.clone().unwrap_or_else(|| "Pull failed".to_string())),
+                    result: OpResult::Failed(
+                        r.error.clone().unwrap_or_else(|| "Pull failed".to_string()),
+                    ),
                     had_updates,
                     status,
                     fetch_result: Some(fetch_result),
