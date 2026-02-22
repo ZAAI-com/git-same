@@ -1,17 +1,15 @@
 //! Fetch/Pull command handler.
 
 use super::{expand_path, warn_if_concurrency_capped};
-use crate::adapters::auth::get_auth;
-use crate::adapters::config::Config;
-use crate::adapters::git::ShellGit;
-use crate::adapters::output::{
-    format_count, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
-};
-use crate::adapters::provider::create_provider;
+use crate::auth::get_auth;
 use crate::cli::SyncArgs;
-use crate::core::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
+use crate::config::Config;
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
+use crate::git::ShellGit;
+use crate::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
+use crate::output::{format_count, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity};
+use crate::provider::create_provider;
 use std::sync::Arc;
 
 /// Sync (fetch or pull) repositories.
@@ -154,7 +152,7 @@ mod tests {
     // which requires real credentials (GitHub CLI, env vars, or config token).
     //
     // Component-level tests exist in:
-    // - src/core/operations/sync.rs (SyncManager)
+    // - src/operations/sync.rs (SyncManager)
     // - src/discovery/mod.rs (DiscoveryOrchestrator)
     //
     // Integration coverage: tests/integration_test.rs

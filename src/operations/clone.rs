@@ -1,7 +1,34 @@
 //! Parallel cloning operations.
 //!
-//! This module provides the ability to clone multiple repositories
-//! concurrently with controlled parallelism.
+//! This module provides functionality for cloning repositories,
+//! including parallel cloning with controlled concurrency.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use git_same::operations::clone::{CloneManager, CloneManagerOptions, NoProgress};
+//! use git_same::git::ShellGit;
+//! use std::path::Path;
+//!
+//! # async fn example() {
+//! let git = ShellGit::new();
+//! let options = CloneManagerOptions::new()
+//!     .with_concurrency(4)
+//!     .with_structure("{org}/{repo}");
+//!
+//! let manager = CloneManager::new(git, options);
+//!
+//! // repos would come from discovery
+//! let repos = vec![];
+//! let progress = NoProgress;
+//!
+//! let (summary, results) = manager
+//!     .clone_repos(Path::new("~/github"), repos, "github", std::sync::Arc::new(progress))
+//!     .await;
+//!
+//! println!("Cloned {} repos, {} failed", summary.success, summary.failed);
+//! # }
+//! ```
 
 use crate::git::{CloneOptions, GitOperations};
 use crate::types::{OpResult, OpSummary, OwnedRepo};

@@ -15,11 +15,11 @@
   "commands": {
     "build": "cargo build --release",
     "test": "cargo test",
-    "run": "./target/release/gisa",
-    "init": "./target/release/gisa init",
-    "clone": "./target/release/gisa clone",
-    "status": "./target/release/gisa status",
-    "fetch": "./target/release/gisa fetch",
-    "pull": "./target/release/gisa pull"
+    "run": "gisa",
+    "init": "gisa init",
+    "clone": "gisa clone",
+    "status": "gisa status",
+    "fetch": "gisa fetch",
+    "pull": "gisa pull"
   }
 }

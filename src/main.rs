@@ -2,8 +2,8 @@
 //!
 //! Main entry point for the git-same CLI application.
 
-use git_same::app::run_command;
 use git_same::cli::Cli;
+use git_same::commands::run_command;
 use git_same::output::{Output, Verbosity};
 use std::process::ExitCode;
 use tracing::debug;

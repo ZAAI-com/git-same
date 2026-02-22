@@ -140,10 +140,15 @@ impl CacheManager {
 
     /// Get the default cache path (~/.config/git-same/cache.json)
     pub fn default_cache_path() -> Result<PathBuf> {
+        #[cfg(target_os = "macos")]
+        let config_dir = {
+            let home = std::env::var("HOME").context("HOME environment variable not set")?;
+            PathBuf::from(home).join(".config").join("git-same")
+        };
+        #[cfg(not(target_os = "macos"))]
         let config_dir = if let Some(dir) = directories::ProjectDirs::from("", "", "git-same") {
             dir.config_dir().to_path_buf()
         } else {
-            // Fallback to ~/.config/git-same
             let home = std::env::var("HOME").context("HOME environment variable not set")?;
             PathBuf::from(home).join(".config").join("git-same")
         };

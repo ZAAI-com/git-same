@@ -13,9 +13,35 @@ pub use init::run as run_init;
 pub use status::run as run_status;
 pub use sync::run as run_sync;
 
-use crate::adapters::output::Output;
-use crate::core::operations::clone::MAX_CONCURRENCY;
+use crate::cli::{Cli, Command};
+use crate::config::Config;
+use crate::errors::Result;
+use crate::operations::clone::MAX_CONCURRENCY;
+use crate::operations::sync::SyncMode;
+use crate::output::Output;
 use std::path::{Path, PathBuf};
+
+/// Run the specified command.
+pub async fn run_command(cli: &Cli, output: &Output) -> Result<()> {
+    // Load config
+    let config = if let Some(ref path) = cli.config {
+        Config::load_from(path)?
+    } else {
+        Config::load()?
+    };
+
+    match &cli.command {
+        Command::Init(args) => run_init(args, output).await,
+        Command::Clone(args) => run_clone(args, &config, output).await,
+        Command::Fetch(args) => run_sync(args, &config, output, SyncMode::Fetch).await,
+        Command::Pull(args) => run_sync(args, &config, output, SyncMode::Pull).await,
+        Command::Status(args) => run_status(args, &config, output).await,
+        Command::Completions(args) => {
+            crate::cli::generate_completions(args.shell);
+            Ok(())
+        }
+    }
+}
 
 /// Warn if requested concurrency exceeds the maximum.
 /// Returns the effective concurrency to use.
@@ -41,7 +67,7 @@ pub(crate) fn expand_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::output::{Output, Verbosity};
+    use crate::output::{Output, Verbosity};
 
     fn quiet_output() -> Output {
         Output::new(Verbosity::Quiet, false)

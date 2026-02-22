@@ -1,18 +1,16 @@
 //! Clone command handler.
 
 use super::{expand_path, warn_if_concurrency_capped};
-use crate::adapters::auth::get_auth;
-use crate::adapters::cache::{CacheManager, DiscoveryCache};
-use crate::adapters::config::Config;
-use crate::adapters::git::{CloneOptions, ShellGit};
-use crate::adapters::output::{
-    format_count, CloneProgressBar, DiscoveryProgressBar, Output, Verbosity,
-};
-use crate::adapters::provider::create_provider;
+use crate::auth::get_auth;
+use crate::cache::{CacheManager, DiscoveryCache};
 use crate::cli::CloneArgs;
-use crate::core::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
+use crate::config::Config;
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
+use crate::git::{CloneOptions, ShellGit};
+use crate::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
+use crate::output::{format_count, CloneProgressBar, DiscoveryProgressBar, Output, Verbosity};
+use crate::provider::create_provider;
 use std::sync::Arc;
 
 /// Clone repositories.
@@ -209,7 +207,7 @@ mod tests {
     // which requires real credentials (GitHub CLI, env vars, or config token).
     //
     // Component-level tests exist in:
-    // - src/core/operations/clone.rs (CloneManager)
+    // - src/operations/clone.rs (CloneManager)
     // - src/discovery/mod.rs (DiscoveryOrchestrator)
     //
     // Integration coverage: tests/integration_test.rs

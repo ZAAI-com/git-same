@@ -46,31 +46,25 @@
 //! git same clone ~/github
 //! ```
 
-pub mod adapters;
-pub mod app;
 pub mod auth;
 pub mod cache;
 pub mod cli;
-pub mod clone;
 pub mod commands;
-pub mod completions;
 pub mod config;
-pub mod core;
 pub mod discovery;
 pub mod errors;
 pub mod git;
+pub mod operations;
 pub mod output;
 pub mod provider;
-pub mod sync;
 pub mod types;
 
 /// Re-export commonly used types for convenience.
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
+    pub use crate::cli::{generate_completions, ShellType};
     pub use crate::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
-    pub use crate::clone::{CloneManager, CloneManagerOptions, CloneProgress, CloneResult};
-    pub use crate::completions::{generate_completions, ShellType};
     pub use crate::config::{
         AuthMethod, Config, ConfigCloneOptions, FilterOptions, ProviderEntry,
         SyncMode as ConfigSyncMode,
@@ -80,6 +74,12 @@ pub mod prelude {
     pub use crate::git::{
         CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus, ShellGit,
     };
+    pub use crate::operations::clone::{
+        CloneManager, CloneManagerOptions, CloneProgress, CloneResult,
+    };
+    pub use crate::operations::sync::{
+        LocalRepo, SyncManager, SyncManagerOptions, SyncMode, SyncResult,
+    };
     pub use crate::output::{
         CloneProgressBar, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
     };
@@ -87,6 +87,5 @@ pub mod prelude {
         create_provider, Credentials, DiscoveryOptions, DiscoveryProgress, NoProgress, Provider,
         RateLimitInfo,
     };
-    pub use crate::sync::{LocalRepo, SyncManager, SyncManagerOptions, SyncMode, SyncResult};
     pub use crate::types::{ActionPlan, OpResult, OpSummary, Org, OwnedRepo, ProviderKind, Repo};
 }

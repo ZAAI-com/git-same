@@ -1,11 +1,28 @@
-//! Progress reporting utilities using indicatif.
+//! Output and progress reporting module.
 //!
-//! This module provides progress bars and status reporting for long-running operations.
+//! This module provides utilities for consistent output formatting
+//! and progress reporting using indicatif.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use git_same::output::{Output, Verbosity, CloneProgressBar};
+//!
+//! // Create output handler
+//! let output = Output::new(Verbosity::Normal, false);
+//! output.info("Starting operation...");
+//! output.success("Operation completed");
+//!
+//! // Create progress bar for clone operations
+//! let progress = CloneProgressBar::new(10, Verbosity::Normal);
+//! // ... perform cloning operations
+//! progress.finish(8, 1, 1);
+//! ```
 
-use crate::adapters::git::FetchResult;
-use crate::adapters::provider::DiscoveryProgress;
-use crate::core::operations::clone::CloneProgress;
-use crate::core::operations::sync::SyncProgress;
+use crate::git::FetchResult;
+use crate::operations::clone::CloneProgress;
+use crate::operations::sync::SyncProgress;
+use crate::provider::DiscoveryProgress;
 use crate::types::OwnedRepo;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};

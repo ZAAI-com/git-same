@@ -136,13 +136,20 @@ impl Default for Config {
 impl Config {
     /// Returns the default config file path (~/.config/git-same/config.toml).
     pub fn default_path() -> PathBuf {
-        if let Some(config_dir) = directories::ProjectDirs::from("", "", "git-same") {
-            config_dir.config_dir().join("config.toml")
-        } else {
-            // Fallback to home directory
+        #[cfg(target_os = "macos")]
+        let config_dir = {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            PathBuf::from(home).join(".config/git-same/config.toml")
-        }
+            PathBuf::from(home).join(".config/git-same")
+        };
+        #[cfg(not(target_os = "macos"))]
+        let config_dir = if let Some(dir) = directories::ProjectDirs::from("", "", "git-same") {
+            dir.config_dir().to_path_buf()
+        } else {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".config/git-same")
+        };
+
+        config_dir.join("config.toml")
     }
 
     /// Load configuration from the default path, or return defaults if file doesn't exist.
