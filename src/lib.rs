@@ -47,6 +47,7 @@
 //! ```
 
 pub mod auth;
+pub mod banner;
 pub mod cache;
 pub mod cli;
 pub mod commands;

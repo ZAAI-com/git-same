@@ -39,6 +39,11 @@ async fn main() -> ExitCode {
     let verbosity = Verbosity::from(cli.verbosity());
     let output = Output::new(verbosity, cli.is_json());
 
+    // Print banner unless quiet or JSON output
+    if !output.is_json() && !cli.is_quiet() {
+        git_same::banner::print_banner();
+    }
+
     // Run command and handle result
     let result = run_command(&cli, &output).await;
 
