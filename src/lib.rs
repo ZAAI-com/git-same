@@ -49,6 +49,7 @@
 pub mod auth;
 pub mod banner;
 pub mod cache;
+pub mod checks;
 pub mod cli;
 pub mod commands;
 pub mod config;
@@ -59,6 +60,8 @@ pub mod operations;
 pub mod output;
 pub mod provider;
 #[cfg(feature = "tui")]
+pub mod setup;
+#[cfg(feature = "tui")]
 pub mod tui;
 pub mod types;
 
@@ -67,7 +70,9 @@ pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
     pub use crate::cli::{generate_completions, ShellType};
-    pub use crate::cli::{Cli, CloneArgs, Command, InitArgs, StatusArgs, SyncArgs};
+    pub use crate::cli::{
+        Cli, CloneArgs, Command, InitArgs, LegacySyncArgs, StatusArgs, SyncCmdArgs,
+    };
     pub use crate::config::{
         AuthMethod, Config, ConfigCloneOptions, FilterOptions, ProviderEntry,
         SyncMode as ConfigSyncMode,

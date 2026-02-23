@@ -227,7 +227,6 @@ impl CacheManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

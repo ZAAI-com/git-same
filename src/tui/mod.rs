@@ -10,7 +10,7 @@ pub mod screens;
 pub mod ui;
 pub mod widgets;
 
-use crate::config::Config;
+use crate::config::{Config, WorkspaceManager};
 use crate::errors::Result;
 use app::App;
 use crossterm::{
@@ -32,8 +32,11 @@ pub async fn run_tui(config: Config) -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Load workspaces
+    let workspaces = WorkspaceManager::list().unwrap_or_default();
+
     // Create app state
-    let mut app = App::new(config);
+    let mut app = App::new(config, workspaces);
 
     // Start event loop
     let tick_rate = Duration::from_millis(100);

@@ -22,15 +22,27 @@ pub enum AppError {
 
     /// Error from a Git hosting provider.
     #[error("Provider error: {0}")]
-    Provider(#[from] #[source] ProviderError),
+    Provider(
+        #[from]
+        #[source]
+        ProviderError,
+    ),
 
     /// Error during a git operation.
     #[error("Git error: {0}")]
-    Git(#[from] #[source] GitError),
+    Git(
+        #[from]
+        #[source]
+        GitError,
+    ),
 
     /// File system I/O error.
     #[error("IO error: {0}")]
-    Io(#[from] #[source] std::io::Error),
+    Io(
+        #[from]
+        #[source]
+        std::io::Error,
+    ),
 
     /// Path-related error (invalid path, not found, etc.).
     #[error("Path error: {0}")]
@@ -46,7 +58,11 @@ pub enum AppError {
 
     /// Generic error with context.
     #[error("{0}")]
-    Other(#[from] #[source] anyhow::Error),
+    Other(
+        #[from]
+        #[source]
+        anyhow::Error,
+    ),
 }
 
 impl AppError {

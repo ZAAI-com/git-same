@@ -2,7 +2,7 @@
 
 use super::{expand_path, warn_if_concurrency_capped};
 use crate::auth::get_auth;
-use crate::cli::SyncArgs;
+use crate::cli::LegacySyncArgs;
 use crate::config::Config;
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
@@ -13,7 +13,12 @@ use crate::provider::create_provider;
 use std::sync::Arc;
 
 /// Sync (fetch or pull) repositories.
-pub async fn run(args: &SyncArgs, config: &Config, output: &Output, mode: SyncMode) -> Result<()> {
+pub async fn run(
+    args: &LegacySyncArgs,
+    config: &Config,
+    output: &Output,
+    mode: SyncMode,
+) -> Result<()> {
     let verbosity = if output.is_json() {
         Verbosity::Quiet
     } else {

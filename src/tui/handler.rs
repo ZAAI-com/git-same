@@ -3,7 +3,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::app::{App, Operation, OperationState, Screen};
+use super::app::{App, CheckEntry, Operation, OperationState, Screen};
 use super::event::{AppEvent, BackendMessage};
 
 /// Handle an incoming event, updating app state and optionally spawning backend work.
@@ -53,17 +53,62 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     }
 
     if key.code == KeyCode::Esc {
-        app.go_back();
+        // Don't go back from InitCheck or WorkspaceSelector (they're entry points)
+        if !matches!(app.screen, Screen::InitCheck | Screen::WorkspaceSelector) {
+            app.go_back();
+        }
         return;
     }
 
     // Screen-specific keybindings
     match app.screen {
+        Screen::InitCheck => handle_init_check_key(app, key).await,
+        Screen::WorkspaceSelector => handle_workspace_selector_key(app, key),
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
         Screen::CommandPicker => handle_picker_key(app, key, backend_tx).await,
         Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
         Screen::RepoStatus => handle_status_key(app, key),
+    }
+}
+
+async fn handle_init_check_key(app: &mut App, key: KeyEvent) {
+    if key.code == KeyCode::Enter && !app.checks_loading {
+        // Run requirement checks
+        app.checks_loading = true;
+        let results = crate::checks::check_requirements().await;
+        app.check_results = results
+            .into_iter()
+            .map(|r| CheckEntry {
+                name: r.name,
+                passed: r.passed,
+                message: r.message,
+                critical: r.critical,
+            })
+            .collect();
+        app.checks_loading = false;
+    }
+}
+
+fn handle_workspace_selector_key(app: &mut App, key: KeyEvent) {
+    let num_ws = app.workspaces.len();
+    if num_ws == 0 {
+        return;
+    }
+
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.workspace_index = (app.workspace_index + 1) % num_ws;
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.workspace_index = (app.workspace_index + num_ws - 1) % num_ws;
+        }
+        KeyCode::Enter => {
+            app.select_workspace(app.workspace_index);
+            app.screen = Screen::Dashboard;
+            app.screen_stack.clear();
+        }
+        _ => {}
     }
 }
 
@@ -73,22 +118,21 @@ async fn handle_dashboard_key(
     backend_tx: &UnboundedSender<AppEvent>,
 ) {
     match key.code {
-        KeyCode::Char('c') => {
-            app.picker_index = 0; // Clone
-            app.navigate_to(Screen::CommandPicker);
-        }
-        KeyCode::Char('f') => {
-            start_operation(app, Operation::Fetch, backend_tx);
-        }
-        KeyCode::Char('p') => {
-            start_operation(app, Operation::Pull, backend_tx);
-        }
         KeyCode::Char('s') => {
+            start_operation(app, Operation::Sync, backend_tx);
+        }
+        KeyCode::Char('t') => {
             app.navigate_to(Screen::RepoStatus);
             start_operation(app, Operation::Status, backend_tx);
         }
         KeyCode::Char('o') => {
             app.navigate_to(Screen::OrgBrowser);
+        }
+        KeyCode::Char('w') => {
+            if app.workspaces.len() > 1 {
+                app.screen = Screen::WorkspaceSelector;
+                app.screen_stack.clear();
+            }
         }
         KeyCode::Enter => {
             app.navigate_to(Screen::CommandPicker);
@@ -98,7 +142,7 @@ async fn handle_dashboard_key(
 }
 
 async fn handle_picker_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
-    let num_items = 4; // Clone, Fetch, Pull, Status
+    let num_items = 2; // Sync, Status
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
             app.picker_index = (app.picker_index + 1) % num_items;
@@ -109,12 +153,13 @@ async fn handle_picker_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedS
         KeyCode::Char('d') => {
             app.dry_run = !app.dry_run;
         }
+        KeyCode::Char('m') => {
+            app.sync_pull = !app.sync_pull;
+        }
         KeyCode::Enter => {
             let operation = match app.picker_index {
-                0 => Operation::Clone,
-                1 => Operation::Fetch,
-                2 => Operation::Pull,
-                3 => Operation::Status,
+                0 => Operation::Sync,
+                1 => Operation::Status,
                 _ => return,
             };
             start_operation(app, operation, backend_tx);
@@ -316,7 +361,7 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
         BackendMessage::OperationComplete(summary) => {
             let op = match &app.operation_state {
                 OperationState::Running { operation, .. } => *operation,
-                _ => Operation::Clone,
+                _ => Operation::Sync,
             };
             app.operation_state = OperationState::Finished {
                 operation: op,

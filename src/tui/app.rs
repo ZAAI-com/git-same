@@ -1,6 +1,6 @@
 //! TUI application state (the "Model" in Elm architecture).
 
-use crate::config::Config;
+use crate::config::{Config, WorkspaceConfig};
 use crate::types::{OpSummary, OwnedRepo};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,6 +8,8 @@ use std::path::PathBuf;
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    InitCheck,
+    WorkspaceSelector,
     Dashboard,
     CommandPicker,
     OrgBrowser,
@@ -18,18 +20,14 @@ pub enum Screen {
 /// Which operation is running or was last selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
-    Clone,
-    Fetch,
-    Pull,
+    Sync,
     Status,
 }
 
 impl std::fmt::Display for Operation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operation::Clone => write!(f, "Clone"),
-            Operation::Fetch => write!(f, "Fetch"),
-            Operation::Pull => write!(f, "Pull"),
+            Operation::Sync => write!(f, "Sync"),
             Operation::Status => write!(f, "Status"),
         }
     }
@@ -69,6 +67,15 @@ pub struct RepoEntry {
     pub behind: usize,
 }
 
+/// A requirement check result for the init check screen.
+#[derive(Debug, Clone)]
+pub struct CheckEntry {
+    pub name: String,
+    pub passed: bool,
+    pub message: String,
+    pub critical: bool,
+}
+
 /// The application model (all TUI state).
 pub struct App {
     /// Whether the user has requested quit.
@@ -83,7 +90,16 @@ pub struct App {
     /// Loaded configuration.
     pub config: Config,
 
-    /// Base path for repos (from config).
+    /// Available workspaces.
+    pub workspaces: Vec<WorkspaceConfig>,
+
+    /// Active workspace (selected or auto-selected).
+    pub active_workspace: Option<WorkspaceConfig>,
+
+    /// Selected index in workspace selector.
+    pub workspace_index: usize,
+
+    /// Base path for repos (derived from active workspace).
     pub base_path: Option<PathBuf>,
 
     /// Discovered repos grouped by org.
@@ -134,22 +150,38 @@ pub struct App {
 
     /// Whether behind-only filter is active in repo status.
     pub filter_behind: bool,
+
+    /// Requirement check results (populated on InitCheck screen).
+    pub check_results: Vec<CheckEntry>,
+
+    /// Whether checks are still running.
+    pub checks_loading: bool,
+
+    /// Whether to use pull mode for sync (vs fetch).
+    pub sync_pull: bool,
 }
 
 impl App {
-    /// Create a new App with the given config.
-    pub fn new(config: Config) -> Self {
-        let base_path = if config.base_path.is_empty() {
-            None
-        } else {
-            let expanded = shellexpand::tilde(&config.base_path);
-            Some(PathBuf::from(expanded.as_ref()))
+    /// Create a new App with the given config and workspaces.
+    pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>) -> Self {
+        let (screen, active_workspace, base_path) = match workspaces.len() {
+            0 => (Screen::InitCheck, None, None),
+            1 => {
+                let ws = workspaces[0].clone();
+                let bp = Some(ws.expanded_base_path());
+                (Screen::Dashboard, Some(ws), bp)
+            }
+            _ => (Screen::WorkspaceSelector, None, None),
         };
+
         Self {
             should_quit: false,
-            screen: Screen::Dashboard,
+            screen,
             screen_stack: Vec::new(),
             config,
+            workspaces,
+            active_workspace,
+            workspace_index: 0,
             base_path,
             repos_by_org: HashMap::new(),
             all_repos: Vec::new(),
@@ -167,6 +199,22 @@ impl App {
             error_message: None,
             filter_dirty: false,
             filter_behind: false,
+            check_results: Vec::new(),
+            checks_loading: false,
+            sync_pull: false,
+        }
+    }
+
+    /// Select a workspace and navigate to dashboard.
+    pub fn select_workspace(&mut self, index: usize) {
+        if let Some(ws) = self.workspaces.get(index).cloned() {
+            self.base_path = Some(ws.expanded_base_path());
+            self.active_workspace = Some(ws);
+            // Reset discovered data when switching workspace
+            self.repos_by_org.clear();
+            self.all_repos.clear();
+            self.orgs.clear();
+            self.local_repos.clear();
         }
     }
 

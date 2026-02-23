@@ -6,10 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::auth::get_auth;
-use crate::config::Config;
+use crate::auth::get_auth_for_provider;
+use crate::config::{Config, WorkspaceConfig};
 use crate::discovery::DiscoveryOrchestrator;
-use crate::git::{FetchResult, PullResult, ShellGit};
+use crate::git::{CloneOptions, FetchResult, PullResult, ShellGit};
 use crate::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
 use crate::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
 use crate::provider::{create_provider, DiscoveryProgress};
@@ -186,52 +186,47 @@ impl SyncProgress for TuiSyncProgress {
 /// Spawn a backend operation as a Tokio task.
 pub fn spawn_operation(operation: Operation, app: &App, tx: UnboundedSender<AppEvent>) {
     let config = app.config.clone();
-    let base_path = app.base_path.clone();
+    let workspace = app.active_workspace.clone();
+    let sync_pull = app.sync_pull;
 
     match operation {
-        Operation::Clone => {
+        Operation::Sync => {
             tokio::spawn(async move {
-                run_clone_operation(config, base_path, tx).await;
-            });
-        }
-        Operation::Fetch => {
-            tokio::spawn(async move {
-                run_sync_operation(config, base_path, tx, SyncMode::Fetch).await;
-            });
-        }
-        Operation::Pull => {
-            tokio::spawn(async move {
-                run_sync_operation(config, base_path, tx, SyncMode::Pull).await;
+                run_sync_operation(config, workspace, tx, sync_pull).await;
             });
         }
         Operation::Status => {
             let repos = app.local_repos.clone();
             tokio::spawn(async move {
                 // Status is just re-scanning local repos — handled by the caller
-                // For now, send empty results to clear the loading state
                 let _ = tx.send(AppEvent::Backend(BackendMessage::StatusResults(repos)));
             });
         }
     }
 }
 
-async fn run_clone_operation(
+/// Combined sync operation: discover → clone new → fetch/pull existing.
+async fn run_sync_operation(
     config: Config,
-    base_path: Option<std::path::PathBuf>,
+    workspace: Option<WorkspaceConfig>,
     tx: UnboundedSender<AppEvent>,
+    pull_mode: bool,
 ) {
-    let base_path = match base_path {
-        Some(p) => p,
+    let workspace = match workspace {
+        Some(ws) => ws,
         None => {
             let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(
-                "No base path configured. Set base_path in your provider config.".to_string(),
+                "No workspace selected. Run 'gisa setup' to configure one.".to_string(),
             )));
             return;
         }
     };
 
+    let base_path = workspace.expanded_base_path();
+    let provider_entry = workspace.provider.to_provider_entry();
+
     // Authenticate
-    let auth = match get_auth(None) {
+    let auth = match get_auth_for_provider(&provider_entry) {
         Ok(a) => a,
         Err(e) => {
             let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(format!(
@@ -242,17 +237,7 @@ async fn run_clone_operation(
         }
     };
 
-    // Get provider
-    let provider_entry = match config.enabled_providers().next() {
-        Some(p) => p.clone(),
-        None => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(
-                "No enabled providers configured".to_string(),
-            )));
-            return;
-        }
-    };
-
+    // Create provider
     let provider = match create_provider(&provider_entry, &auth.token) {
         Ok(p) => p,
         Err(e) => {
@@ -264,8 +249,20 @@ async fn run_clone_operation(
         }
     };
 
+    // Build filters from workspace config
+    let mut filters = workspace.filters.clone();
+    if !workspace.orgs.is_empty() {
+        filters.orgs = workspace.orgs.clone();
+    }
+    filters.exclude_repos = workspace.exclude_repos.clone();
+
+    let structure = workspace
+        .structure
+        .clone()
+        .unwrap_or_else(|| config.structure.clone());
+    let orchestrator = DiscoveryOrchestrator::new(filters, structure.clone());
+
     // Discover
-    let orchestrator = DiscoveryOrchestrator::new(config.filters.clone(), config.structure.clone());
     let discovery_progress = TuiDiscoveryProgress { tx: tx.clone() };
     let repos = match orchestrator
         .discover(provider.as_ref(), &discovery_progress)
@@ -293,21 +290,7 @@ async fn run_clone_operation(
         return;
     }
 
-    // Plan clone
-    let git = ShellGit::new();
-    let plan = orchestrator.plan_clone(&base_path, repos, "github", &git);
-
-    if plan.to_clone.is_empty() {
-        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-            OpSummary::new(),
-        )));
-        return;
-    }
-
-    // Update operation state to Running
-    // (The handler will set this when it receives RepoProgress events)
-
-    // Create dirs if needed
+    // Ensure base path exists
     if !base_path.exists() {
         if let Err(e) = std::fs::create_dir_all(&base_path) {
             let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(format!(
@@ -318,140 +301,86 @@ async fn run_clone_operation(
         }
     }
 
-    let clone_options = crate::git::CloneOptions {
-        depth: config.clone.depth,
-        branch: if config.clone.branch.is_empty() {
-            None
-        } else {
-            Some(config.clone.branch.clone())
-        },
-        recurse_submodules: config.clone.recurse_submodules,
-    };
-
-    let manager_options = CloneManagerOptions::new()
-        .with_concurrency(config.concurrency)
-        .with_clone_options(clone_options)
-        .with_structure(config.structure.clone())
-        .with_ssh(true);
-
-    let manager = CloneManager::new(git, manager_options);
-    let progress: Arc<dyn CloneProgress> = Arc::new(TuiCloneProgress { tx: tx.clone() });
-    let (summary, _results) = manager
-        .clone_repos(&base_path, plan.to_clone, "github", progress)
-        .await;
-
-    let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-        summary,
-    )));
-}
-
-async fn run_sync_operation(
-    config: Config,
-    base_path: Option<std::path::PathBuf>,
-    tx: UnboundedSender<AppEvent>,
-    mode: SyncMode,
-) {
-    let base_path = match base_path {
-        Some(p) => p,
-        None => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(
-                "No base path configured. Set base_path in your provider config.".to_string(),
-            )));
-            return;
-        }
-    };
-
-    if !base_path.exists() {
-        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(format!(
-            "Base path does not exist: {}",
-            base_path.display()
-        ))));
-        return;
-    }
-
-    // Authenticate
-    let auth = match get_auth(None) {
-        Ok(a) => a,
-        Err(e) => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(format!(
-                "Auth failed: {}",
-                e
-            ))));
-            return;
-        }
-    };
-
-    // Get provider
-    let provider_entry = match config.enabled_providers().next() {
-        Some(p) => p.clone(),
-        None => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(
-                "No enabled providers configured".to_string(),
-            )));
-            return;
-        }
-    };
-
-    let provider = match create_provider(&provider_entry, &auth.token) {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(format!(
-                "Provider error: {}",
-                e
-            ))));
-            return;
-        }
-    };
-
-    // Discover
-    let orchestrator = DiscoveryOrchestrator::new(config.filters.clone(), config.structure.clone());
-    let discovery_progress = TuiDiscoveryProgress { tx: tx.clone() };
-    let repos = match orchestrator
-        .discover(provider.as_ref(), &discovery_progress)
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = tx.send(AppEvent::Backend(BackendMessage::DiscoveryError(format!(
-                "Discovery failed: {}",
-                e
-            ))));
-            return;
-        }
-    };
-
-    let _ = tx.send(AppEvent::Backend(BackendMessage::DiscoveryComplete(
-        repos.clone(),
-    )));
-
-    if repos.is_empty() {
-        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-            OpSummary::new(),
-        )));
-        return;
-    }
-
-    // Plan sync
+    // Plan: which repos to clone (new) and which to sync (existing)
     let git = ShellGit::new();
-    let (to_sync, _skipped) = orchestrator.plan_sync(&base_path, repos, "github", &git, true);
+    let provider_name = provider_entry.kind.to_string().to_lowercase();
+    let plan = orchestrator.plan_clone(&base_path, repos.clone(), &provider_name, &git);
 
-    if to_sync.is_empty() {
+    let concurrency = workspace.concurrency.unwrap_or(config.concurrency);
+
+    // Phase 1: Clone new repos
+    if !plan.to_clone.is_empty() {
+        let clone_options = CloneOptions {
+            depth: workspace
+                .clone_options
+                .as_ref()
+                .map(|c| c.depth)
+                .unwrap_or(config.clone.depth),
+            branch: workspace
+                .clone_options
+                .as_ref()
+                .and_then(|c| {
+                    if c.branch.is_empty() {
+                        None
+                    } else {
+                        Some(c.branch.clone())
+                    }
+                })
+                .or_else(|| {
+                    if config.clone.branch.is_empty() {
+                        None
+                    } else {
+                        Some(config.clone.branch.clone())
+                    }
+                }),
+            recurse_submodules: workspace
+                .clone_options
+                .as_ref()
+                .map(|c| c.recurse_submodules)
+                .unwrap_or(config.clone.recurse_submodules),
+        };
+
+        let manager_options = CloneManagerOptions::new()
+            .with_concurrency(concurrency)
+            .with_clone_options(clone_options)
+            .with_structure(structure.clone())
+            .with_ssh(provider_entry.prefer_ssh);
+
+        let manager = CloneManager::new(ShellGit::new(), manager_options);
+        let progress: Arc<dyn CloneProgress> = Arc::new(TuiCloneProgress { tx: tx.clone() });
+        let (_summary, _results) = manager
+            .clone_repos(&base_path, plan.to_clone, &provider_name, progress)
+            .await;
+    }
+
+    // Phase 2: Sync existing repos
+    let sync_mode = if pull_mode {
+        SyncMode::Pull
+    } else {
+        match workspace.sync_mode.unwrap_or(config.sync_mode) {
+            crate::config::SyncMode::Pull => SyncMode::Pull,
+            crate::config::SyncMode::Fetch => SyncMode::Fetch,
+        }
+    };
+
+    let (to_sync, _skipped) = orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
+
+    if !to_sync.is_empty() {
+        let manager_options = SyncManagerOptions::new()
+            .with_concurrency(concurrency)
+            .with_mode(sync_mode)
+            .with_skip_dirty(true);
+
+        let manager = SyncManager::new(ShellGit::new(), manager_options);
+        let progress: Arc<dyn SyncProgress> = Arc::new(TuiSyncProgress { tx: tx.clone() });
+        let (summary, _results) = manager.sync_repos(to_sync, progress).await;
+
+        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
+            summary,
+        )));
+    } else {
         let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
             OpSummary::new(),
         )));
-        return;
     }
-
-    let manager_options = SyncManagerOptions::new()
-        .with_concurrency(config.concurrency)
-        .with_mode(mode)
-        .with_skip_dirty(true);
-
-    let manager = SyncManager::new(git, manager_options);
-    let progress: Arc<dyn SyncProgress> = Arc::new(TuiSyncProgress { tx: tx.clone() });
-    let (summary, _results) = manager.sync_repos(to_sync, progress).await;
-
-    let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-        summary,
-    )));
 }

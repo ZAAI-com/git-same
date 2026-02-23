@@ -45,20 +45,29 @@ pub enum Command {
     /// Initialize git-same configuration
     Init(InitArgs),
 
-    /// Clone repositories to local filesystem
-    Clone(CloneArgs),
+    /// Configure a workspace (interactive wizard)
+    Setup(SetupArgs),
 
-    /// Fetch updates from remotes (doesn't modify working tree)
-    Fetch(SyncArgs),
-
-    /// Pull updates from remotes (modifies working tree)
-    Pull(SyncArgs),
+    /// Sync repositories (discover, clone new, fetch/pull existing)
+    Sync(SyncCmdArgs),
 
     /// Show status of local repositories
     Status(StatusArgs),
 
     /// Generate shell completions
     Completions(CompletionsArgs),
+
+    /// [deprecated] Clone repositories — use 'gisa sync' instead
+    #[command(hide = true)]
+    Clone(CloneArgs),
+
+    /// [deprecated] Fetch updates — use 'gisa sync' instead
+    #[command(hide = true)]
+    Fetch(LegacySyncArgs),
+
+    /// [deprecated] Pull updates — use 'gisa sync --pull' instead
+    #[command(hide = true)]
+    Pull(LegacySyncArgs),
 }
 
 /// Arguments for the init command
@@ -73,7 +82,43 @@ pub struct InitArgs {
     pub path: Option<PathBuf>,
 }
 
-/// Arguments for the clone command
+/// Arguments for the setup command
+#[derive(Args, Debug)]
+pub struct SetupArgs {
+    /// Workspace name (auto-derived from base path if omitted)
+    #[arg(short, long)]
+    pub name: Option<String>,
+}
+
+/// Arguments for the sync command
+#[derive(Args, Debug)]
+pub struct SyncCmdArgs {
+    /// Workspace name to sync (selects interactively if multiple exist)
+    #[arg(short, long)]
+    pub workspace: Option<String>,
+
+    /// Use pull instead of fetch for existing repos
+    #[arg(long)]
+    pub pull: bool,
+
+    /// Perform a dry run (show what would be done)
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+
+    /// Maximum number of concurrent operations
+    #[arg(short, long)]
+    pub concurrency: Option<usize>,
+
+    /// Force re-discovery (ignore cache)
+    #[arg(long)]
+    pub refresh: bool,
+
+    /// Don't skip repositories with uncommitted changes
+    #[arg(long)]
+    pub no_skip_dirty: bool,
+}
+
+/// Arguments for the clone command (deprecated)
 #[derive(Args, Debug)]
 pub struct CloneArgs {
     /// Base directory for cloned repositories
@@ -140,9 +185,33 @@ pub struct CloneArgs {
     pub no_cache: bool,
 }
 
-/// Arguments for fetch and pull commands
+/// Arguments for the status command
 #[derive(Args, Debug)]
-pub struct SyncArgs {
+pub struct StatusArgs {
+    /// Workspace name (selects interactively if multiple exist)
+    #[arg(short, long)]
+    pub workspace: Option<String>,
+
+    /// Show only repositories with changes
+    #[arg(short, long)]
+    pub dirty: bool,
+
+    /// Show only repositories behind upstream
+    #[arg(short, long)]
+    pub behind: bool,
+
+    /// Show detailed status for each repository
+    #[arg(long)]
+    pub detailed: bool,
+
+    /// Filter to specific organizations (can be repeated)
+    #[arg(short, long)]
+    pub org: Vec<String>,
+}
+
+/// Arguments for legacy fetch/pull commands (deprecated)
+#[derive(Args, Debug)]
+pub struct LegacySyncArgs {
     /// Base directory containing cloned repositories
     pub base_path: PathBuf,
 
@@ -169,29 +238,6 @@ pub struct SyncArgs {
     /// Filter repositories by name pattern (regex)
     #[arg(long)]
     pub filter: Option<String>,
-}
-
-/// Arguments for the status command
-#[derive(Args, Debug)]
-pub struct StatusArgs {
-    /// Base directory containing cloned repositories
-    pub base_path: PathBuf,
-
-    /// Show only repositories with changes
-    #[arg(short, long)]
-    pub dirty: bool,
-
-    /// Show only repositories behind upstream
-    #[arg(short, long)]
-    pub behind: bool,
-
-    /// Show detailed status for each repository
-    #[arg(long)]
-    pub detailed: bool,
-
-    /// Filter to specific organizations (can be repeated)
-    #[arg(short, long)]
-    pub org: Vec<String>,
 }
 
 /// Arguments for the completions command
@@ -266,31 +312,105 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cli_parsing_clone() {
+    fn test_cli_parsing_init() {
+        let cli = Cli::try_parse_from(["gisa", "init", "--force"]).unwrap();
+        match cli.command {
+            Some(Command::Init(args)) => assert!(args.force),
+            _ => panic!("Expected Init command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_setup() {
+        let cli = Cli::try_parse_from(["gisa", "setup"]).unwrap();
+        match cli.command {
+            Some(Command::Setup(args)) => assert!(args.name.is_none()),
+            _ => panic!("Expected Setup command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_setup_with_name() {
+        let cli = Cli::try_parse_from(["gisa", "setup", "--name", "work"]).unwrap();
+        match cli.command {
+            Some(Command::Setup(args)) => assert_eq!(args.name, Some("work".to_string())),
+            _ => panic!("Expected Setup command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_sync() {
+        let cli = Cli::try_parse_from(["gisa", "sync", "--pull", "--dry-run"]).unwrap();
+        match cli.command {
+            Some(Command::Sync(args)) => {
+                assert!(args.pull);
+                assert!(args.dry_run);
+                assert!(args.workspace.is_none());
+            }
+            _ => panic!("Expected Sync command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_sync_with_workspace() {
         let cli = Cli::try_parse_from([
             "gisa",
-            "clone",
-            "~/github",
-            "--dry-run",
+            "sync",
+            "--workspace",
+            "github",
             "--concurrency",
             "8",
         ])
         .unwrap();
+        match cli.command {
+            Some(Command::Sync(args)) => {
+                assert_eq!(args.workspace, Some("github".to_string()));
+                assert_eq!(args.concurrency, Some(8));
+            }
+            _ => panic!("Expected Sync command"),
+        }
+    }
 
+    #[test]
+    fn test_cli_parsing_status() {
+        let cli = Cli::try_parse_from(["gisa", "status", "--dirty", "--detailed"]).unwrap();
+        match cli.command {
+            Some(Command::Status(args)) => {
+                assert!(args.dirty);
+                assert!(args.detailed);
+                assert!(args.workspace.is_none());
+            }
+            _ => panic!("Expected Status command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_status_with_workspace() {
+        let cli = Cli::try_parse_from(["gisa", "status", "--workspace", "work"]).unwrap();
+        match cli.command {
+            Some(Command::Status(args)) => {
+                assert_eq!(args.workspace, Some("work".to_string()));
+            }
+            _ => panic!("Expected Status command"),
+        }
+    }
+
+    // Legacy commands still parse (hidden but functional)
+    #[test]
+    fn test_cli_parsing_legacy_clone() {
+        let cli = Cli::try_parse_from(["gisa", "clone", "~/github", "--dry-run"]).unwrap();
         match cli.command {
             Some(Command::Clone(args)) => {
                 assert_eq!(args.base_path, PathBuf::from("~/github"));
                 assert!(args.dry_run);
-                assert_eq!(args.concurrency, Some(8));
             }
             _ => panic!("Expected Clone command"),
         }
     }
 
     #[test]
-    fn test_cli_parsing_fetch() {
+    fn test_cli_parsing_legacy_fetch() {
         let cli = Cli::try_parse_from(["gisa", "fetch", "~/github", "--org", "my-org"]).unwrap();
-
         match cli.command {
             Some(Command::Fetch(args)) => {
                 assert_eq!(args.base_path, PathBuf::from("~/github"));
@@ -301,22 +421,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parsing_pull() {
-        let cli = Cli::try_parse_from(["gisa", "pull", "~/github"]).unwrap();
-
-        match cli.command {
-            Some(Command::Pull(args)) => {
-                // By default, skip_dirty is enabled (no_skip_dirty is false)
-                assert!(!args.no_skip_dirty);
-            }
-            _ => panic!("Expected Pull command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_parsing_pull_no_skip_dirty() {
+    fn test_cli_parsing_legacy_pull() {
         let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-dirty"]).unwrap();
-
         match cli.command {
             Some(Command::Pull(args)) => {
                 assert!(args.no_skip_dirty);
@@ -326,47 +432,17 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parsing_status() {
-        let cli =
-            Cli::try_parse_from(["gisa", "status", "~/github", "--dirty", "--detailed"]).unwrap();
-
-        match cli.command {
-            Some(Command::Status(args)) => {
-                assert!(args.dirty);
-                assert!(args.detailed);
-            }
-            _ => panic!("Expected Status command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_parsing_init() {
-        let cli = Cli::try_parse_from(["gisa", "init", "--force"]).unwrap();
-
-        match cli.command {
-            Some(Command::Init(args)) => {
-                assert!(args.force);
-            }
-            _ => panic!("Expected Init command"),
-        }
-    }
-
-    #[test]
     fn test_cli_parsing_completions() {
         let cli = Cli::try_parse_from(["gisa", "completions", "bash"]).unwrap();
-
         match cli.command {
-            Some(Command::Completions(args)) => {
-                assert_eq!(args.shell, ShellType::Bash);
-            }
+            Some(Command::Completions(args)) => assert_eq!(args.shell, ShellType::Bash),
             _ => panic!("Expected Completions command"),
         }
     }
 
     #[test]
     fn test_cli_global_flags() {
-        let cli = Cli::try_parse_from(["gisa", "-vvv", "--json", "clone", "~/github"]).unwrap();
-
+        let cli = Cli::try_parse_from(["gisa", "-vvv", "--json", "sync"]).unwrap();
         assert_eq!(cli.verbose, 3);
         assert!(cli.json);
         assert_eq!(cli.verbosity(), 3);
@@ -374,51 +450,10 @@ mod tests {
 
     #[test]
     fn test_cli_quiet_flag() {
-        let cli = Cli::try_parse_from(["gisa", "--quiet", "clone", "~/github"]).unwrap();
-
+        let cli = Cli::try_parse_from(["gisa", "--quiet", "sync"]).unwrap();
         assert!(cli.quiet);
         assert!(cli.is_quiet());
         assert_eq!(cli.verbosity(), 0);
-    }
-
-    #[test]
-    fn test_cli_clone_with_filters() {
-        let cli = Cli::try_parse_from([
-            "gisa",
-            "clone",
-            "~/github",
-            "--org",
-            "org1",
-            "--org",
-            "org2",
-            "--exclude-org",
-            "skip-this",
-            "--include-archived",
-            "--include-forks",
-        ])
-        .unwrap();
-
-        match cli.command {
-            Some(Command::Clone(args)) => {
-                assert_eq!(args.org, vec!["org1", "org2"]);
-                assert_eq!(args.exclude_org, vec!["skip-this"]);
-                assert!(args.include_archived);
-                assert!(args.include_forks);
-            }
-            _ => panic!("Expected Clone command"),
-        }
-    }
-
-    #[test]
-    fn test_cli_clone_https_flag() {
-        let cli = Cli::try_parse_from(["gisa", "clone", "~/github", "--https"]).unwrap();
-
-        match cli.command {
-            Some(Command::Clone(args)) => {
-                assert!(args.https);
-            }
-            _ => panic!("Expected Clone command"),
-        }
     }
 
     #[test]
@@ -438,7 +473,6 @@ mod tests {
 
     #[test]
     fn verify_cli() {
-        // This verifies the CLI definition is valid
         use clap::CommandFactory;
         Cli::command().debug_assert();
     }

@@ -24,11 +24,11 @@ pub fn render(app: &App, frame: &mut Frame) {
     render_banner(frame, chunks[0]);
     render_info(app, frame, chunks[1]);
     render_stats(app, frame, chunks[2]);
-    render_actions(frame, chunks[3]);
+    render_actions(app, frame, chunks[3]);
     status_bar::render(
         frame,
         chunks[4],
-        "q: Quit  c: Clone  f: Fetch  p: Pull  s: Status  o: Orgs  Enter: Menu",
+        "q: Quit  s: Sync  t: Status  o: Orgs  w: Switch workspace  Enter: Menu",
     );
 }
 
@@ -68,27 +68,37 @@ fn render_banner(frame: &mut Frame, area: Rect) {
 }
 
 fn render_info(app: &App, frame: &mut Frame, area: Rect) {
-    let base = app
-        .base_path
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "(not set)".to_string());
-
     let version = env!("CARGO_PKG_VERSION");
 
-    let info = Paragraph::new(vec![Line::from(vec![
-        Span::styled(
-            "  Mirror all GitHub orgs and repos to the local file system. ",
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::styled(
-            format!("v{}  ", version),
-            Style::default().fg(Color::DarkGray),
-        ),
-        Span::raw("  Base: "),
-        Span::styled(base, Style::default().fg(Color::Cyan)),
-    ])])
-    .centered();
+    let ws_info = match &app.active_workspace {
+        Some(ws) => {
+            let last = ws.last_synced.as_deref().unwrap_or("never");
+            vec![
+                Span::raw("  Workspace: "),
+                Span::styled(&ws.name, Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("  v{}", version),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::raw("  Path: "),
+                Span::styled(&ws.base_path, Style::default().fg(Color::Cyan)),
+                Span::raw("  Last synced: "),
+                Span::styled(last, Style::default().fg(Color::DarkGray)),
+            ]
+        }
+        None => vec![
+            Span::styled(
+                "  No workspace selected",
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                format!("  v{}", version),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ],
+    };
+
+    let info = Paragraph::new(vec![Line::from(ws_info)]).centered();
     frame.render_widget(info, area);
 }
 
@@ -144,66 +154,52 @@ fn render_stat_box(frame: &mut Frame, area: Rect, value: &str, label: &str, colo
     frame.render_widget(content, area);
 }
 
-fn render_actions(frame: &mut Frame, area: Rect) {
-    let actions = Paragraph::new(vec![
+fn render_actions(app: &App, frame: &mut Frame, area: Rect) {
+    let key = |k: &str| -> Span {
+        Span::styled(
+            format!("[{}]", k),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+
+    let has_multiple_ws = app.workspaces.len() > 1;
+
+    let mut lines = vec![
         Line::from(""),
         Line::from(vec![
             Span::raw("  "),
-            Span::styled(
-                "[c]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Clone   "),
-            Span::styled(
-                "[f]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Fetch   "),
-            Span::styled(
-                "[p]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Pull   "),
-            Span::styled(
-                "[s]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Status"),
+            key("s"),
+            Span::raw(" Sync   "),
+            key("t"),
+            Span::raw(" Status   "),
+            key("o"),
+            Span::raw(" Orgs"),
         ]),
-        Line::from(vec![
+    ];
+
+    if has_multiple_ws {
+        lines.push(Line::from(vec![
             Span::raw("  "),
-            Span::styled(
-                "[o]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Orgs    "),
-            Span::styled(
-                "[Enter]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Menu  "),
-            Span::styled(
-                "[q]",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            key("w"),
+            Span::raw(" Switch workspace   "),
+            key("Enter"),
+            Span::raw(" Menu   "),
+            key("q"),
             Span::raw(" Quit"),
-        ]),
-    ])
-    .block(
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            key("Enter"),
+            Span::raw(" Menu   "),
+            key("q"),
+            Span::raw(" Quit"),
+        ]));
+    }
+
+    let actions = Paragraph::new(lines).block(
         Block::default()
             .title(" Quick Actions ")
             .borders(Borders::ALL)

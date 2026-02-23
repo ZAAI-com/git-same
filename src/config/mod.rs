@@ -16,6 +16,10 @@
 
 mod parser;
 mod provider_config;
+pub mod workspace;
+pub mod workspace_manager;
 
 pub use parser::{Config, ConfigCloneOptions, FilterOptions, SyncMode};
 pub use provider_config::{AuthMethod, ProviderEntry};
+pub use workspace::{WorkspaceConfig, WorkspaceProvider};
+pub use workspace_manager::WorkspaceManager;

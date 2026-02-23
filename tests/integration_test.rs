@@ -21,11 +21,10 @@ fn test_help_command() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Mirror GitHub org/repo structure locally"));
-    assert!(stdout.contains("clone"));
-    assert!(stdout.contains("fetch"));
-    assert!(stdout.contains("pull"));
-    assert!(stdout.contains("status"));
     assert!(stdout.contains("init"));
+    assert!(stdout.contains("setup"));
+    assert!(stdout.contains("sync"));
+    assert!(stdout.contains("status"));
     assert!(stdout.contains("completions"));
 }
 
@@ -237,15 +236,46 @@ fn test_init_force_overwrites() {
 }
 
 #[test]
-fn test_status_nonexistent_path() {
+fn test_status_nonexistent_workspace() {
     let output = Command::new(git_same_binary())
-        .args(["status", "/nonexistent/path/that/does/not/exist"])
+        .args(["status", "--workspace", "nonexistent-workspace"])
         .output()
         .expect("Failed to execute git-same");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("does not exist") || stderr.contains("Path error"));
+    assert!(
+        stderr.contains("not found") || stderr.contains("No workspaces"),
+        "Expected workspace not found error, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_sync_help() {
+    let output = Command::new(git_same_binary())
+        .args(["sync", "--help"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Sync"));
+    assert!(stdout.contains("--workspace"));
+    assert!(stdout.contains("--pull"));
+    assert!(stdout.contains("--dry-run"));
+}
+
+#[test]
+fn test_setup_help() {
+    let output = Command::new(git_same_binary())
+        .args(["setup", "--help"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("setup") || stdout.contains("Setup") || stdout.contains("wizard"));
 }
 
 // Tests that require authentication are ignored by default
