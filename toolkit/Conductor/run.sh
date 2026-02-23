@@ -1,6 +1,6 @@
 #!/bin/bash
-# Git-Same (Gisa CLI) Run Script
-# Runs the prototype and demonstrates features
+# Git-Same Run Script
+# Installs binaries and shows available commands
 
 set -e
 
@@ -9,73 +9,31 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR"
 
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
-GISA="$CARGO_BIN_DIR/gisa"
-CONFIG_FILE="$HOME/.config/git-same/config.toml"
+GS_COMMAND="$CARGO_BIN_DIR/git-same"
 TEST_DIR="${1:-/tmp/gisa-prototype-test}"
 
-# Check if binary is installed, install with Option 1 if not
-if [ ! -x "$GISA" ]; then
-    echo "gisa not found at: $GISA"
-    echo "Installing with: cargo install --path ."
-    cargo install --path .
-    echo ""
-fi
+# Always install to ensure all binaries are up to date
+echo "Installing with: cargo install --path ."
+cargo install --path .
+echo ""
 
-if [ ! -x "$GISA" ]; then
-    echo "ERROR: gisa installation failed."
+if [ ! -x "$GS_COMMAND" ]; then
+    echo "ERROR: git-same installation failed."
     exit 1
 fi
 
-echo "========================================"
-echo "  Git-Same (Gisa CLI) Prototype"
-echo "========================================"
-echo ""
-
-# Show version
-echo "--- Version ---"
-$GISA --version
-echo ""
-
-# Show help
-echo "--- Available Commands ---"
-$GISA --help
-echo ""
-
-# Initialize config if not exists
-echo "--- Configuration ---"
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Config file exists: $CONFIG_FILE"
-else
-    echo "Initializing configuration..."
-    $GISA init
-    echo "Config created: $CONFIG_FILE"
-fi
-echo ""
-
-# Show config contents
-echo "--- Config Contents ---"
-if [ -f "$CONFIG_FILE" ]; then
-    cat "$CONFIG_FILE"
-fi
-echo ""
-
-# Dry run clone
-echo "========================================"
-echo "  Running Dry-Run Clone"
-echo "========================================"
-echo ""
-echo "Test directory: $TEST_DIR"
-echo "Command: $GISA clone $TEST_DIR --dry-run -v"
-echo ""
-
-$GISA clone "$TEST_DIR" --dry-run -v 2>&1 || {
+# Warn if git-same is also installed elsewhere (e.g. Homebrew)
+RED='\033[0;31m'
+NC='\033[0m'
+OTHER_PATHS=$(which -a git-same 2>/dev/null | grep -v "$CARGO_BIN_DIR" || true)
+if [ -n "$OTHER_PATHS" ]; then
+    echo -e "${RED}WARNING: git-same found in another location:${NC}"
+    echo -e "${RED}  $OTHER_PATHS${NC}"
+    echo -e "${RED}  This may shadow the version installed by this script.${NC}"
+    echo -e "${RED}  Consider uninstalling it to avoid version conflicts.${NC}"
     echo ""
-    echo "Note: If you see authentication errors, make sure you have:"
-    echo "  1. GitHub CLI authenticated: gh auth login"
-    echo "  2. Or GITHUB_TOKEN environment variable set"
-}
+fi
 
-echo ""
 echo "========================================"
 echo "  Feature Test Commands"
 echo "========================================"
@@ -83,29 +41,29 @@ echo ""
 echo "Try these commands to test features:"
 echo ""
 echo "  # Clone (dry-run first to preview)"
-echo "  $GISA clone $TEST_DIR --dry-run"
+echo "  $GS_COMMAND clone $TEST_DIR --dry-run"
 echo ""
 echo "  # Clone with filters"
-echo "  $GISA clone $TEST_DIR --org YOUR_ORG --depth 1"
+echo "  $GS_COMMAND clone $TEST_DIR --org YOUR_ORG --depth 1"
 echo ""
 echo "  # Check status"
-echo "  $GISA status $TEST_DIR"
-echo "  $GISA status $TEST_DIR --dirty"
-echo "  $GISA status $TEST_DIR --detailed"
+echo "  $GS_COMMAND status $TEST_DIR"
+echo "  $GS_COMMAND status $TEST_DIR --dirty"
+echo "  $GS_COMMAND status $TEST_DIR --detailed"
 echo ""
 echo "  # Fetch updates"
-echo "  $GISA fetch $TEST_DIR --dry-run"
-echo "  $GISA fetch $TEST_DIR"
+echo "  $GS_COMMAND fetch $TEST_DIR --dry-run"
+echo "  $GS_COMMAND fetch $TEST_DIR"
 echo ""
 echo "  # Pull updates"
-echo "  $GISA pull $TEST_DIR --dry-run"
+echo "  $GS_COMMAND pull $TEST_DIR --dry-run"
 echo ""
 echo "  # Shell completions"
-echo "  $GISA completions bash"
-echo "  $GISA completions zsh"
-echo "  $GISA completions fish"
+echo "  $GS_COMMAND completions bash"
+echo "  $GS_COMMAND completions zsh"
+echo "  $GS_COMMAND completions fish"
 echo ""
 echo "  # Verbose and JSON output"
-echo "  $GISA -v clone $TEST_DIR --dry-run"
-echo "  $GISA --json status $TEST_DIR"
+echo "  $GS_COMMAND -v clone $TEST_DIR --dry-run"
+echo "  $GS_COMMAND --json status $TEST_DIR"
 echo ""

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Git-Same (Gisa CLI) Setup Script
-# Checks prerequisites and builds the project
+# Git-Same Setup Script
+# Checks prerequisites
 
 set -e
 
@@ -57,47 +57,12 @@ fi
 echo "git: $(git --version)"
 echo ""
 
-# Build the project
-echo "--- Building Git-Same ---"
-echo "Running: cargo build --release"
-echo ""
-cargo build --release
-
-echo ""
-echo "--- Verifying Binaries ---"
-BINARIES=("git-same" "gitsame" "gitsa" "gisa")
-ALL_OK=true
-for bin in "${BINARIES[@]}"; do
-    if [ -f "target/release/$bin" ]; then
-        echo "  [OK] $bin"
-    else
-        echo "  [MISSING] $bin"
-        ALL_OK=false
-    fi
-done
-
-if [ "$ALL_OK" = false ]; then
-    echo ""
-    echo "WARNING: Some binaries are missing."
-fi
-
-echo ""
-echo "--- Running Tests ---"
-echo "Running: cargo test"
-echo ""
-cargo test 2>&1 || echo "Note: Some tests may require GitHub authentication"
-
 echo ""
 echo "========================================"
 echo "  Setup Complete!"
 echo "========================================"
 echo ""
 echo "Next steps:"
-echo "  1. Run the prototype:  ./toolkit/Conductor/run.sh"
-echo "  2. Or manually install (Option 1): cargo install --path ."
-echo "  3. Then run:"
-echo "     gisa --help"
-echo "     gisa init"
-echo "     gisa clone ~/github --dry-run"
-echo "  4. Remove installed binaries: ./toolkit/Conductor/archive.sh"
+echo "  1. Run:  ./toolkit/Conductor/run.sh"
+echo "  2. Or manually install: cargo install --path ."
 echo ""
