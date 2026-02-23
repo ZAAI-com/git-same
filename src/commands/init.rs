@@ -7,7 +7,10 @@ use crate::output::Output;
 
 /// Initialize gisa configuration.
 pub async fn run(args: &InitArgs, output: &Output) -> Result<()> {
-    let config_path = args.path.clone().unwrap_or_else(Config::default_path);
+    let config_path = match args.path.clone() {
+        Some(p) => p,
+        None => Config::default_path()?,
+    };
 
     // Check if config already exists
     if config_path.exists() && !args.force {

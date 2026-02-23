@@ -227,14 +227,6 @@ impl CacheManager {
     }
 }
 
-impl Default for CacheManager {
-    fn default() -> Self {
-        Self::new().unwrap_or_else(|_| {
-            // Fallback to temp directory if we can't determine config dir
-            Self::with_path(std::env::temp_dir().join("git-same-cache.json"))
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {
