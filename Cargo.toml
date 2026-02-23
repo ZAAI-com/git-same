@@ -1,6 +1,6 @@
 [package]
 name = "git-same"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Git-Same Contributors"]
 description = "Mirror GitHub org/repo structure locally - supports multiple providers"
@@ -27,7 +27,8 @@ name = "gisa"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["tui"]
+tui = ["dep:ratatui", "dep:crossterm"]
 
 [dependencies]
 # CLI parsing
@@ -71,6 +72,10 @@ futures = "0.3"
 # Structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# TUI (optional, behind "tui" feature)
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
 
 [dev-dependencies]
 # Testing

@@ -58,6 +58,8 @@ pub mod git;
 pub mod operations;
 pub mod output;
 pub mod provider;
+#[cfg(feature = "tui")]
+pub mod tui;
 pub mod types;
 
 /// Re-export commonly used types for convenience.

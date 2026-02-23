@@ -36,7 +36,7 @@ pub struct Cli {
     pub config: Option<PathBuf>,
 
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 /// Git-Same subcommands
@@ -278,7 +278,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Command::Clone(args) => {
+            Some(Command::Clone(args)) => {
                 assert_eq!(args.base_path, PathBuf::from("~/github"));
                 assert!(args.dry_run);
                 assert_eq!(args.concurrency, Some(8));
@@ -292,7 +292,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "fetch", "~/github", "--org", "my-org"]).unwrap();
 
         match cli.command {
-            Command::Fetch(args) => {
+            Some(Command::Fetch(args)) => {
                 assert_eq!(args.base_path, PathBuf::from("~/github"));
                 assert_eq!(args.org, vec!["my-org"]);
             }
@@ -305,7 +305,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "pull", "~/github"]).unwrap();
 
         match cli.command {
-            Command::Pull(args) => {
+            Some(Command::Pull(args)) => {
                 // By default, skip_dirty is enabled (no_skip_dirty is false)
                 assert!(!args.no_skip_dirty);
             }
@@ -318,7 +318,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-dirty"]).unwrap();
 
         match cli.command {
-            Command::Pull(args) => {
+            Some(Command::Pull(args)) => {
                 assert!(args.no_skip_dirty);
             }
             _ => panic!("Expected Pull command"),
@@ -331,7 +331,7 @@ mod tests {
             Cli::try_parse_from(["gisa", "status", "~/github", "--dirty", "--detailed"]).unwrap();
 
         match cli.command {
-            Command::Status(args) => {
+            Some(Command::Status(args)) => {
                 assert!(args.dirty);
                 assert!(args.detailed);
             }
@@ -344,7 +344,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "init", "--force"]).unwrap();
 
         match cli.command {
-            Command::Init(args) => {
+            Some(Command::Init(args)) => {
                 assert!(args.force);
             }
             _ => panic!("Expected Init command"),
@@ -356,7 +356,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "completions", "bash"]).unwrap();
 
         match cli.command {
-            Command::Completions(args) => {
+            Some(Command::Completions(args)) => {
                 assert_eq!(args.shell, ShellType::Bash);
             }
             _ => panic!("Expected Completions command"),
@@ -399,7 +399,7 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            Command::Clone(args) => {
+            Some(Command::Clone(args)) => {
                 assert_eq!(args.org, vec!["org1", "org2"]);
                 assert_eq!(args.exclude_org, vec!["skip-this"]);
                 assert!(args.include_archived);
@@ -414,7 +414,7 @@ mod tests {
         let cli = Cli::try_parse_from(["gisa", "clone", "~/github", "--https"]).unwrap();
 
         match cli.command {
-            Command::Clone(args) => {
+            Some(Command::Clone(args)) => {
                 assert!(args.https);
             }
             _ => panic!("Expected Clone command"),
@@ -428,6 +428,12 @@ mod tests {
         assert_eq!(Shell::from(ShellType::Fish), Shell::Fish);
         assert_eq!(Shell::from(ShellType::PowerShell), Shell::PowerShell);
         assert_eq!(Shell::from(ShellType::Elvish), Shell::Elvish);
+    }
+
+    #[test]
+    fn test_cli_no_subcommand() {
+        let cli = Cli::try_parse_from(["gisa"]).unwrap();
+        assert!(cli.command.is_none());
     }
 
     #[test]

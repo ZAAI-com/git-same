@@ -13,7 +13,7 @@ pub use init::run as run_init;
 pub use status::run as run_status;
 pub use sync::run as run_sync;
 
-use crate::cli::{Cli, Command};
+use crate::cli::Command;
 use crate::config::Config;
 use crate::errors::Result;
 use crate::operations::clone::MAX_CONCURRENCY;
@@ -22,15 +22,19 @@ use crate::output::Output;
 use std::path::{Path, PathBuf};
 
 /// Run the specified command.
-pub async fn run_command(cli: &Cli, output: &Output) -> Result<()> {
+pub async fn run_command(
+    command: &Command,
+    config_path: Option<&Path>,
+    output: &Output,
+) -> Result<()> {
     // Load config
-    let config = if let Some(ref path) = cli.config {
+    let config = if let Some(path) = config_path {
         Config::load_from(path)?
     } else {
         Config::load()?
     };
 
-    match &cli.command {
+    match command {
         Command::Init(args) => run_init(args, output).await,
         Command::Clone(args) => run_clone(args, &config, output).await,
         Command::Fetch(args) => run_sync(args, &config, output, SyncMode::Fetch).await,

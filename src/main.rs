@@ -35,27 +35,61 @@ async fn main() -> ExitCode {
     let cli = Cli::parse_args();
     debug!(command = ?cli.command, "Parsed CLI arguments");
 
-    // Create output handler
-    let verbosity = Verbosity::from(cli.verbosity());
-    let output = Output::new(verbosity, cli.is_json());
+    match cli.command {
+        Some(ref command) => {
+            // CLI subcommand mode — existing behavior
+            let verbosity = Verbosity::from(cli.verbosity());
+            let output = Output::new(verbosity, cli.is_json());
 
-    // Print banner unless quiet or JSON output
-    if !output.is_json() && !cli.is_quiet() {
-        git_same::banner::print_banner();
-    }
-
-    // Run command and handle result
-    let result = run_command(&cli, &output).await;
-
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            output.error(&e.to_string());
-            if verbosity >= Verbosity::Verbose {
-                eprintln!("  Suggestion: {}", e.suggested_action());
+            // Print banner unless quiet or JSON output
+            if !output.is_json() && !cli.is_quiet() {
+                git_same::banner::print_banner();
             }
-            // Exit codes should fit in u8 (0-255)
-            ExitCode::from(e.exit_code().clamp(1, 255) as u8)
+
+            let result = run_command(command, cli.config.as_deref(), &output).await;
+
+            match result {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    output.error(&e.to_string());
+                    if verbosity >= Verbosity::Verbose {
+                        eprintln!("  Suggestion: {}", e.suggested_action());
+                    }
+                    ExitCode::from(e.exit_code().clamp(1, 255) as u8)
+                }
+            }
+        }
+        None => {
+            // No subcommand — launch TUI
+            #[cfg(feature = "tui")]
+            {
+                use git_same::config::Config;
+
+                let config = match cli.config.as_ref() {
+                    Some(path) => Config::load_from(path),
+                    None => Config::load(),
+                };
+
+                match config {
+                    Ok(config) => match git_same::tui::run_tui(config).await {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(e) => {
+                            eprintln!("TUI error: {}", e);
+                            ExitCode::from(1)
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Failed to load config: {}", e);
+                        eprintln!("Run 'gisa init' to create a configuration file.");
+                        ExitCode::from(2)
+                    }
+                }
+            }
+            #[cfg(not(feature = "tui"))]
+            {
+                eprintln!("TUI not available. Run a subcommand (e.g., 'gisa clone') or build with --features tui.");
+                ExitCode::from(1)
+            }
         }
     }
 }
