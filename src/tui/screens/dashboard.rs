@@ -33,43 +33,34 @@ pub fn render(app: &App, frame: &mut Frame) {
 }
 
 fn render_banner(frame: &mut Frame, area: Rect) {
+    let style = Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::BOLD);
     let banner_lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "  ██████╗ ██╗███████╗ █████╗ ",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            "  ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗",
+            style,
         )),
         Line::from(Span::styled(
-            " ██╔════╝ ██║██╔════╝██╔══██╗",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            " ██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝",
+            style,
         )),
         Line::from(Span::styled(
-            " ██║  ███╗██║███████╗███████║",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            " ██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗  ",
+            style,
         )),
         Line::from(Span::styled(
-            " ██║   ██║██║╚════██║██╔══██║",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            " ██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝  ",
+            style,
         )),
         Line::from(Span::styled(
-            " ╚██████╔╝██║███████║██║  ██║",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            " ╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗",
+            style,
         )),
         Line::from(Span::styled(
-            "  ╚═════╝ ╚═╝╚══════╝╚═╝  ╚═╝",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            "  ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝",
+            style,
         )),
     ];
     let banner = Paragraph::new(banner_lines).centered();
@@ -87,7 +78,7 @@ fn render_info(app: &App, frame: &mut Frame, area: Rect) {
 
     let info = Paragraph::new(vec![Line::from(vec![
         Span::styled(
-            "  Mirror GitHub, locally. ",
+            "  Mirror all GitHub orgs and repos to the local file system. ",
             Style::default().fg(Color::DarkGray),
         ),
         Span::styled(
