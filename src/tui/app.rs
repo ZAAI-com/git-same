@@ -171,7 +171,19 @@ impl App {
                 let bp = Some(ws.expanded_base_path());
                 (Screen::Dashboard, Some(ws), bp)
             }
-            _ => (Screen::WorkspaceSelector, None, None),
+            _ => {
+                // Check for default workspace
+                if let Some(ref default_name) = config.default_workspace {
+                    if let Some(ws) = workspaces.iter().find(|w| w.name == *default_name) {
+                        let bp = Some(ws.expanded_base_path());
+                        (Screen::Dashboard, Some(ws.clone()), bp)
+                    } else {
+                        (Screen::WorkspaceSelector, None, None)
+                    }
+                } else {
+                    (Screen::WorkspaceSelector, None, None)
+                }
+            }
         };
 
         Self {
@@ -231,5 +243,59 @@ impl App {
         if let Some(prev) = self.screen_stack.pop() {
             self.screen = prev;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_no_workspaces_shows_init_check() {
+        let app = App::new(Config::default(), vec![]);
+        assert_eq!(app.screen, Screen::InitCheck);
+        assert!(app.active_workspace.is_none());
+        assert!(app.base_path.is_none());
+    }
+
+    #[test]
+    fn test_new_single_workspace_auto_selects() {
+        let ws = WorkspaceConfig::new("test", "/tmp/test");
+        let app = App::new(Config::default(), vec![ws]);
+        assert_eq!(app.screen, Screen::Dashboard);
+        assert!(app.active_workspace.is_some());
+        assert_eq!(app.active_workspace.unwrap().name, "test");
+        assert!(app.base_path.is_some());
+    }
+
+    #[test]
+    fn test_new_multiple_no_default_shows_selector() {
+        let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
+        let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
+        let app = App::new(Config::default(), vec![ws1, ws2]);
+        assert_eq!(app.screen, Screen::WorkspaceSelector);
+        assert!(app.active_workspace.is_none());
+    }
+
+    #[test]
+    fn test_new_multiple_with_valid_default_auto_selects() {
+        let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
+        let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
+        let mut config = Config::default();
+        config.default_workspace = Some("ws2".to_string());
+        let app = App::new(config, vec![ws1, ws2]);
+        assert_eq!(app.screen, Screen::Dashboard);
+        assert_eq!(app.active_workspace.unwrap().name, "ws2");
+    }
+
+    #[test]
+    fn test_new_multiple_with_invalid_default_shows_selector() {
+        let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
+        let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
+        let mut config = Config::default();
+        config.default_workspace = Some("nonexistent".to_string());
+        let app = App::new(config, vec![ws1, ws2]);
+        assert_eq!(app.screen, Screen::WorkspaceSelector);
+        assert!(app.active_workspace.is_none());
     }
 }

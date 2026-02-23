@@ -25,6 +25,7 @@ fn test_help_command() {
     assert!(stdout.contains("setup"));
     assert!(stdout.contains("sync"));
     assert!(stdout.contains("status"));
+    assert!(stdout.contains("workspace"));
     assert!(stdout.contains("completions"));
 }
 
@@ -276,6 +277,30 @@ fn test_setup_help() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("setup") || stdout.contains("Setup") || stdout.contains("wizard"));
+}
+
+#[test]
+fn test_workspace_help() {
+    let output = Command::new(git_same_binary())
+        .args(["workspace", "--help"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("list"));
+    assert!(stdout.contains("default"));
+}
+
+#[test]
+fn test_workspace_list() {
+    let output = Command::new(git_same_binary())
+        .args(["workspace", "list"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    // Should succeed even with no workspaces
+    assert!(output.status.success());
 }
 
 // Tests that require authentication are ignored by default

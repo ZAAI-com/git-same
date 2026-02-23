@@ -54,6 +54,9 @@ pub enum Command {
     /// Show status of local repositories
     Status(StatusArgs),
 
+    /// Manage workspaces (list, set default)
+    Workspace(WorkspaceArgs),
+
     /// Generate shell completions
     Completions(CompletionsArgs),
 
@@ -207,6 +210,33 @@ pub struct StatusArgs {
     /// Filter to specific organizations (can be repeated)
     #[arg(short, long)]
     pub org: Vec<String>,
+}
+
+/// Arguments for the workspace command
+#[derive(Args, Debug)]
+pub struct WorkspaceArgs {
+    #[command(subcommand)]
+    pub command: WorkspaceCommand,
+}
+
+/// Workspace subcommands
+#[derive(Subcommand, Debug)]
+pub enum WorkspaceCommand {
+    /// List configured workspaces
+    List,
+    /// Set or show the default workspace
+    Default(WorkspaceDefaultArgs),
+}
+
+/// Arguments for the workspace default subcommand
+#[derive(Args, Debug)]
+pub struct WorkspaceDefaultArgs {
+    /// Workspace name to set as default (omit to show current)
+    pub name: Option<String>,
+
+    /// Clear the default workspace
+    #[arg(long)]
+    pub clear: bool,
 }
 
 /// Arguments for legacy fetch/pull commands (deprecated)
@@ -469,6 +499,62 @@ mod tests {
     fn test_cli_no_subcommand() {
         let cli = Cli::try_parse_from(["gisa"]).unwrap();
         assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn test_cli_parsing_workspace_list() {
+        let cli = Cli::try_parse_from(["gisa", "workspace", "list"]).unwrap();
+        match cli.command {
+            Some(Command::Workspace(args)) => {
+                assert!(matches!(args.command, WorkspaceCommand::List));
+            }
+            _ => panic!("Expected Workspace command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_workspace_default_set() {
+        let cli = Cli::try_parse_from(["gisa", "workspace", "default", "my-ws"]).unwrap();
+        match cli.command {
+            Some(Command::Workspace(args)) => match args.command {
+                WorkspaceCommand::Default(d) => {
+                    assert_eq!(d.name, Some("my-ws".to_string()));
+                    assert!(!d.clear);
+                }
+                _ => panic!("Expected Default subcommand"),
+            },
+            _ => panic!("Expected Workspace command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_workspace_default_clear() {
+        let cli = Cli::try_parse_from(["gisa", "workspace", "default", "--clear"]).unwrap();
+        match cli.command {
+            Some(Command::Workspace(args)) => match args.command {
+                WorkspaceCommand::Default(d) => {
+                    assert!(d.clear);
+                    assert!(d.name.is_none());
+                }
+                _ => panic!("Expected Default subcommand"),
+            },
+            _ => panic!("Expected Workspace command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_workspace_default_show() {
+        let cli = Cli::try_parse_from(["gisa", "workspace", "default"]).unwrap();
+        match cli.command {
+            Some(Command::Workspace(args)) => match args.command {
+                WorkspaceCommand::Default(d) => {
+                    assert!(d.name.is_none());
+                    assert!(!d.clear);
+                }
+                _ => panic!("Expected Default subcommand"),
+            },
+            _ => panic!("Expected Workspace command"),
+        }
     }
 
     #[test]

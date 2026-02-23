@@ -1,7 +1,7 @@
 //! Status command handler.
 
 use crate::cli::StatusArgs;
-use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::config::{Config, WorkspaceManager};
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
 use crate::git::{GitOperations, ShellGit};
@@ -9,7 +9,7 @@ use crate::output::{format_count, Output};
 
 /// Show status of repositories.
 pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<()> {
-    let workspace = resolve_workspace(args.workspace.as_deref())?;
+    let workspace = WorkspaceManager::resolve(args.workspace.as_deref(), config)?;
     let base_path = workspace.expanded_base_path();
 
     if !base_path.exists() {
@@ -121,31 +121,6 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
     }
 
     Ok(())
-}
-
-/// Resolve which workspace to use.
-fn resolve_workspace(name: Option<&str>) -> Result<WorkspaceConfig> {
-    let workspaces = WorkspaceManager::list()?;
-
-    if let Some(name) = name {
-        return WorkspaceManager::load(name);
-    }
-
-    match workspaces.len() {
-        0 => Err(AppError::config(
-            "No workspaces configured. Run 'gisa setup' first.",
-        )),
-        1 => Ok(workspaces.into_iter().next().unwrap()),
-        _ => {
-            // TODO: launch interactive workspace selector
-            // For now, list available workspaces and ask user to specify
-            let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
-            Err(AppError::config(format!(
-                "Multiple workspaces configured. Use --workspace to select one: {}",
-                names.join(", ")
-            )))
-        }
-    }
 }
 
 #[cfg(test)]

@@ -156,6 +156,47 @@ impl WorkspaceManager {
         name_parts.join("-").to_lowercase().replace([' ', '_'], "-")
     }
 
+    /// Resolve which workspace to use.
+    ///
+    /// Priority: explicit name → default from config → auto-select if only 1 → error.
+    pub fn resolve(
+        name: Option<&str>,
+        config: &super::parser::Config,
+    ) -> Result<WorkspaceConfig, AppError> {
+        if let Some(name) = name {
+            return Self::load(name);
+        }
+
+        if let Some(ref default) = config.default_workspace {
+            return Self::load(default);
+        }
+
+        let workspaces = Self::list()?;
+        Self::resolve_from_list(workspaces)
+    }
+
+    /// Resolve from an already-loaded list of workspaces (no filesystem access).
+    ///
+    /// Used when the explicit name and default have already been checked.
+    pub fn resolve_from_list(
+        workspaces: Vec<WorkspaceConfig>,
+    ) -> Result<WorkspaceConfig, AppError> {
+        match workspaces.len() {
+            0 => Err(AppError::config(
+                "No workspaces configured. Run 'gisa setup' first.",
+            )),
+            1 => Ok(workspaces.into_iter().next().unwrap()),
+            _ => {
+                let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
+                Err(AppError::config(format!(
+                    "Multiple workspaces configured. Use --workspace to select one, \
+                     or set a default with 'gisa workspace default <name>': {}",
+                    names.join(", ")
+                )))
+            }
+        }
+    }
+
     /// Returns the file path for a workspace config.
     fn config_path(name: &str) -> Result<PathBuf, AppError> {
         let dir = Self::workspaces_dir()?;
@@ -281,5 +322,33 @@ mod tests {
                 .collect();
             assert_eq!(entries.len(), 2);
         });
+    }
+
+    #[test]
+    fn test_resolve_from_list_empty() {
+        let result = WorkspaceManager::resolve_from_list(vec![]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("No workspaces configured"));
+    }
+
+    #[test]
+    fn test_resolve_from_list_single() {
+        let ws = WorkspaceConfig::new("only-ws", "~/github");
+        let result = WorkspaceManager::resolve_from_list(vec![ws]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "only-ws");
+    }
+
+    #[test]
+    fn test_resolve_from_list_multiple() {
+        let ws1 = WorkspaceConfig::new("ws1", "~/github");
+        let ws2 = WorkspaceConfig::new("ws2", "~/work");
+        let result = WorkspaceManager::resolve_from_list(vec![ws1, ws2]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Multiple workspaces"));
+        assert!(err.contains("ws1"));
+        assert!(err.contains("ws2"));
     }
 }

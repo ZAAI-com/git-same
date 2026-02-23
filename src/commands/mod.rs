@@ -10,6 +10,7 @@ pub mod setup;
 pub mod status;
 pub mod sync;
 pub mod sync_cmd;
+pub mod workspace;
 
 pub use init::run as run_init;
 pub use status::run as run_status;
@@ -50,6 +51,7 @@ pub async fn run_command(
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
         Command::Status(args) => run_status(args, &config, output).await,
+        Command::Workspace(args) => workspace::run(args, &config, output),
         Command::Completions(args) => {
             crate::cli::generate_completions(args.shell);
             Ok(())

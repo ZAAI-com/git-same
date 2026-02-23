@@ -89,6 +89,10 @@ pub struct Config {
     #[serde(default)]
     pub sync_mode: SyncMode,
 
+    /// Default workspace name (used when --workspace is not specified and multiple exist)
+    #[serde(default)]
+    pub default_workspace: Option<String>,
+
     /// Clone options
     #[serde(default)]
     #[serde(rename = "clone")]
@@ -126,6 +130,7 @@ impl Default for Config {
             structure: default_structure(),
             concurrency: default_concurrency(),
             sync_mode: SyncMode::default(),
+            default_workspace: None,
             clone: ConfigCloneOptions::default(),
             filters: FilterOptions::default(),
             providers: default_providers(),
@@ -281,6 +286,82 @@ prefer_ssh = true
 # base_path = "~/work/code"
 "#
         .to_string()
+    }
+
+    /// Save the default_workspace setting to the config file at the default path.
+    pub fn save_default_workspace(workspace: Option<&str>) -> Result<(), AppError> {
+        Self::save_default_workspace_to(&Self::default_path()?, workspace)
+    }
+
+    /// Save the default_workspace setting to a specific config file.
+    ///
+    /// Uses targeted text replacement to preserve comments and formatting.
+    pub fn save_default_workspace_to(
+        path: &Path,
+        workspace: Option<&str>,
+    ) -> Result<(), AppError> {
+        let content = if path.exists() {
+            std::fs::read_to_string(path)
+                .map_err(|e| AppError::config(format!("Failed to read config: {}", e)))?
+        } else {
+            return Err(AppError::config(
+                "Config file not found. Run 'gisa init' first.",
+            ));
+        };
+
+        let new_line = match workspace {
+            Some(name) => format!("default_workspace = \"{}\"", name),
+            None => String::new(),
+        };
+
+        // Replace existing default_workspace line, or insert after sync_mode
+        let new_content = if content.contains("default_workspace") {
+            let mut lines: Vec<&str> = content.lines().collect();
+            lines.retain(|line| {
+                let trimmed = line.trim();
+                !trimmed.starts_with("default_workspace")
+                    && !trimmed.starts_with("# default_workspace")
+            });
+            let mut result = lines.join("\n");
+            if !new_line.is_empty() {
+                // Insert after sync_mode line
+                if let Some(pos) = result.find("sync_mode") {
+                    if let Some(nl) = result[pos..].find('\n') {
+                        let insert_pos = pos + nl + 1;
+                        result.insert_str(insert_pos, &format!("{}\n", new_line));
+                    }
+                }
+            }
+            // Ensure trailing newline
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result
+        } else if !new_line.is_empty() {
+            // Insert after sync_mode line
+            let mut result = content.clone();
+            if let Some(pos) = result.find("sync_mode") {
+                if let Some(nl) = result[pos..].find('\n') {
+                    let insert_pos = pos + nl + 1;
+                    result.insert_str(insert_pos, &format!("\n{}\n", new_line));
+                }
+            } else {
+                // Fallback: insert near the top (after first blank line)
+                if let Some(pos) = result.find("\n\n") {
+                    result.insert_str(pos + 1, &format!("\n{}\n", new_line));
+                } else {
+                    result = format!("{}\n{}\n", new_line, result);
+                }
+            }
+            result
+        } else {
+            // Nothing to do — clearing a field that doesn't exist
+            content
+        };
+
+        std::fs::write(path, new_content)
+            .map_err(|e| AppError::config(format!("Failed to write config: {}", e)))?;
+        Ok(())
     }
 
     /// Returns enabled providers only.
@@ -488,5 +569,98 @@ token_env = "WORK_TOKEN"
         };
         let expanded = config.expanded_base_path().unwrap();
         assert!(!expanded.to_string_lossy().contains("~"));
+    }
+
+    #[test]
+    fn test_default_config_has_no_default_workspace() {
+        let config = Config::default();
+        assert!(config.default_workspace.is_none());
+    }
+
+    #[test]
+    fn test_parse_config_with_default_workspace() {
+        let content = r#"
+base_path = "~/repos"
+default_workspace = "my-ws"
+
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+"#;
+        let config = Config::parse(content).unwrap();
+        assert_eq!(config.default_workspace, Some("my-ws".to_string()));
+    }
+
+    #[test]
+    fn test_parse_config_without_default_workspace() {
+        let content = r#"
+base_path = "~/repos"
+
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+"#;
+        let config = Config::parse(content).unwrap();
+        assert!(config.default_workspace.is_none());
+    }
+
+    #[test]
+    fn test_save_default_workspace_to_set() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, Config::default_toml()).unwrap();
+
+        Config::save_default_workspace_to(&path, Some("my-ws")).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("default_workspace = \"my-ws\""));
+        // Original content preserved
+        assert!(content.contains("base_path"));
+        assert!(content.contains("concurrency"));
+        // Still valid TOML
+        let config = Config::parse(&content).unwrap();
+        assert_eq!(config.default_workspace, Some("my-ws".to_string()));
+    }
+
+    #[test]
+    fn test_save_default_workspace_to_clear() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, Config::default_toml()).unwrap();
+
+        // Set then clear
+        Config::save_default_workspace_to(&path, Some("my-ws")).unwrap();
+        Config::save_default_workspace_to(&path, None).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("default_workspace"));
+        // Still valid TOML
+        let config = Config::parse(&content).unwrap();
+        assert!(config.default_workspace.is_none());
+    }
+
+    #[test]
+    fn test_save_default_workspace_to_replace() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, Config::default_toml()).unwrap();
+
+        Config::save_default_workspace_to(&path, Some("ws1")).unwrap();
+        Config::save_default_workspace_to(&path, Some("ws2")).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("default_workspace = \"ws2\""));
+        assert!(!content.contains("ws1"));
+        let config = Config::parse(&content).unwrap();
+        assert_eq!(config.default_workspace, Some("ws2".to_string()));
+    }
+
+    #[test]
+    fn test_save_default_workspace_to_nonexistent_file() {
+        let result = Config::save_default_workspace_to(
+            Path::new("/nonexistent/config.toml"),
+            Some("ws"),
+        );
+        assert!(result.is_err());
     }
 }

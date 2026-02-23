@@ -6,7 +6,7 @@ use super::warn_if_concurrency_capped;
 use crate::auth::get_auth_for_provider;
 use crate::cache::{CacheManager, DiscoveryCache};
 use crate::cli::SyncCmdArgs;
-use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::config::{Config, WorkspaceManager};
 use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
 use crate::git::{CloneOptions, ShellGit};
@@ -27,7 +27,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
     };
 
     // Resolve workspace
-    let mut workspace = resolve_workspace(args.workspace.as_deref())?;
+    let mut workspace = WorkspaceManager::resolve(args.workspace.as_deref(), config)?;
     let provider_entry = workspace.provider.to_provider_entry();
 
     // Authenticate
@@ -270,30 +270,6 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
     }
 
     Ok(())
-}
-
-/// Resolve which workspace to use.
-fn resolve_workspace(name: Option<&str>) -> Result<WorkspaceConfig> {
-    let workspaces = WorkspaceManager::list()?;
-
-    if let Some(name) = name {
-        return WorkspaceManager::load(name);
-    }
-
-    match workspaces.len() {
-        0 => Err(AppError::config(
-            "No workspaces configured. Run 'gisa setup' first.",
-        )),
-        1 => Ok(workspaces.into_iter().next().unwrap()),
-        _ => {
-            // TODO: launch interactive workspace selector
-            let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
-            Err(AppError::config(format!(
-                "Multiple workspaces configured. Use --workspace to select one: {}",
-                names.join(", ")
-            )))
-        }
-    }
 }
 
 #[cfg(test)]
