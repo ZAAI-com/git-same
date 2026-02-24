@@ -8,6 +8,11 @@ use ratatui::Frame;
 pub fn render(app: &App, frame: &mut Frame) {
     match app.screen {
         Screen::InitCheck => screens::init_check::render(app, frame),
+        Screen::SetupWizard => {
+            if let Some(ref setup) = app.setup_state {
+                crate::setup::ui::render(setup, frame);
+            }
+        }
         Screen::WorkspaceSelector => screens::workspace_selector::render(app, frame),
         Screen::Dashboard => screens::dashboard::render(app, frame),
         Screen::CommandPicker => screens::command_picker::render(app, frame),

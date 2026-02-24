@@ -1,6 +1,7 @@
 //! TUI application state (the "Model" in Elm architecture).
 
 use crate::config::{Config, WorkspaceConfig};
+use crate::setup::state::SetupState;
 use crate::types::{OpSummary, OwnedRepo};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     InitCheck,
+    SetupWizard,
     WorkspaceSelector,
     Dashboard,
     CommandPicker,
@@ -159,13 +161,16 @@ pub struct App {
 
     /// Whether to use pull mode for sync (vs fetch).
     pub sync_pull: bool,
+
+    /// Setup wizard state (active when on SetupWizard screen).
+    pub setup_state: Option<SetupState>,
 }
 
 impl App {
     /// Create a new App with the given config and workspaces.
     pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>) -> Self {
         let (screen, active_workspace, base_path) = match workspaces.len() {
-            0 => (Screen::InitCheck, None, None),
+            0 => (Screen::SetupWizard, None, None),
             1 => {
                 let ws = workspaces[0].clone();
                 let bp = Some(ws.expanded_base_path());
@@ -214,6 +219,11 @@ impl App {
             check_results: Vec::new(),
             checks_loading: false,
             sync_pull: false,
+            setup_state: if screen == Screen::SetupWizard {
+                Some(SetupState::new("~/github"))
+            } else {
+                None
+            },
         }
     }
 
@@ -251,9 +261,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_new_no_workspaces_shows_init_check() {
+    fn test_new_no_workspaces_shows_setup_wizard() {
         let app = App::new(Config::default(), vec![]);
-        assert_eq!(app.screen, Screen::InitCheck);
+        assert_eq!(app.screen, Screen::SetupWizard);
+        assert!(app.setup_state.is_some());
         assert!(app.active_workspace.is_none());
         assert!(app.base_path.is_none());
     }

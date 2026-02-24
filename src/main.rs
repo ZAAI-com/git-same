@@ -65,6 +65,18 @@ async fn main() -> ExitCode {
             {
                 use git_same::config::Config;
 
+                // Auto-create default config if it doesn't exist
+                if cli.config.is_none() {
+                    if let Ok(default_path) = Config::default_path() {
+                        if !default_path.exists() {
+                            if let Some(parent) = default_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let _ = std::fs::write(&default_path, Config::default_toml());
+                        }
+                    }
+                }
+
                 let config = match cli.config.as_ref() {
                     Some(path) => Config::load_from(path),
                     None => Config::load(),

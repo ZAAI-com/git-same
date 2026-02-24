@@ -93,9 +93,9 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     // Help text
     let help_text = if app.check_results.is_empty() {
-        "No workspaces configured. Run 'gisa init' then 'gisa setup' to get started."
+        "No workspaces configured. Press 's' to set up a workspace."
     } else {
-        "Run 'gisa setup' to configure a workspace, then restart the TUI."
+        "Press 's' to set up a workspace."
     };
     let help = Paragraph::new(Line::from(Span::styled(
         help_text,
@@ -105,5 +105,5 @@ pub fn render(app: &App, frame: &mut Frame) {
     .block(Block::default().borders(Borders::TOP));
     frame.render_widget(help, chunks[2]);
 
-    status_bar::render(frame, chunks[3], "Enter: Check  q: Quit");
+    status_bar::render(frame, chunks[3], "s: Setup  Enter: Check  q: Quit");
 }

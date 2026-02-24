@@ -5,13 +5,28 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::app::{App, CheckEntry, Operation, OperationState, Screen};
 use super::event::{AppEvent, BackendMessage};
+use crate::config::WorkspaceManager;
+use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
 
 /// Handle an incoming event, updating app state and optionally spawning backend work.
 pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &UnboundedSender<AppEvent>) {
     match event {
         AppEvent::Terminal(key) => handle_key(app, key, backend_tx).await,
         AppEvent::Backend(msg) => handle_backend_message(app, msg),
-        AppEvent::Tick => {}         // Tick just triggers a re-render
+        AppEvent::Tick => {
+            // Drive setup wizard org discovery on tick
+            if app.screen == Screen::SetupWizard {
+                if let Some(ref mut setup) = app.setup_state {
+                    if setup.step == SetupStep::SelectOrgs && setup.org_loading {
+                        crate::setup::handler::handle_key(
+                            setup,
+                            KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+                        )
+                        .await;
+                    }
+                }
+            }
+        }
         AppEvent::Resize(_, _) => {} // ratatui handles resize
     }
 }
@@ -41,6 +56,17 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         return;
     }
 
+    // SetupWizard handles its own keys (q is valid in path input, Esc navigates steps)
+    if app.screen == Screen::SetupWizard {
+        // Only Ctrl+C quits the whole app from setup
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            app.should_quit = true;
+            return;
+        }
+        handle_setup_wizard_key(app, key).await;
+        return;
+    }
+
     // Global keybindings
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
@@ -63,6 +89,7 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     // Screen-specific keybindings
     match app.screen {
         Screen::InitCheck => handle_init_check_key(app, key).await,
+        Screen::SetupWizard => unreachable!(), // handled above
         Screen::WorkspaceSelector => handle_workspace_selector_key(app, key),
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
         Screen::CommandPicker => handle_picker_key(app, key, backend_tx).await,
@@ -73,20 +100,55 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
 }
 
 async fn handle_init_check_key(app: &mut App, key: KeyEvent) {
-    if key.code == KeyCode::Enter && !app.checks_loading {
-        // Run requirement checks
-        app.checks_loading = true;
-        let results = crate::checks::check_requirements().await;
-        app.check_results = results
-            .into_iter()
-            .map(|r| CheckEntry {
-                name: r.name,
-                passed: r.passed,
-                message: r.message,
-                critical: r.critical,
-            })
-            .collect();
-        app.checks_loading = false;
+    match key.code {
+        KeyCode::Enter if !app.checks_loading => {
+            // Run requirement checks
+            app.checks_loading = true;
+            let results = crate::checks::check_requirements().await;
+            app.check_results = results
+                .into_iter()
+                .map(|r| CheckEntry {
+                    name: r.name,
+                    passed: r.passed,
+                    message: r.message,
+                    critical: r.critical,
+                })
+                .collect();
+            app.checks_loading = false;
+        }
+        KeyCode::Char('s') => {
+            // Launch setup wizard
+            app.setup_state = Some(SetupState::new("~/github"));
+            app.navigate_to(Screen::SetupWizard);
+        }
+        _ => {}
+    }
+}
+
+async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
+    let Some(ref mut setup) = app.setup_state else {
+        return;
+    };
+
+    crate::setup::handler::handle_key(setup, key).await;
+
+    if setup.should_quit {
+        if matches!(setup.outcome, Some(SetupOutcome::Completed)) {
+            // Reload workspaces and go to dashboard
+            app.workspaces = WorkspaceManager::list().unwrap_or_default();
+            if let Some(ws) = app.workspaces.first().cloned() {
+                app.base_path = Some(ws.expanded_base_path());
+                app.active_workspace = Some(ws);
+            }
+            app.setup_state = None;
+            app.screen = Screen::Dashboard;
+            app.screen_stack.clear();
+        } else {
+            // Cancelled — go to InitCheck
+            app.setup_state = None;
+            app.screen = Screen::InitCheck;
+            app.screen_stack.clear();
+        }
     }
 }
 
