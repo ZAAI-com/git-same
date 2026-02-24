@@ -103,15 +103,7 @@ struct TuiSyncProgress {
 }
 
 impl SyncProgress for TuiSyncProgress {
-    fn on_start(&self, repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {
-        let _ = self
-            .tx
-            .send(AppEvent::Backend(BackendMessage::RepoProgress {
-                repo_name: repo.full_name().to_string(),
-                success: true,
-                message: "syncing...".to_string(),
-            }));
-    }
+    fn on_start(&self, _repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {}
 
     fn on_fetch_complete(
         &self,
@@ -130,6 +122,7 @@ impl SyncProgress for TuiSyncProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: true,
+                skipped: false,
                 message: status.to_string(),
             }));
     }
@@ -151,6 +144,7 @@ impl SyncProgress for TuiSyncProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: result.success,
+                skipped: false,
                 message: status.to_string(),
             }));
     }
@@ -161,6 +155,7 @@ impl SyncProgress for TuiSyncProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: false,
+                skipped: false,
                 message: error.to_string(),
             }));
     }
@@ -171,6 +166,7 @@ impl SyncProgress for TuiSyncProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: true,
+                skipped: true,
                 message: format!("skipped: {}", reason),
             }));
     }
@@ -301,7 +297,18 @@ async fn run_sync_operation(
     let provider_name = provider_entry.kind.to_string().to_lowercase();
     let plan = orchestrator.plan_clone(&base_path, repos.clone(), &provider_name, &git);
 
+    let (to_sync, _skipped) =
+        orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
+
+    // Send OperationStarted so the UI transitions to Running state
+    let total = plan.to_clone.len() + to_sync.len();
+    let _ = tx.send(AppEvent::Backend(BackendMessage::OperationStarted {
+        operation: Operation::Sync,
+        total,
+    }));
+
     let concurrency = workspace.concurrency.unwrap_or(config.concurrency);
+    let mut combined_summary = OpSummary::new();
 
     // Phase 1: Clone new repos
     if !plan.to_clone.is_empty() {
@@ -343,9 +350,12 @@ async fn run_sync_operation(
 
         let manager = CloneManager::new(ShellGit::new(), manager_options);
         let progress: Arc<dyn CloneProgress> = Arc::new(TuiCloneProgress { tx: tx.clone() });
-        let (_summary, _results) = manager
+        let (clone_summary, _results) = manager
             .clone_repos(&base_path, plan.to_clone, &provider_name, progress)
             .await;
+        combined_summary.success += clone_summary.success;
+        combined_summary.failed += clone_summary.failed;
+        combined_summary.skipped += clone_summary.skipped;
     }
 
     // Phase 2: Sync existing repos
@@ -358,8 +368,6 @@ async fn run_sync_operation(
         }
     };
 
-    let (to_sync, _skipped) = orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
-
     if !to_sync.is_empty() {
         let manager_options = SyncManagerOptions::new()
             .with_concurrency(concurrency)
@@ -368,16 +376,15 @@ async fn run_sync_operation(
 
         let manager = SyncManager::new(ShellGit::new(), manager_options);
         let progress: Arc<dyn SyncProgress> = Arc::new(TuiSyncProgress { tx: tx.clone() });
-        let (summary, _results) = manager.sync_repos(to_sync, progress).await;
-
-        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-            summary,
-        )));
-    } else {
-        let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
-            OpSummary::new(),
-        )));
+        let (sync_summary, _results) = manager.sync_repos(to_sync, progress).await;
+        combined_summary.success += sync_summary.success;
+        combined_summary.failed += sync_summary.failed;
+        combined_summary.skipped += sync_summary.skipped;
     }
+
+    let _ = tx.send(AppEvent::Backend(BackendMessage::OperationComplete(
+        combined_summary,
+    )));
 }
 
 /// Scans local repositories and gets their git status.

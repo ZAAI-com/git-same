@@ -47,6 +47,19 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     let _ = tx.send(AppEvent::Backend(BackendMessage::CheckResults(entries)));
                 });
             }
+            // Auto-trigger status scan to populate dashboard stats
+            if app.screen == Screen::Dashboard
+                && app.active_workspace.is_some()
+                && app.local_repos.is_empty()
+                && !app.status_loading
+            {
+                app.status_loading = true;
+                super::backend::spawn_operation(
+                    Operation::Status,
+                    app,
+                    backend_tx.clone(),
+                );
+            }
         }
         AppEvent::Resize(_, _) => {} // ratatui handles resize
     }
@@ -343,9 +356,16 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
                 }
             }
         }
-        KeyCode::Char('w') => {
-            // Open active workspace base_path in Finder / file manager
-            if let Some(ref ws) = app.active_workspace {
+        KeyCode::Char('d') => {
+            app.dry_run = !app.dry_run;
+        }
+        KeyCode::Char('m') => {
+            app.sync_pull = !app.sync_pull;
+        }
+        KeyCode::Char(c @ '1'..='9') => {
+            // Open workspace folder by number key
+            let index = (c as usize) - ('1' as usize);
+            if let Some(ws) = app.workspaces.get(index) {
                 let path = ws.expanded_base_path();
                 let _ = std::process::Command::new("open").arg(&path).spawn();
             }
@@ -362,12 +382,6 @@ async fn handle_picker_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedS
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.picker_index = (app.picker_index + num_items - 1) % num_items;
-        }
-        KeyCode::Char('d') => {
-            app.dry_run = !app.dry_run;
-        }
-        KeyCode::Char('m') => {
-            app.sync_pull = !app.sync_pull;
         }
         KeyCode::Enter => {
             let operation = match app.picker_index {
@@ -551,25 +565,46 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
             app.operation_state = OperationState::Idle;
             app.error_message = Some(msg);
         }
+        BackendMessage::OperationStarted { operation, total } => {
+            app.log_lines.clear();
+            app.operation_state = OperationState::Running {
+                operation,
+                total,
+                completed: 0,
+                failed: 0,
+                skipped: 0,
+                current_repo: String::new(),
+            };
+        }
         BackendMessage::RepoProgress {
             repo_name,
             success,
+            skipped,
             message,
         } => {
             if let OperationState::Running {
                 ref mut completed,
                 ref mut failed,
+                skipped: ref mut skip_count,
                 ref mut current_repo,
                 ..
             } = app.operation_state
             {
                 *completed += 1;
                 *current_repo = repo_name.clone();
-                if !success {
+                if skipped {
+                    *skip_count += 1;
+                } else if !success {
                     *failed += 1;
                 }
             }
-            let prefix = if success { "[ok]" } else { "[!!]" };
+            let prefix = if !success {
+                "[!!]"
+            } else if skipped {
+                "[--]"
+            } else {
+                "[ok]"
+            };
             app.log_lines
                 .push(format!("{} {} - {}", prefix, repo_name, message));
             // Auto-scroll to bottom
@@ -580,6 +615,18 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
                 OperationState::Running { operation, .. } => *operation,
                 _ => Operation::Sync,
             };
+            // Update last_synced after a successful sync
+            if op == Operation::Sync {
+                let now = chrono::Utc::now().to_rfc3339();
+                if let Some(ref mut ws) = app.active_workspace {
+                    ws.last_synced = Some(now.clone());
+                    let _ = WorkspaceManager::save(ws);
+                    // Keep workspaces list in sync
+                    if let Some(entry) = app.workspaces.iter_mut().find(|w| w.name == ws.name) {
+                        entry.last_synced = Some(now);
+                    }
+                }
+            }
             app.operation_state = OperationState::Finished {
                 operation: op,
                 summary,

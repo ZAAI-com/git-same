@@ -20,7 +20,6 @@ pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Title
         Constraint::Min(6),    // Command list
-        Constraint::Length(5), // Options
         Constraint::Length(1), // Status bar
     ])
     .split(frame.area());
@@ -69,46 +68,5 @@ pub fn render(app: &App, frame: &mut Frame) {
     );
     frame.render_widget(list, chunks[1]);
 
-    // Options panel
-    let ws_name = app
-        .active_workspace
-        .as_ref()
-        .map(|ws| ws.name.as_str())
-        .unwrap_or("(none)");
-    let base = app
-        .base_path
-        .as_ref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "(not set)".to_string());
-    let dry_run_str = if app.dry_run { "Yes" } else { "No" };
-    let pull_str = if app.sync_pull { "Pull" } else { "Fetch" };
-
-    let options = Paragraph::new(vec![
-        Line::from(vec![
-            Span::raw("  Workspace: "),
-            Span::styled(ws_name, Style::default().fg(Color::Cyan)),
-            Span::raw("  Path: "),
-            Span::styled(&base, Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(vec![
-            Span::raw("  "),
-            Span::styled("[d]", Style::default().fg(Color::Yellow)),
-            Span::raw(format!(" Dry run: {}  ", dry_run_str)),
-            Span::styled("[m]", Style::default().fg(Color::Yellow)),
-            Span::raw(format!(" Mode: {}", pull_str)),
-        ]),
-    ])
-    .block(
-        Block::default()
-            .title(" Options ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
-    frame.render_widget(options, chunks[2]);
-
-    status_bar::render(
-        frame,
-        chunks[3],
-        "j/k: Navigate  Enter: Run  d: Dry-run  m: Mode  Esc: Back",
-    );
+    status_bar::render(frame, chunks[2], "j/k: Navigate  Enter: Run  Esc: Back");
 }
