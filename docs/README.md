@@ -8,6 +8,7 @@ Mirror GitHub structure /orgs/repos/ to local file system
 
 ## Features
 
+- **Interactive TUI**: Full terminal UI with dashboard, workspace management, and live progress
 - **Multi-Provider Support**: Works with GitHub and GitHub Enterprise (GitLab and Bitbucket planned)
 - **Parallel Operations**: Clones and syncs repositories concurrently
 - **Smart Filtering**: Filter by archived status, forks, organizations
@@ -53,45 +54,32 @@ The tool can be invoked using any of these names (all installed by default):
 
 ## Quick Start
 
-### 1. Initialize configuration
+### Interactive (TUI)
+
+Run `gisa` with no arguments to launch the interactive terminal UI:
 
 ```bash
-git-same init
+gisa
 ```
 
-This creates a config file at `~/.config/git-same/config.toml` with sensible defaults.
+The TUI provides a dashboard with workspace management, sync operations, repo status, and settings — all accessible via keyboard shortcuts.
 
-### 2. Clone all repositories
-
-```bash
-# Dry run first to see what would be cloned
-git-same clone ~/github --dry-run
-
-# Clone for real
-git-same clone ~/github
-```
-
-### 3. Keep repositories in sync
+### CLI
 
 ```bash
-# Fetch updates (doesn't modify working tree)
-git-same fetch ~/github
+# 1. Initialize configuration
+gisa init
 
-# Pull updates (modifies working tree)
-git-same pull ~/github
-```
+# 2. Set up a workspace (interactive wizard)
+gisa setup
 
-### 4. Check repository status
+# 3. Sync repositories (discover, clone new, fetch/pull existing)
+gisa sync
 
-```bash
-# Show status of all repositories
-git-same status ~/github
-
-# Show only dirty repositories
-git-same status ~/github --dirty
-
-# Show only repositories behind upstream
-git-same status ~/github --behind
+# 4. Check repository status
+gisa status
+gisa status --dirty
+gisa status --behind
 ```
 
 ## Authentication
@@ -191,63 +179,34 @@ base_path = "~/work/code"
 Initialize git-same configuration:
 
 ```bash
-git-same init [-p <config-path>] [-f | --force]
+gisa init [-p <config-path>] [-f | --force]
 ```
 
-### `clone`
+Creates a config file at `~/.config/git-same/config.toml` with sensible defaults.
 
-Clone all discovered repositories:
+### `setup`
+
+Configure a workspace (interactive wizard):
 
 ```bash
-git-same clone <base-path> [OPTIONS]
-
-Options:
-  -n, --dry-run               Show what would be cloned
-  -c, --concurrency <N>       Number of parallel clones (1-32, default: 4)
-  -d, --depth <N>             Clone depth (0 = full)
-  -b, --branch <BRANCH>       Clone specific branch
-  -o, --org <ORG>...          Filter by organization (repeatable)
-      --exclude-org <ORG>...  Exclude organization (repeatable)
-      --filter <REGEX>        Filter by repository name pattern
-      --exclude <REGEX>       Exclude by repository name pattern
-  -p, --provider <NAME>       Use specific provider
-      --include-archived      Include archived repositories
-      --include-forks         Include forked repositories
-      --recurse-submodules    Clone submodules recursively
-      --https                 Use HTTPS instead of SSH
-      --refresh               Force refresh from API
-      --no-cache              Skip cache, always discover
+gisa setup [--name <NAME>]
 ```
 
-### `fetch`
+Walks through provider selection, base path, org filters, and clone options.
 
-Fetch updates for all repositories:
+### `sync`
 
-```bash
-git-same fetch <base-path> [OPTIONS]
-
-Options:
-  -n, --dry-run               Show what would be fetched
-  -c, --concurrency <N>       Number of parallel fetches (1-32)
-  -o, --org <ORG>...          Filter by organization (repeatable)
-      --exclude-org <ORG>...  Exclude organization (repeatable)
-      --filter <REGEX>        Filter by repository name pattern
-      --no-skip-dirty         Don't skip repos with uncommitted changes
-```
-
-### `pull`
-
-Pull updates for all repositories:
+Sync repositories — discover, clone new, fetch/pull existing:
 
 ```bash
-git-same pull <base-path> [OPTIONS]
+gisa sync [OPTIONS]
 
 Options:
-  -n, --dry-run               Show what would be pulled
-  -c, --concurrency <N>       Number of parallel pulls (1-32)
-  -o, --org <ORG>...          Filter by organization (repeatable)
-      --exclude-org <ORG>...  Exclude organization (repeatable)
-      --filter <REGEX>        Filter by repository name pattern
+  -w, --workspace <NAME>      Workspace to sync
+      --pull                  Use pull instead of fetch for existing repos
+  -n, --dry-run               Show what would be done
+  -c, --concurrency <N>       Number of parallel operations (1-32)
+      --refresh               Force re-discovery (ignore cache)
       --no-skip-dirty         Don't skip repos with uncommitted changes
 ```
 
@@ -256,45 +215,85 @@ Options:
 Show status of local repositories:
 
 ```bash
-git-same status <base-path> [OPTIONS]
+gisa status [OPTIONS]
 
 Options:
+  -w, --workspace <NAME>      Workspace to check
   -o, --org <ORG>...          Filter by organization (repeatable)
   -d, --dirty                 Show only dirty repositories
   -b, --behind                Show only repositories behind upstream
       --detailed              Show detailed status information
 ```
 
+### `workspace`
+
+Manage workspaces:
+
+```bash
+gisa workspace list              # List configured workspaces
+gisa workspace default [NAME]    # Set default workspace
+gisa workspace default --clear   # Clear default workspace
+```
+
+### `reset`
+
+Remove all config, workspaces, and cache:
+
+```bash
+gisa reset [-f | --force]
+```
+
+### Deprecated Commands
+
+`clone`, `fetch`, and `pull` still work but are hidden. Use `gisa sync` instead:
+
+```bash
+gisa sync                  # replaces: gisa clone + gisa fetch
+gisa sync --pull           # replaces: gisa pull
+```
+
+## TUI Mode
+
+Running `gisa` without a subcommand launches the interactive terminal UI.
+
+### Screens
+
+| Screen | Purpose | Key bindings |
+|--------|---------|-------------|
+| **Dashboard** | Overview with stats, quick actions | `s`: Sync, `t`: Status, `w`: Workspaces, `?`: Settings |
+| **Workspace Selector** | Pick active workspace | `j/k`: Navigate, `Enter`: Select, `d`: Set default, `n`: New |
+| **Init Check** | System requirements check | `Enter`: Check, `c`: Create config, `s`: Setup |
+| **Setup Wizard** | Interactive workspace configuration | Step-by-step prompts |
+| **Command Picker** | Choose operation to run | `Enter`: Run |
+| **Progress** | Live sync progress with per-repo updates | `Esc`: Back when complete |
+| **Repo Status** | Table of local repos with git status | `j/k`: Navigate, `/`: Filter, `D`: Dirty, `B`: Behind, `r`: Refresh |
+| **Org Browser** | Browse discovered repos by organization | `j/k`: Navigate |
+| **Settings** | View workspace settings | `Esc`: Back |
+
 ## Examples
 
-### Clone all repositories from specific orgs
+### Sync all repositories in default workspace
 
 ```bash
-git-same clone ~/github --org octocat --org github
+gisa sync
 ```
 
-### Clone with shallow depth for faster initial clone
+### Sync with pull mode for a specific workspace
 
 ```bash
-git-same clone ~/github --depth 1
-```
-
-### Fetch updates for specific organization
-
-```bash
-git-same fetch ~/github --org mycompany
+gisa sync --workspace work --pull
 ```
 
 ### Check which repositories have uncommitted changes
 
 ```bash
-git-same status ~/github --dirty
+gisa status --dirty
 ```
 
-### Use HTTPS instead of SSH
+### Dry run to see what would be synced
 
 ```bash
-git-same clone ~/github --https
+gisa sync --dry-run
 ```
 
 ## Development
@@ -384,8 +383,9 @@ Contributions welcome! Please open an issue or PR on [GitHub](https://github.com
 - [x] Parallel cloning
 - [x] Smart filtering
 - [x] Progress bars
+- [x] Interactive TUI mode
+- [x] Workspace management
 - [ ] GitLab support
 - [ ] Bitbucket support
-- [ ] Interactive mode
 - [ ] Repo groups
 - [ ] Web dashboard

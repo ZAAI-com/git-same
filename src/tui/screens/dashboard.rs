@@ -14,9 +14,9 @@ use crate::tui::app::App;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
-        Constraint::Length(8), // Banner
+        Constraint::Length(7), // Banner
         Constraint::Length(1), // Tagline + version
-        Constraint::Length(1), // Config / requirements
+        Constraint::Length(1), // Requirements status
         Constraint::Length(1), // Workspace info line 1
         Constraint::Length(1), // Workspace info line 2
         Constraint::Length(5), // Stats
@@ -34,38 +34,58 @@ pub fn render(app: &App, frame: &mut Frame) {
 }
 
 fn render_banner(frame: &mut Frame, area: Rect) {
-    let style = Style::default()
-        .fg(Color::Blue)
-        .add_modifier(Modifier::BOLD);
-    let banner_lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "  ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗",
-            style,
-        )),
-        Line::from(Span::styled(
-            " ██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝",
-            style,
-        )),
-        Line::from(Span::styled(
-            " ██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗  ",
-            style,
-        )),
-        Line::from(Span::styled(
-            " ██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝  ",
-            style,
-        )),
-        Line::from(Span::styled(
-            " ╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗",
-            style,
-        )),
-        Line::from(Span::styled(
-            "  ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝",
-            style,
-        )),
+    let lines = [
+        "  ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗",
+        " ██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝",
+        " ██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗  ",
+        " ██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝  ",
+        " ╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗",
+        "  ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝",
     ];
+    let stops: [(u8, u8, u8); 4] = [
+        (168, 85, 247), // Purple
+        (59, 130, 246), // Blue
+        (6, 182, 212),  // Cyan
+        (34, 197, 94),  // Green
+    ];
+    let mut banner_lines: Vec<Line> = Vec::new();
+    for text in &lines {
+        banner_lines.push(gradient_line(text, &stops));
+    }
     let banner = Paragraph::new(banner_lines).centered();
     frame.render_widget(banner, area);
+}
+
+fn gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)]) -> Line<'a> {
+    let chars: Vec<&str> = text.split_inclusive(|_: char| true).collect();
+    let len = chars.len().max(1);
+    let spans: Vec<Span<'a>> = chars
+        .into_iter()
+        .enumerate()
+        .map(|(i, ch)| {
+            let t = i as f64 / (len - 1).max(1) as f64;
+            let (r, g, b) = interpolate_stops(stops, t);
+            Span::styled(
+                ch.to_string(),
+                Style::default()
+                    .fg(Color::Rgb(r, g, b))
+                    .add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect();
+    Line::from(spans)
+}
+
+fn interpolate_stops(stops: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    let segments = stops.len() - 1;
+    let scaled = t * segments as f64;
+    let idx = (scaled as usize).min(segments - 1);
+    let local_t = scaled - idx as f64;
+    let (r1, g1, b1) = stops[idx];
+    let (r2, g2, b2) = stops[idx + 1];
+    let lerp = |a: u8, b: u8, t: f64| -> u8 { (a as f64 + (b as f64 - a as f64) * t) as u8 };
+    (lerp(r1, r2, local_t), lerp(g1, g2, local_t), lerp(b1, b2, local_t))
 }
 
 fn render_tagline(frame: &mut Frame, area: Rect) {
@@ -87,39 +107,34 @@ fn render_tagline(frame: &mut Frame, area: Rect) {
 
 fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
-    let pass = Style::default().fg(Color::Green);
-    let fail = Style::default().fg(Color::Red);
-    let loading = Style::default().fg(Color::Yellow);
+    let key_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let loading_style = Style::default().fg(Color::Yellow);
 
     let mut spans: Vec<Span> = Vec::new();
 
-    if app.checks_loading {
-        spans.push(Span::styled("Global Config", dim));
-        spans.push(Span::styled("  │  ", dim));
-        spans.push(Span::styled("Checking requirements...", loading));
-    } else if app.check_results.is_empty() {
-        spans.push(Span::styled("Global Config", dim));
-        spans.push(Span::styled("  │  ", dim));
-        spans.push(Span::styled("Checking...", dim));
+    if app.checks_loading || app.check_results.is_empty() {
+        spans.push(Span::styled("Checking requirements...", loading_style));
     } else {
-        spans.push(Span::styled("Global Config", dim));
-        spans.push(Span::styled("  │  ", dim));
-        for (i, check) in app.check_results.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::styled("  ", dim));
-            }
-            let icon = if check.passed { "✓" } else { "✗" };
-            let style = if check.passed { pass } else { fail };
-            spans.push(Span::styled(&check.name, dim));
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(icon, style));
+        let all_passed = app.check_results.iter().all(|c| c.passed);
+        if all_passed {
+            spans.push(Span::styled(
+                "Requirements ✓",
+                Style::default().fg(Color::Green),
+            ));
+            spans.push(Span::styled("   ", dim));
+            spans.push(Span::styled("[e]", key_style));
+            spans.push(Span::styled(" Settings", dim));
+        } else {
+            spans.push(Span::styled(
+                "Requirements ✗",
+                Style::default().fg(Color::Red),
+            ));
+            spans.push(Span::styled("   ", dim));
+            spans.push(Span::styled("[i]", key_style));
+            spans.push(Span::styled(" Init", dim));
         }
-
-        spans.push(Span::styled("  │  ", dim));
-        spans.push(Span::styled(
-            format!("Concurrency: {}", app.config.concurrency),
-            dim,
-        ));
     }
 
     let p = Paragraph::new(vec![Line::from(spans)]).centered();
@@ -133,11 +148,6 @@ fn render_workspace_info(app: &App, frame: &mut Frame, line1: Rect, line2: Rect)
 
     match &app.active_workspace {
         Some(ws) => {
-            let org_count = if ws.orgs.is_empty() {
-                "all orgs".to_string()
-            } else {
-                format!("{} org(s)", ws.orgs.len())
-            };
             let last = ws.last_synced.as_deref().unwrap_or("never");
             let provider = ws.provider.kind.display_name();
 
@@ -150,11 +160,9 @@ fn render_workspace_info(app: &App, frame: &mut Frame, line1: Rect, line2: Rect)
                 Span::styled(&ws.base_path, cyan),
             ]);
 
-            // Line 2: Provider + orgs + last synced
+            // Line 2: Provider + last synced
             let bottom = Line::from(vec![
                 Span::styled(format!("Provider: {}", provider), dim),
-                sep.clone(),
-                Span::styled(format!("Orgs: {}", org_count), dim),
                 sep,
                 Span::styled(format!("Last synced: {}", last), dim),
             ]);

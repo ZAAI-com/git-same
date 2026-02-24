@@ -177,6 +177,9 @@ pub struct App {
 
     /// Selected stat box index on dashboard (0-5) for ←/→ navigation.
     pub stat_index: usize,
+
+    /// Selected category index in settings screen (0 = Folders, 1 = Options).
+    pub settings_index: usize,
 }
 
 impl App {
@@ -244,6 +247,7 @@ impl App {
             config_path_display: None,
             status_loading: false,
             stat_index: 0,
+            settings_index: 0,
         }
     }
 

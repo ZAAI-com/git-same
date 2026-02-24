@@ -331,6 +331,9 @@ async fn handle_dashboard_key(
         KeyCode::Char('w') => {
             app.navigate_to(Screen::WorkspaceSelector);
         }
+        KeyCode::Char('i') => {
+            app.navigate_to(Screen::InitCheck);
+        }
         KeyCode::Char('m') | KeyCode::Enter => {
             app.navigate_to(Screen::CommandPicker);
         }
@@ -347,7 +350,19 @@ async fn handle_dashboard_key(
 }
 
 fn handle_settings_key(app: &mut App, key: KeyEvent) {
+    let num_categories = 2; // Folders, Options
     match key.code {
+        KeyCode::Tab => {
+            app.settings_index = (app.settings_index + 1) % num_categories;
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            if app.settings_index < num_categories - 1 {
+                app.settings_index += 1;
+            }
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.settings_index = app.settings_index.saturating_sub(1);
+        }
         KeyCode::Char('c') => {
             // Open config directory in Finder / file manager
             if let Ok(path) = crate::config::Config::default_path() {
