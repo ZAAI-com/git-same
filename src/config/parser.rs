@@ -72,10 +72,6 @@ impl std::str::FromStr for SyncMode {
 /// Full application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Base directory for all cloned repos
-    #[serde(default = "default_base_path")]
-    pub base_path: String,
-
     /// Directory structure pattern
     /// Placeholders: {provider}, {org}, {repo}
     #[serde(default = "default_structure")]
@@ -107,10 +103,6 @@ pub struct Config {
     pub providers: Vec<ProviderEntry>,
 }
 
-fn default_base_path() -> String {
-    "~/github".to_string()
-}
-
 fn default_structure() -> String {
     "{org}/{repo}".to_string()
 }
@@ -126,7 +118,6 @@ fn default_providers() -> Vec<ProviderEntry> {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            base_path: default_base_path(),
             structure: default_structure(),
             concurrency: default_concurrency(),
             sync_mode: SyncMode::default(),
@@ -209,35 +200,10 @@ impl Config {
         Ok(())
     }
 
-    /// Expand ~ in base_path to the actual home directory.
-    pub fn expanded_base_path(&self) -> Result<PathBuf, AppError> {
-        let expanded = shellexpand::tilde(&self.base_path);
-        Ok(PathBuf::from(expanded.as_ref()))
-    }
-
-    /// Generate the local path for a repository.
-    ///
-    /// # Arguments
-    /// * `provider` - Provider name (e.g., "github")
-    /// * `org` - Organization or user name
-    /// * `repo` - Repository name
-    pub fn repo_path(&self, provider: &str, org: &str, repo: &str) -> Result<PathBuf, AppError> {
-        let base = self.expanded_base_path()?;
-        let relative = self
-            .structure
-            .replace("{provider}", provider)
-            .replace("{org}", org)
-            .replace("{repo}", repo);
-        Ok(base.join(relative))
-    }
-
     /// Generate the default configuration file content.
     pub fn default_toml() -> String {
         r#"# Git-Same Configuration
 # See: https://github.com/zaai-com/git-same
-
-# Base directory for all cloned repos
-base_path = "~/github"
 
 # Directory structure pattern
 # Placeholders: {provider}, {org}, {repo}
@@ -376,7 +342,6 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.base_path, "~/github");
         assert_eq!(config.concurrency, 4);
         assert_eq!(config.sync_mode, SyncMode::Fetch);
         assert!(!config.filters.include_archived);
@@ -387,17 +352,15 @@ mod tests {
     #[test]
     fn test_load_minimal_config() {
         let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "base_path = \"~/custom\"").unwrap();
+        writeln!(file, "concurrency = 2").unwrap();
 
         let config = Config::load_from(file.path()).unwrap();
-        assert_eq!(config.base_path, "~/custom");
-        assert_eq!(config.concurrency, 4); // Default preserved
+        assert_eq!(config.concurrency, 2);
     }
 
     #[test]
     fn test_load_full_config() {
         let content = r#"
-base_path = "~/repos"
 structure = "{provider}/{org}/{repo}"
 concurrency = 8
 sync_mode = "pull"
@@ -418,7 +381,6 @@ auth = "gh-cli"
 "#;
 
         let config = Config::parse(content).unwrap();
-        assert_eq!(config.base_path, "~/repos");
         assert_eq!(config.structure, "{provider}/{org}/{repo}");
         assert_eq!(config.concurrency, 8);
         assert_eq!(config.sync_mode, SyncMode::Pull);
@@ -433,8 +395,6 @@ auth = "gh-cli"
     #[test]
     fn test_load_multi_provider_config() {
         let content = r#"
-base_path = "~/code"
-
 [[providers]]
 kind = "github"
 auth = "gh-cli"
@@ -460,31 +420,7 @@ token_env = "WORK_TOKEN"
     #[test]
     fn test_missing_file_returns_defaults() {
         let config = Config::load_from(Path::new("/nonexistent/config.toml")).unwrap();
-        assert_eq!(config.base_path, "~/github");
-    }
-
-    #[test]
-    fn test_repo_path_generation() {
-        let config = Config {
-            base_path: "/home/user/github".to_string(),
-            structure: "{org}/{repo}".to_string(),
-            ..Config::default()
-        };
-
-        let path = config.repo_path("github", "my-org", "my-repo").unwrap();
-        assert_eq!(path, PathBuf::from("/home/user/github/my-org/my-repo"));
-    }
-
-    #[test]
-    fn test_repo_path_with_provider() {
-        let config = Config {
-            base_path: "/home/user/code".to_string(),
-            structure: "{provider}/{org}/{repo}".to_string(),
-            ..Config::default()
-        };
-
-        let path = config.repo_path("github", "rust-lang", "rust").unwrap();
-        assert_eq!(path, PathBuf::from("/home/user/code/github/rust-lang/rust"));
+        assert_eq!(config.concurrency, 4);
     }
 
     #[test]
@@ -559,16 +495,6 @@ token_env = "WORK_TOKEN"
     }
 
     #[test]
-    fn test_expanded_base_path() {
-        let config = Config {
-            base_path: "~/github".to_string(),
-            ..Config::default()
-        };
-        let expanded = config.expanded_base_path().unwrap();
-        assert!(!expanded.to_string_lossy().contains("~"));
-    }
-
-    #[test]
     fn test_default_config_has_no_default_workspace() {
         let config = Config::default();
         assert!(config.default_workspace.is_none());
@@ -577,7 +503,6 @@ token_env = "WORK_TOKEN"
     #[test]
     fn test_parse_config_with_default_workspace() {
         let content = r#"
-base_path = "~/repos"
 default_workspace = "my-ws"
 
 [[providers]]
@@ -591,8 +516,6 @@ auth = "gh-cli"
     #[test]
     fn test_parse_config_without_default_workspace() {
         let content = r#"
-base_path = "~/repos"
-
 [[providers]]
 kind = "github"
 auth = "gh-cli"
@@ -612,7 +535,6 @@ auth = "gh-cli"
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("default_workspace = \"my-ws\""));
         // Original content preserved
-        assert!(content.contains("base_path"));
         assert!(content.contains("concurrency"));
         // Still valid TOML
         let config = Config::parse(&content).unwrap();

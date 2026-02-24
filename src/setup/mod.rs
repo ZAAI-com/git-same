@@ -9,7 +9,6 @@ pub mod screens;
 pub mod state;
 pub mod ui;
 
-use crate::config::Config;
 use crate::errors::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture, Event as CtEvent},
@@ -26,8 +25,8 @@ use std::time::Duration;
 ///
 /// Returns `Ok(true)` if the wizard completed (workspace saved),
 /// `Ok(false)` if the user cancelled.
-pub async fn run_setup(config: &Config) -> Result<bool> {
-    let mut state = SetupState::new(&config.base_path);
+pub async fn run_setup() -> Result<bool> {
+    let mut state = SetupState::new("~/github");
 
     // Setup terminal
     enable_raw_mode()?;

@@ -213,6 +213,9 @@ impl WorkspaceManager {
     }
 
     /// Load a workspace config from a specific file path.
+    ///
+    /// The workspace name is derived from the parent directory name,
+    /// not from inside the TOML file.
     fn load_from_path(path: &Path) -> Result<WorkspaceConfig, AppError> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             AppError::config(format!(
@@ -221,7 +224,16 @@ impl WorkspaceManager {
                 e
             ))
         })?;
-        WorkspaceConfig::from_toml(&content)
+        let mut ws = WorkspaceConfig::from_toml(&content)?;
+
+        // Derive name from the parent folder
+        if let Some(parent) = path.parent() {
+            if let Some(folder_name) = parent.file_name().and_then(|n| n.to_str()) {
+                ws.name = folder_name.to_string();
+            }
+        }
+
+        Ok(ws)
     }
 }
 
@@ -286,14 +298,37 @@ mod tests {
             let content = ws.to_toml().unwrap();
             std::fs::write(&path, &content).unwrap();
 
-            let content = std::fs::read_to_string(&path).unwrap();
-            let loaded = WorkspaceConfig::from_toml(&content).unwrap();
+            // Name is derived from the folder, not from the TOML content
+            let loaded = WorkspaceManager::load_from_path(&path).unwrap();
 
             assert_eq!(loaded.name, "roundtrip-test");
             assert_eq!(loaded.base_path, "~/test");
             assert_eq!(loaded.username, "testuser");
             assert_eq!(loaded.orgs, vec!["org1"]);
         });
+    }
+
+    #[test]
+    fn test_name_derived_from_folder_not_toml() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a workspace config in a folder named "my-github"
+        let ws = WorkspaceConfig::new("ignored-name", "~/github");
+        let content = ws.to_toml().unwrap();
+        let ws_dir = temp.path().join("my-github");
+        std::fs::create_dir_all(&ws_dir).unwrap();
+        std::fs::write(ws_dir.join("workspace.toml"), &content).unwrap();
+
+        // Name comes from the folder, not from any field in the TOML
+        let loaded = WorkspaceManager::load_from_path(&ws_dir.join("workspace.toml")).unwrap();
+        assert_eq!(loaded.name, "my-github");
+
+        // Simulate a folder rename
+        let renamed_dir = temp.path().join("renamed-workspace");
+        std::fs::rename(&ws_dir, &renamed_dir).unwrap();
+
+        let loaded = WorkspaceManager::load_from_path(&renamed_dir.join("workspace.toml")).unwrap();
+        assert_eq!(loaded.name, "renamed-workspace");
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::cache::{CacheManager, DiscoveryCache};
 use crate::cli::SyncCmdArgs;
 use crate::config::{Config, WorkspaceManager};
 use crate::discovery::DiscoveryOrchestrator;
-use crate::errors::{AppError, Result};
+use crate::errors::Result;
 use crate::git::{CloneOptions, ShellGit};
 use crate::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
 use crate::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
@@ -104,12 +104,9 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
 
     output.info(&format_count(repos.len(), "repositories discovered"));
 
-    // Ensure base path exists
+    // Ensure base path exists (offer to fix if user moved it)
+    super::ensure_base_path(&mut workspace, output)?;
     let base_path = workspace.expanded_base_path();
-    if !base_path.exists() {
-        std::fs::create_dir_all(&base_path)
-            .map_err(|e| AppError::path(format!("Failed to create base directory: {}", e)))?;
-    }
 
     // Plan: which repos to clone (new) and which to sync (existing)
     let git = ShellGit::new();

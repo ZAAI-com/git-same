@@ -18,11 +18,12 @@ pub use status::run as run_status;
 pub use sync_cmd::run as run_sync_cmd;
 
 use crate::cli::Command;
-use crate::config::Config;
-use crate::errors::Result;
+use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::errors::{AppError, Result};
 use crate::operations::clone::MAX_CONCURRENCY;
 use crate::operations::sync::SyncMode;
 use crate::output::Output;
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 /// Run the specified command.
@@ -39,11 +40,9 @@ pub async fn run_command(
         return reset::run(args, output).await;
     }
 
-    // Setup only needs config for defaults
     #[cfg(feature = "tui")]
     if let Command::Setup(args) = command {
-        let config = load_config(config_path)?;
-        return setup::run(args, &config, output).await;
+        return setup::run(args, output).await;
     }
 
     // Load config for all other commands
@@ -104,6 +103,60 @@ pub(crate) fn expand_path(path: &Path) -> PathBuf {
     let path_str = path.to_string_lossy();
     let expanded = shellexpand::tilde(&path_str);
     PathBuf::from(expanded.as_ref())
+}
+
+/// Ensure the workspace base_path exists.
+///
+/// If the configured path is missing, checks whether the current directory
+/// could be the new location and offers to update the workspace config.
+/// Returns an error if the path cannot be resolved.
+pub(crate) fn ensure_base_path(workspace: &mut WorkspaceConfig, output: &Output) -> Result<()> {
+    let base_path = workspace.expanded_base_path();
+    if base_path.exists() {
+        return Ok(());
+    }
+
+    let cwd = std::env::current_dir()
+        .map_err(|e| AppError::path(format!("Cannot determine current directory: {}", e)))?;
+
+    output.warn(&format!(
+        "Base path '{}' does not exist.",
+        workspace.base_path
+    ));
+    output.info(&format!("Current directory: {}", cwd.display()));
+
+    let prompt = format!(
+        "Update workspace '{}' to use '{}'? [y/N] ",
+        workspace.name,
+        cwd.display()
+    );
+
+    if confirm_stderr(&prompt)? {
+        workspace.base_path = cwd.to_string_lossy().to_string();
+        WorkspaceManager::save(workspace)?;
+        output.success(&format!("Updated base path to '{}'", workspace.base_path));
+        Ok(())
+    } else {
+        Err(AppError::config(format!(
+            "Base path '{}' does not exist. \
+             Move to the correct directory and retry, \
+             or update manually with 'gisa setup'.",
+            base_path.display()
+        )))
+    }
+}
+
+/// Prompt on stderr and return true if the user answers y/yes.
+fn confirm_stderr(prompt: &str) -> Result<bool> {
+    eprint!("{}", prompt);
+    io::stderr().flush()?;
+
+    let stdin = io::stdin();
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+
+    let answer = line.trim().to_lowercase();
+    Ok(answer == "y" || answer == "yes")
 }
 
 #[cfg(test)]

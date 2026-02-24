@@ -69,7 +69,10 @@ impl WorkspaceProvider {
 /// Configuration for a single workspace (sync target folder).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
-    /// Human-readable workspace name (also used as the config filename stem).
+    /// Workspace name, derived from the config folder name at load time.
+    ///
+    /// Not stored in `workspace.toml` — the folder name is the source of truth.
+    #[serde(skip_serializing, default)]
     pub name: String,
 
     /// Absolute path to the folder where repos are cloned.
@@ -248,7 +251,8 @@ mod tests {
         let toml_str = ws.to_toml().unwrap();
         let parsed = WorkspaceConfig::from_toml(&toml_str).unwrap();
 
-        assert_eq!(parsed.name, ws.name);
+        // name is skip_serializing — it's derived from the folder, not the TOML
+        assert!(parsed.name.is_empty());
         assert_eq!(parsed.base_path, ws.base_path);
         assert_eq!(parsed.username, ws.username);
         assert_eq!(parsed.orgs, ws.orgs);
@@ -293,6 +297,11 @@ mod tests {
     fn test_optional_fields_not_serialized_when_none() {
         let ws = WorkspaceConfig::new("minimal", "~/minimal");
         let toml_str = ws.to_toml().unwrap();
+        // name is derived from folder, never written to TOML as its own key
+        assert!(
+            !toml_str.lines().any(|l| l.starts_with("name ")),
+            "TOML should not contain a 'name' key"
+        );
         assert!(!toml_str.contains("structure"));
         assert!(!toml_str.contains("sync_mode"));
         assert!(!toml_str.contains("concurrency"));
