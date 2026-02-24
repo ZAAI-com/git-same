@@ -4,7 +4,7 @@ Mirror GitHub org/repo structure locally - supports multiple providers
 
 [![Crates.io](https://img.shields.io/crates/v/git-same.svg)](https://crates.io/crates/git-same)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/zaai-com/git-same/workflows/CI/badge.svg)](https://github.com/zaai-com/git-same/actions)
+[![Build Status](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml/badge.svg)](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml)
 
 ## Features
 
@@ -23,6 +23,10 @@ Mirror GitHub org/repo structure locally - supports multiple providers
 cargo install git-same
 ```
 
+### GitHub Releases
+
+Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64).
+
 ### From source
 
 ```bash
@@ -31,10 +35,10 @@ cd git-same
 cargo install --path .
 ```
 
-### Homebrew (coming soon)
+### Homebrew
 
 ```bash
-brew install git-same
+brew install zaai-com/tap/git-same
 ```
 
 ## Available Commands

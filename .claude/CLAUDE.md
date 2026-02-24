@@ -48,6 +48,19 @@ Git-Same is a Rust CLI that discovers GitHub org/repo structures and mirrors the
 
 `rustfmt.toml`: `max_width = 100`, `tab_spaces = 4`, edition 2021.
 
+## CI/CD Workflows
+
+All workflows are `workflow_dispatch` (manual trigger) in `.github/workflows/`:
+
+| Workflow | Purpose | Trigger |
+|----------|---------|---------|
+| `S1-Test-CI.yml` | fmt, clippy, test, build dry-run, coverage, audit | Manual dispatch |
+| `S2-Release-GitHub.yml` | Full CI + cross-compile 6 targets + GitHub Release | Manual dispatch (select tag) |
+| `S3-Publish-Homebrew.yml` | Update Homebrew tap formula | Manual dispatch (select tag) |
+| `S4-Publish-Crates.yml` | `cargo publish` to crates.io | Manual dispatch (select tag) |
+
+S2 runs all S1 jobs (test, coverage, audit) as gates before building release artifacts.
+
 ## Specs & Docs
 
 Design specifications live in `docs/specs/` (S1–S5). Internal documentation in `.context/GIT-SAME-DOCUMENTATION.md`.
