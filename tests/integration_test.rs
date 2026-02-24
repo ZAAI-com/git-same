@@ -252,8 +252,25 @@ fn test_init_force_overwrites() {
 
 #[test]
 fn test_status_nonexistent_workspace() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let config_path = temp.path().join("config.toml");
+
+    // Create a valid config so the test reaches workspace resolution
+    Command::new(git_same_binary())
+        .args(["init", "--path", config_path.to_str().unwrap()])
+        .output()
+        .expect("Failed to run init");
+
     let output = Command::new(git_same_binary())
-        .args(["status", "--workspace", "nonexistent-workspace"])
+        .args([
+            "-C",
+            config_path.to_str().unwrap(),
+            "status",
+            "--workspace",
+            "nonexistent-workspace",
+        ])
         .output()
         .expect("Failed to execute git-same");
 
@@ -308,13 +325,40 @@ fn test_workspace_help() {
 
 #[test]
 fn test_workspace_list() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let config_path = temp.path().join("config.toml");
+
+    // Create a minimal valid config so the test doesn't depend on local config
+    Command::new(git_same_binary())
+        .args(["init", "--path", config_path.to_str().unwrap()])
+        .output()
+        .expect("Failed to run init");
+
     let output = Command::new(git_same_binary())
-        .args(["workspace", "list"])
+        .args(["-C", config_path.to_str().unwrap(), "workspace", "list"])
         .output()
         .expect("Failed to execute git-same");
 
     // Should succeed even with no workspaces
     assert!(output.status.success());
+}
+
+#[test]
+fn test_missing_config_suggests_init() {
+    let output = Command::new(git_same_binary())
+        .args(["-C", "/tmp/nonexistent-gisa-config.toml", "sync"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("gisa init"),
+        "Expected suggestion to run 'gisa init', got: {}",
+        stderr
+    );
 }
 
 // Tests that require authentication are ignored by default

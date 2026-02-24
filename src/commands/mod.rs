@@ -32,12 +32,16 @@ pub async fn run_command(
     config_path: Option<&Path>,
     output: &Output,
 ) -> Result<()> {
-    // Init and Reset don't need config
+    // Commands that don't need config
     if let Command::Init(args) = command {
         return run_init(args, output).await;
     }
     if let Command::Reset(args) = command {
         return reset::run(args, output).await;
+    }
+    if let Command::Completions(args) = command {
+        crate::cli::generate_completions(args.shell);
+        return Ok(());
     }
 
     #[cfg(feature = "tui")]
@@ -49,16 +53,12 @@ pub async fn run_command(
     let config = load_config(config_path)?;
 
     match command {
-        Command::Init(_) | Command::Reset(_) => unreachable!(),
+        Command::Init(_) | Command::Reset(_) | Command::Completions(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
         Command::Status(args) => run_status(args, &config, output).await,
         Command::Workspace(args) => workspace::run(args, &config, output),
-        Command::Completions(args) => {
-            crate::cli::generate_completions(args.shell);
-            Ok(())
-        }
         // Deprecated commands — show warning then delegate
         Command::Clone(args) => {
             output.warn("'clone' is deprecated. Use 'gisa sync' instead.");
@@ -76,12 +76,20 @@ pub async fn run_command(
 }
 
 /// Load configuration from the given path or default location.
+///
+/// Returns an error suggesting `gisa init` when no config file exists
+/// at the default location, rather than silently using defaults.
 fn load_config(config_path: Option<&Path>) -> Result<Config> {
-    if let Some(path) = config_path {
-        Config::load_from(path)
-    } else {
-        Config::load()
+    let path = match config_path {
+        Some(p) => p.to_path_buf(),
+        None => Config::default_path()?,
+    };
+    if !path.exists() {
+        return Err(AppError::config(
+            "No configuration found. Run 'gisa init' to create one.",
+        ));
     }
+    Config::load_from(&path)
 }
 
 /// Warn if requested concurrency exceeds the maximum.

@@ -117,7 +117,9 @@ impl AppError {
     /// Returns a suggested action to resolve this error.
     pub fn suggested_action(&self) -> &str {
         match self {
-            AppError::Config(_) => "Check your gisa.config.toml file for syntax errors",
+            AppError::Config(_) => {
+                "Check your config file for syntax errors, or run 'gisa init' to create one"
+            }
             AppError::Auth(_) => "Run 'gh auth login' or set GITHUB_TOKEN environment variable",
             AppError::Provider(e) => e.suggested_action(),
             AppError::Git(e) => e.suggested_action(),
