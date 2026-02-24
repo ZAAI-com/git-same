@@ -16,8 +16,8 @@ pub fn print_banner() {
     println!(
         "{}",
         style(format!(
-            "              Mirror GitHub, locally.  {}\n",
-            style(format!("v{}", env!("CARGO_PKG_VERSION"))).dim()
+            "              Mirror GitHub structure /orgs/repos/ to local file system  {}\n",
+            style(format!("Version {}", env!("CARGO_PKG_VERSION"))).dim()
         ))
         .dim()
     );

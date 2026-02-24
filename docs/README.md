@@ -1,6 +1,6 @@
 # Git-Same
 
-Mirror GitHub org/repo structure locally - supports multiple providers
+Mirror GitHub structure /orgs/repos/ to local file system
 
 [![Crates.io](https://img.shields.io/crates/v/git-same.svg)](https://crates.io/crates/git-same)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

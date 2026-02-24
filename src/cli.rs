@@ -7,10 +7,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
-/// Git-Same - Mirror GitHub org/repo structure locally
-///
-/// Discovers all GitHub organizations and repositories you have access to,
-/// then clones/syncs them to maintain a local mirror of your org structure.
+/// Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
 ///
 /// Available as: git-same, gitsame, gitsa, gisa
 /// Also works as: git same (git subcommand)

@@ -1,4 +1,4 @@
-//! Git-Same - Mirror GitHub org/repo structure locally
+//! Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
 //!
 //! Main entry point for the git-same CLI application.
 

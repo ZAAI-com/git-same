@@ -20,7 +20,7 @@ fn test_help_command() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Mirror GitHub org/repo structure locally"));
+    assert!(stdout.contains("Mirror GitHub structure /orgs/repos/ to local file system"));
     assert!(stdout.contains("init"));
     assert!(stdout.contains("setup"));
     assert!(stdout.contains("sync"));
