@@ -47,11 +47,18 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     let _ = tx.send(AppEvent::Backend(BackendMessage::CheckResults(entries)));
                 });
             }
-            // Auto-trigger status scan to populate dashboard stats
+            // Auto-trigger status scan when data is stale or missing
+            let refresh_interval = app
+                .active_workspace
+                .as_ref()
+                .and_then(|ws| ws.refresh_interval)
+                .unwrap_or(app.config.refresh_interval);
             if app.screen == Screen::Dashboard
                 && app.active_workspace.is_some()
-                && app.local_repos.is_empty()
                 && !app.status_loading
+                && app
+                    .last_status_scan
+                    .map_or(true, |t| t.elapsed().as_secs() >= refresh_interval)
             {
                 app.status_loading = true;
                 super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
@@ -134,10 +141,8 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
             handle_workspace_selector_key(app, key, backend_tx).await;
         }
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
-        Screen::CommandPicker => handle_picker_key(app, key, backend_tx).await,
         Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
-        Screen::RepoStatus => handle_status_key(app, key, backend_tx),
         Screen::Settings => handle_settings_key(app, key),
     }
 }
@@ -319,12 +324,37 @@ async fn handle_dashboard_key(
             start_operation(app, Operation::Sync, backend_tx);
         }
         KeyCode::Char('t') => {
+            app.last_status_scan = None; // Force immediate refresh
             app.status_loading = true;
-            app.navigate_to(Screen::RepoStatus);
             start_operation(app, Operation::Status, backend_tx);
         }
-        KeyCode::Char('o') => {
+        KeyCode::Char('g') => {
             app.navigate_to(Screen::OrgBrowser);
+        }
+        // Tab shortcuts
+        KeyCode::Char('o') => {
+            app.stat_index = 0;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('r') => {
+            app.stat_index = 1;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('c') => {
+            app.stat_index = 2;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('b') => {
+            app.stat_index = 3;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('a') => {
+            app.stat_index = 4;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('u') => {
+            app.stat_index = 5;
+            app.dashboard_table_state.select(Some(0));
         }
         KeyCode::Char('e') => {
             app.navigate_to(Screen::Settings);
@@ -335,31 +365,44 @@ async fn handle_dashboard_key(
         KeyCode::Char('i') => {
             app.navigate_to(Screen::InitCheck);
         }
-        KeyCode::Char('m') | KeyCode::Enter => {
-            app.navigate_to(Screen::CommandPicker);
+        KeyCode::Char('/') => {
+            app.filter_active = true;
+            app.filter_text.clear();
+            app.stat_index = 1;
+            app.dashboard_table_state.select(Some(0));
         }
         // Tab navigation (left/right between stat boxes)
         KeyCode::Left | KeyCode::Char('h') => {
             app.stat_index = app.stat_index.saturating_sub(1);
-            app.dashboard_list_index = 0;
+            app.dashboard_table_state.select(Some(0));
         }
         KeyCode::Right | KeyCode::Char('l') => {
             if app.stat_index < 5 {
                 app.stat_index += 1;
-                app.dashboard_list_index = 0;
+                app.dashboard_table_state.select(Some(0));
             }
         }
         // List navigation (up/down within tab content)
-        KeyCode::Down => {
+        KeyCode::Down | KeyCode::Char('j') => {
             let count = dashboard_tab_item_count(app);
             if count > 0 {
-                app.dashboard_list_index = (app.dashboard_list_index + 1) % count;
+                let current = app.dashboard_table_state.selected().unwrap_or(0);
+                if current + 1 < count {
+                    app.dashboard_table_state.select(Some(current + 1));
+                }
             }
         }
-        KeyCode::Up => {
+        KeyCode::Up | KeyCode::Char('k') => {
             let count = dashboard_tab_item_count(app);
             if count > 0 {
-                app.dashboard_list_index = (app.dashboard_list_index + count - 1) % count;
+                let current = app.dashboard_table_state.selected().unwrap_or(0);
+                app.dashboard_table_state.select(Some(current.saturating_sub(1)));
+            }
+        }
+        KeyCode::Enter => {
+            // Open the selected repo's folder
+            if let Some(path) = dashboard_selected_repo_path(app) {
+                let _ = std::process::Command::new("open").arg(&path).spawn();
             }
         }
         _ => {}
@@ -367,18 +410,25 @@ async fn handle_dashboard_key(
 }
 
 fn handle_settings_key(app: &mut App, key: KeyEvent) {
-    let num_categories = 2; // Folders, Options
+    let num_items = 2 + app.workspaces.len(); // Requirements, Options, + workspaces
     match key.code {
         KeyCode::Tab => {
-            app.settings_index = (app.settings_index + 1) % num_categories;
+            if num_items > 0 {
+                app.settings_index = (app.settings_index + 1) % num_items;
+                app.settings_config_expanded = false;
+            }
         }
         KeyCode::Down => {
-            if app.settings_index < num_categories - 1 {
+            if num_items > 0 && app.settings_index < num_items - 1 {
                 app.settings_index += 1;
+                app.settings_config_expanded = false;
             }
         }
         KeyCode::Up => {
-            app.settings_index = app.settings_index.saturating_sub(1);
+            if app.settings_index > 0 {
+                app.settings_index -= 1;
+                app.settings_config_expanded = false;
+            }
         }
         KeyCode::Char('c') => {
             // Open config directory in Finder / file manager
@@ -394,34 +444,21 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('m') => {
             app.sync_pull = !app.sync_pull;
         }
-        KeyCode::Char(c @ '1'..='9') => {
-            // Open workspace folder by number key
-            let index = (c as usize) - ('1' as usize);
-            if let Some(ws) = app.workspaces.get(index) {
-                let path = ws.expanded_base_path();
-                let _ = std::process::Command::new("open").arg(&path).spawn();
+        KeyCode::Enter => {
+            // Toggle config expansion for workspace detail
+            if app.settings_index >= 2 {
+                app.settings_config_expanded = !app.settings_config_expanded;
             }
         }
-        _ => {}
-    }
-}
-
-async fn handle_picker_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
-    let num_items = 2; // Sync, Status
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.picker_index = (app.picker_index + 1) % num_items;
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.picker_index = (app.picker_index + num_items - 1) % num_items;
-        }
-        KeyCode::Enter => {
-            let operation = match app.picker_index {
-                0 => Operation::Sync,
-                1 => Operation::Status,
-                _ => return,
-            };
-            start_operation(app, operation, backend_tx);
+        KeyCode::Char('o') => {
+            // Open selected workspace folder
+            if app.settings_index >= 2 {
+                let ws_idx = app.settings_index - 2;
+                if let Some(ws) = app.workspaces.get(ws_idx) {
+                    let path = ws.expanded_base_path();
+                    let _ = std::process::Command::new("open").arg(&path).spawn();
+                }
+            }
         }
         _ => {}
     }
@@ -478,39 +515,6 @@ fn handle_progress_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_status_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
-    let filtered_count = filtered_repo_count(app);
-    match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            if filtered_count > 0 {
-                app.repo_index = (app.repo_index + 1) % filtered_count;
-            }
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            if filtered_count > 0 {
-                app.repo_index = (app.repo_index + filtered_count - 1) % filtered_count;
-            }
-        }
-        KeyCode::Char('D') => {
-            app.filter_uncommitted = !app.filter_uncommitted;
-            app.repo_index = 0;
-        }
-        KeyCode::Char('B') => {
-            app.filter_behind = !app.filter_behind;
-            app.repo_index = 0;
-        }
-        KeyCode::Char('/') => {
-            app.filter_active = true;
-            app.filter_text.clear();
-        }
-        KeyCode::Char('r') => {
-            app.status_loading = true;
-            start_operation(app, Operation::Status, backend_tx);
-        }
-        _ => {}
-    }
-}
-
 fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
     if matches!(app.operation_state, OperationState::Running { .. }) {
         app.error_message = Some("An operation is already running".to_string());
@@ -523,7 +527,7 @@ fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSe
     app.log_lines.clear();
     app.scroll_offset = 0;
 
-    if !matches!(app.screen, Screen::Progress | Screen::RepoStatus) {
+    if !matches!(app.screen, Screen::Progress) {
         app.navigate_to(Screen::Progress);
     }
 
@@ -546,12 +550,22 @@ fn dashboard_tab_item_count(app: &App) -> usize {
             .map(|r| r.owner.as_str())
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        1 => app
+        1 => {
+            if app.filter_text.is_empty() {
+                app.local_repos.len()
+            } else {
+                let ft = app.filter_text.to_lowercase();
+                app.local_repos
+                    .iter()
+                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
+                    .count()
+            }
+        }
+        2 => app
             .local_repos
             .iter()
-            .filter(|r| r.is_uncommitted || r.behind > 0 || r.ahead > 0)
+            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
             .count(),
-        2 => 0, // Clean tab is summary-only
         3 => app.local_repos.iter().filter(|r| r.behind > 0).count(),
         4 => app.local_repos.iter().filter(|r| r.ahead > 0).count(),
         5 => app.local_repos.iter().filter(|r| r.is_uncommitted).count(),
@@ -559,27 +573,32 @@ fn dashboard_tab_item_count(app: &App) -> usize {
     }
 }
 
-fn filtered_repo_count(app: &App) -> usize {
-    app.local_repos
-        .iter()
-        .filter(|r| {
-            if app.filter_uncommitted && !r.is_uncommitted {
-                return false;
+fn dashboard_selected_repo_path(app: &App) -> Option<std::path::PathBuf> {
+    let selected = app.dashboard_table_state.selected()?;
+    let repos: Vec<&super::app::RepoEntry> = match app.stat_index {
+        0 => return None, // Owners tab — no single repo
+        1 => {
+            if app.filter_text.is_empty() {
+                app.local_repos.iter().collect()
+            } else {
+                let ft = app.filter_text.to_lowercase();
+                app.local_repos
+                    .iter()
+                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
+                    .collect()
             }
-            if app.filter_behind && r.behind == 0 {
-                return false;
-            }
-            if !app.filter_text.is_empty()
-                && !r
-                    .full_name
-                    .to_lowercase()
-                    .contains(&app.filter_text.to_lowercase())
-            {
-                return false;
-            }
-            true
-        })
-        .count()
+        }
+        2 => app
+            .local_repos
+            .iter()
+            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
+            .collect(),
+        3 => app.local_repos.iter().filter(|r| r.behind > 0).collect(),
+        4 => app.local_repos.iter().filter(|r| r.ahead > 0).collect(),
+        5 => app.local_repos.iter().filter(|r| r.is_uncommitted).collect(),
+        _ => return None,
+    };
+    repos.get(selected).map(|r| r.path.clone())
 }
 
 fn handle_backend_message(app: &mut App, msg: BackendMessage) {
@@ -693,6 +712,7 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
             app.local_repos = entries;
             app.operation_state = OperationState::Idle;
             app.status_loading = false;
+            app.last_status_scan = Some(std::time::Instant::now());
         }
         BackendMessage::InitConfigCreated(path) => {
             app.config_created = true;

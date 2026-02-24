@@ -407,7 +407,8 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_legacy_pull() {
-        let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-uncommitted"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-uncommitted"]).unwrap();
         match cli.command {
             Some(Command::Pull(args)) => {
                 assert!(args.no_skip_uncommitted);

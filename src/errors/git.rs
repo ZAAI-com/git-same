@@ -164,7 +164,9 @@ impl GitError {
             GitError::CloneFailed { repo, .. }
             | GitError::FetchFailed { repo, .. }
             | GitError::PullFailed { repo, .. } => Some(repo),
-            GitError::UncommittedRepository { path } | GitError::NotARepository { path } => Some(path),
+            GitError::UncommittedRepository { path } | GitError::NotARepository { path } => {
+                Some(path)
+            }
             _ => None,
         }
     }

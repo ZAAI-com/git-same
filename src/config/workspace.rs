@@ -118,6 +118,10 @@ pub struct WorkspaceConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub concurrency: Option<usize>,
 
+    /// Dashboard auto-refresh interval override in seconds (None = use global default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_interval: Option<u64>,
+
     /// ISO 8601 timestamp of last sync.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_synced: Option<String>,
@@ -139,6 +143,7 @@ impl WorkspaceConfig {
             clone_options: None,
             filters: FilterOptions::default(),
             concurrency: None,
+            refresh_interval: None,
             last_synced: None,
         }
     }
@@ -253,6 +258,7 @@ mod tests {
                 exclude_repos: vec![],
             },
             concurrency: Some(8),
+            refresh_interval: None,
             last_synced: Some("2026-02-23T10:00:00Z".to_string()),
         };
 

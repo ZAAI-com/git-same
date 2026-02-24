@@ -90,6 +90,10 @@ pub struct Config {
     #[serde(default)]
     pub default_workspace: Option<String>,
 
+    /// Dashboard auto-refresh interval in seconds (5–3600, default 30)
+    #[serde(default = "default_refresh_interval")]
+    pub refresh_interval: u64,
+
     /// Clone options
     #[serde(default)]
     #[serde(rename = "clone")]
@@ -112,6 +116,10 @@ fn default_concurrency() -> usize {
     DEFAULT_CONCURRENCY
 }
 
+fn default_refresh_interval() -> u64 {
+    30
+}
+
 fn default_providers() -> Vec<ProviderEntry> {
     vec![ProviderEntry::github()]
 }
@@ -123,6 +131,7 @@ impl Default for Config {
             concurrency: default_concurrency(),
             sync_mode: SyncMode::default(),
             default_workspace: None,
+            refresh_interval: default_refresh_interval(),
             clone: ConfigCloneOptions::default(),
             filters: FilterOptions::default(),
             providers: default_providers(),
@@ -185,6 +194,11 @@ impl Config {
                 "concurrency must be between 1 and {}",
                 MAX_CONCURRENCY
             )));
+        }
+
+        // Validate refresh_interval
+        if !(5..=3600).contains(&self.refresh_interval) {
+            return Err(AppError::config("refresh_interval must be between 5 and 3600 seconds"));
         }
 
         // Validate providers

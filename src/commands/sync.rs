@@ -80,7 +80,8 @@ pub async fn run(
     // Plan sync operation
     let git = ShellGit::new();
     let skip_uncommitted = !args.no_skip_uncommitted;
-    let (to_sync, skipped) = orchestrator.plan_sync(&base_path, repos, "github", &git, skip_uncommitted);
+    let (to_sync, skipped) =
+        orchestrator.plan_sync(&base_path, repos, "github", &git, skip_uncommitted);
 
     if to_sync.is_empty() {
         if skipped.is_empty() {

@@ -3,6 +3,7 @@
 use crate::config::{Config, WorkspaceConfig};
 use crate::setup::state::{self, SetupState};
 use crate::types::{OpSummary, OwnedRepo};
+use ratatui::widgets::TableState;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -13,10 +14,8 @@ pub enum Screen {
     SetupWizard,
     WorkspaceSelector,
     Dashboard,
-    CommandPicker,
     OrgBrowser,
     Progress,
-    RepoStatus,
     Settings,
 }
 
@@ -130,9 +129,6 @@ pub struct App {
     pub log_lines: Vec<String>,
 
     // -- Selection state --
-    /// Selected index in command picker.
-    pub picker_index: usize,
-
     /// Selected org index in org browser.
     pub org_index: usize,
 
@@ -153,12 +149,6 @@ pub struct App {
 
     /// Error message to display (clears on next keypress).
     pub error_message: Option<String>,
-
-    /// Whether uncommitted-only filter is active in repo status.
-    pub filter_uncommitted: bool,
-
-    /// Whether behind-only filter is active in repo status.
-    pub filter_behind: bool,
 
     /// Requirement check results (populated on InitCheck screen).
     pub check_results: Vec<CheckEntry>,
@@ -181,14 +171,20 @@ pub struct App {
     /// Whether status scan is in progress.
     pub status_loading: bool,
 
+    /// When the last status scan completed (for auto-refresh cooldown).
+    pub last_status_scan: Option<std::time::Instant>,
+
     /// Selected stat box index on dashboard (0-5) for ←/→ navigation.
     pub stat_index: usize,
 
-    /// Selected item index within the dashboard tab content list.
-    pub dashboard_list_index: usize,
+    /// Table state for dashboard tab content (tracks selection + scroll offset).
+    pub dashboard_table_state: TableState,
 
-    /// Selected category index in settings screen (0 = Folders, 1 = Options).
+    /// Selected category index in settings screen (0 = Requirements, 1 = Options, 2+ = Workspaces).
     pub settings_index: usize,
+
+    /// Whether the config TOML section is expanded in workspace detail.
+    pub settings_config_expanded: bool,
 }
 
 impl App {
@@ -232,7 +228,6 @@ impl App {
             local_repos: Vec::new(),
             operation_state: OperationState::Idle,
             log_lines: Vec::new(),
-            picker_index: 0,
             org_index: 0,
             repo_index: 0,
             scroll_offset: 0,
@@ -240,8 +235,6 @@ impl App {
             filter_active: false,
             dry_run: false,
             error_message: None,
-            filter_uncommitted: false,
-            filter_behind: false,
             check_results: Vec::new(),
             checks_loading: false,
             sync_pull: false,
@@ -256,9 +249,11 @@ impl App {
             config_created: false,
             config_path_display: None,
             status_loading: false,
+            last_status_scan: None,
             stat_index: 0,
-            dashboard_list_index: 0,
+            dashboard_table_state: TableState::default().with_selected(0),
             settings_index: 0,
+            settings_config_expanded: false,
         }
     }
 
@@ -272,6 +267,7 @@ impl App {
             self.all_repos.clear();
             self.orgs.clear();
             self.local_repos.clear();
+            self.last_status_scan = None;
         }
     }
 
