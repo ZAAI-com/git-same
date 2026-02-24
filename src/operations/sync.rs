@@ -140,7 +140,7 @@ pub struct SyncManagerOptions {
     /// Sync mode (fetch or pull)
     pub mode: SyncMode,
     /// Skip repos with uncommitted changes
-    pub skip_dirty: bool,
+    pub skip_uncommitted: bool,
     /// Whether this is a dry run
     pub dry_run: bool,
 }
@@ -150,7 +150,7 @@ impl Default for SyncManagerOptions {
         Self {
             concurrency: crate::operations::clone::DEFAULT_CONCURRENCY,
             mode: SyncMode::Fetch,
-            skip_dirty: true,
+            skip_uncommitted: true,
             dry_run: false,
         }
     }
@@ -174,9 +174,9 @@ impl SyncManagerOptions {
         self
     }
 
-    /// Sets whether to skip dirty repos.
-    pub fn with_skip_dirty(mut self, skip_dirty: bool) -> Self {
-        self.skip_dirty = skip_dirty;
+    /// Sets whether to skip uncommitted repos.
+    pub fn with_skip_uncommitted(mut self, skip_uncommitted: bool) -> Self {
+        self.skip_uncommitted = skip_uncommitted;
         self
     }
 
@@ -216,7 +216,7 @@ impl<G: GitOperations + 'static> SyncManager<G> {
             let permit = semaphore.clone().acquire_owned().await.unwrap();
             let git = self.git.clone();
             let mode = self.options.mode;
-            let skip_dirty = self.options.skip_dirty;
+            let skip_uncommitted = self.options.skip_uncommitted;
             let dry_run = self.options.dry_run;
             let progress = Arc::clone(&progress);
 
@@ -249,15 +249,15 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 .ok()
                 .and_then(|r| r.ok());
 
-                // Check if dirty and should skip
-                if skip_dirty {
+                // Check if uncommitted and should skip
+                if skip_uncommitted {
                     if let Some(ref s) = status {
-                        if s.is_dirty || s.has_untracked {
+                        if s.is_uncommitted || s.has_untracked {
                             drop(permit);
                             return SyncResult {
                                 repo: local_repo.repo,
                                 path,
-                                result: OpResult::Skipped("working tree is dirty".to_string()),
+                                result: OpResult::Skipped("uncommitted changes".to_string()),
                                 had_updates: false,
                                 status,
                                 fetch_result: None,
@@ -433,14 +433,14 @@ impl<G: GitOperations + 'static> SyncManager<G> {
         // Get status
         let status = self.git.status(path).ok();
 
-        // Check if dirty
-        if self.options.skip_dirty {
+        // Check if uncommitted
+        if self.options.skip_uncommitted {
             if let Some(ref s) = status {
-                if s.is_dirty || s.has_untracked {
+                if s.is_uncommitted || s.has_untracked {
                     return SyncResult {
                         repo: local_repo.repo.clone(),
                         path: path.clone(),
-                        result: OpResult::Skipped("working tree is dirty".to_string()),
+                        result: OpResult::Skipped("uncommitted changes".to_string()),
                         had_updates: false,
                         status,
                         fetch_result: None,
@@ -549,7 +549,7 @@ mod tests {
         let options = SyncManagerOptions::default();
         assert_eq!(options.concurrency, 8);
         assert_eq!(options.mode, SyncMode::Fetch);
-        assert!(options.skip_dirty);
+        assert!(options.skip_uncommitted);
         assert!(!options.dry_run);
     }
 
@@ -558,12 +558,12 @@ mod tests {
         let options = SyncManagerOptions::new()
             .with_concurrency(8)
             .with_mode(SyncMode::Pull)
-            .with_skip_dirty(false)
+            .with_skip_uncommitted(false)
             .with_dry_run(true);
 
         assert_eq!(options.concurrency, 8);
         assert_eq!(options.mode, SyncMode::Pull);
-        assert!(!options.skip_dirty);
+        assert!(!options.skip_uncommitted);
         assert!(options.dry_run);
     }
 
@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sync_single_dirty_skip() {
+    fn test_sync_single_uncommitted_skip() {
         let temp = TempDir::new().unwrap();
 
         let mut git = MockGit::new();
@@ -608,21 +608,24 @@ mod tests {
             path_str,
             RepoStatus {
                 branch: "main".to_string(),
-                is_dirty: true,
+                is_uncommitted: true,
                 ahead: 0,
                 behind: 0,
                 has_untracked: false,
+                staged_count: 0,
+                unstaged_count: 0,
+                untracked_count: 0,
             },
         );
 
-        let options = SyncManagerOptions::new().with_skip_dirty(true);
+        let options = SyncManagerOptions::new().with_skip_uncommitted(true);
         let manager = SyncManager::new(git, options);
 
         let repo = local_repo("repo", "org", temp.path());
         let result = manager.sync_single(&repo);
 
         assert!(result.result.is_skipped());
-        assert_eq!(result.result.skip_reason(), Some("working tree is dirty"));
+        assert_eq!(result.result.skip_reason(), Some("uncommitted changes"));
     }
 
     #[test]

@@ -65,20 +65,31 @@ impl ShellGit {
 
     /// Parses the porcelain status output.
     fn parse_status_output(&self, output: &str, branch_output: &str) -> RepoStatus {
-        let mut is_dirty = false;
-        let mut has_untracked = false;
+        let mut staged_count: usize = 0;
+        let mut unstaged_count: usize = 0;
+        let mut untracked_count: usize = 0;
 
         for line in output.lines() {
-            if line.is_empty() {
+            if line.len() < 2 {
                 continue;
             }
-            let code = &line[0..2];
-            if code == "??" {
-                has_untracked = true;
+            let bytes = line.as_bytes();
+            let x = bytes[0]; // index (staged) status
+            let y = bytes[1]; // working tree (unstaged) status
+
+            if x == b'?' && y == b'?' {
+                untracked_count += 1;
             } else {
-                is_dirty = true;
+                if x != b' ' && x != b'?' {
+                    staged_count += 1;
+                }
+                if y != b' ' && y != b'?' {
+                    unstaged_count += 1;
+                }
             }
         }
+        let is_uncommitted = staged_count > 0 || unstaged_count > 0;
+        let has_untracked = untracked_count > 0;
 
         // Parse branch info from `git status -b --porcelain`
         // Format: "## main...origin/main [ahead 1, behind 2]" or "## main"
@@ -86,10 +97,13 @@ impl ShellGit {
 
         RepoStatus {
             branch,
-            is_dirty,
+            is_uncommitted,
             ahead,
             behind,
             has_untracked,
+            staged_count,
+            unstaged_count,
+            untracked_count,
         }
     }
 
@@ -252,8 +266,8 @@ impl GitOperations for ShellGit {
         // First check status
         let status = self.status(repo_path)?;
 
-        if status.is_dirty {
-            debug!(repo = %repo_path.display(), "Skipping pull: working tree is dirty");
+        if status.is_uncommitted {
+            debug!(repo = %repo_path.display(), "Skipping pull: uncommitted changes");
             return Ok(PullResult {
                 success: false,
                 fast_forward: false,
@@ -384,7 +398,7 @@ mod tests {
     fn test_parse_status_clean() {
         let git = ShellGit::new();
         let status = git.parse_status_output("", "## main...origin/main");
-        assert!(!status.is_dirty);
+        assert!(!status.is_uncommitted);
         assert!(!status.has_untracked);
         assert_eq!(status.branch, "main");
     }
@@ -393,7 +407,7 @@ mod tests {
     fn test_parse_status_modified() {
         let git = ShellGit::new();
         let status = git.parse_status_output(" M src/main.rs", "## main");
-        assert!(status.is_dirty);
+        assert!(status.is_uncommitted);
         assert!(!status.has_untracked);
     }
 
@@ -401,7 +415,7 @@ mod tests {
     fn test_parse_status_untracked() {
         let git = ShellGit::new();
         let status = git.parse_status_output("?? newfile.txt", "## main");
-        assert!(!status.is_dirty);
+        assert!(!status.is_uncommitted);
         assert!(status.has_untracked);
     }
 
@@ -410,7 +424,7 @@ mod tests {
         let git = ShellGit::new();
         let output = " M src/main.rs\n?? newfile.txt\nA  staged.rs";
         let status = git.parse_status_output(output, "## feature [ahead 1, behind 2]");
-        assert!(status.is_dirty);
+        assert!(status.is_uncommitted);
         assert!(status.has_untracked);
         assert_eq!(status.branch, "feature");
         assert_eq!(status.ahead, 1);

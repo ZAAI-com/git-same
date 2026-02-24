@@ -276,13 +276,13 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) {
         .map(|r| r.owner.as_str())
         .collect::<HashSet<_>>()
         .len();
-    let uncommitted = app.local_repos.iter().filter(|r| r.is_dirty).count();
+    let uncommitted = app.local_repos.iter().filter(|r| r.is_uncommitted).count();
     let behind = app.local_repos.iter().filter(|r| r.behind > 0).count();
     let ahead = app.local_repos.iter().filter(|r| r.ahead > 0).count();
     let clean = app
         .local_repos
         .iter()
-        .filter(|r| !r.is_dirty && r.behind == 0 && r.ahead == 0)
+        .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
         .count();
 
     let selected = app.stat_index;
@@ -381,7 +381,7 @@ fn render_owners_tab(app: &App, frame: &mut Frame, area: Rect) {
     for r in &app.local_repos {
         let entry = owner_stats.entry(r.owner.as_str()).or_insert((0, 0));
         entry.0 += 1;
-        if !r.is_dirty && r.behind == 0 && r.ahead == 0 {
+        if !r.is_uncommitted && r.behind == 0 && r.ahead == 0 {
             entry.1 += 1;
         }
     }
@@ -461,7 +461,7 @@ fn render_repos_tab(app: &App, frame: &mut Frame, area: Rect) {
     let repos: Vec<&RepoEntry> = app
         .local_repos
         .iter()
-        .filter(|r| r.is_dirty || r.behind > 0 || r.ahead > 0)
+        .filter(|r| r.is_uncommitted || r.behind > 0 || r.ahead > 0)
         .collect();
     render_repo_table(app, frame, area, &repos, " Repos (needs attention) ");
 }
@@ -470,7 +470,7 @@ fn render_clean_tab(app: &App, frame: &mut Frame, area: Rect) {
     let clean_count = app
         .local_repos
         .iter()
-        .filter(|r| !r.is_dirty && r.behind == 0 && r.ahead == 0)
+        .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
         .count();
 
     let msg = format!(
@@ -503,7 +503,7 @@ fn render_ahead_tab(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_uncommitted_tab(app: &App, frame: &mut Frame, area: Rect) {
-    let repos: Vec<&RepoEntry> = app.local_repos.iter().filter(|r| r.is_dirty).collect();
+    let repos: Vec<&RepoEntry> = app.local_repos.iter().filter(|r| r.is_uncommitted).collect();
     render_repo_table(app, frame, area, &repos, " Uncommitted Changes ");
 }
 
@@ -523,7 +523,7 @@ fn render_repo_table(app: &App, frame: &mut Frame, area: Rect, repos: &[&RepoEnt
         return;
     }
 
-    let header = Row::new(vec!["Org/Repo", "Branch", "Dirty", "Ahead", "Behind"])
+    let header = Row::new(vec!["Org/Repo", "Branch", "Uncommitted", "Ahead", "Behind"])
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -544,7 +544,7 @@ fn render_repo_table(app: &App, frame: &mut Frame, area: Rect, repos: &[&RepoEnt
             };
 
             let branch = entry.branch.as_deref().unwrap_or("-");
-            let dirty = if entry.is_dirty { "*" } else { "." };
+            let uncommitted = if entry.is_uncommitted { "*" } else { "." };
             let ahead = if entry.ahead > 0 {
                 format!("+{}", entry.ahead)
             } else {
@@ -559,7 +559,7 @@ fn render_repo_table(app: &App, frame: &mut Frame, area: Rect, repos: &[&RepoEnt
             Row::new(vec![
                 entry.full_name.clone(),
                 branch.to_string(),
-                dirty.to_string(),
+                uncommitted.to_string(),
                 ahead,
                 behind,
             ])

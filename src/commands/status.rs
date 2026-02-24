@@ -30,7 +30,7 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
     output.info(&format_count(local_repos.len(), "repositories found"));
 
     // Get status for each
-    let mut dirty_count = 0;
+    let mut uncommitted_count = 0;
     let mut behind_count = 0;
 
     for (path, org, name) in &local_repos {
@@ -38,18 +38,18 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
 
         match status {
             Ok(s) => {
-                let is_dirty = s.is_dirty || s.has_untracked;
+                let is_uncommitted = s.is_uncommitted || s.has_untracked;
                 let is_behind = s.behind > 0;
 
-                if is_dirty {
-                    dirty_count += 1;
+                if is_uncommitted {
+                    uncommitted_count += 1;
                 }
                 if is_behind {
                     behind_count += 1;
                 }
 
                 // Apply filters
-                if args.dirty && !is_dirty {
+                if args.uncommitted && !is_uncommitted {
                     continue;
                 }
                 if args.behind && !is_behind {
@@ -67,15 +67,15 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
                     if s.ahead > 0 || s.behind > 0 {
                         println!("  Ahead: {}, Behind: {}", s.ahead, s.behind);
                     }
-                    if s.is_dirty {
-                        println!("  Status: dirty (uncommitted changes)");
+                    if s.is_uncommitted {
+                        println!("  Status: uncommitted changes");
                     }
                     if s.has_untracked {
                         println!("  Status: has untracked files");
                     }
                 } else {
                     let mut indicators = Vec::new();
-                    if is_dirty {
+                    if is_uncommitted {
                         indicators.push("*".to_string());
                     }
                     if s.ahead > 0 {
@@ -100,10 +100,10 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
 
     // Summary
     println!();
-    if dirty_count > 0 {
+    if uncommitted_count > 0 {
         output.warn(&format!(
             "{} repositories have uncommitted changes",
-            dirty_count
+            uncommitted_count
         ));
     }
     if behind_count > 0 {
@@ -112,7 +112,7 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
             behind_count
         ));
     }
-    if dirty_count == 0 && behind_count == 0 {
+    if uncommitted_count == 0 && behind_count == 0 {
         output.success("All repositories are clean and up to date");
     }
 
@@ -132,7 +132,7 @@ mod tests {
     async fn test_status_no_workspaces() {
         let args = StatusArgs {
             workspace: Some("nonexistent".to_string()),
-            dirty: false,
+            uncommitted: false,
             behind: false,
             detailed: false,
             org: vec![],

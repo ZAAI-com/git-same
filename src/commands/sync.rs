@@ -79,8 +79,8 @@ pub async fn run(
 
     // Plan sync operation
     let git = ShellGit::new();
-    let skip_dirty = !args.no_skip_dirty;
-    let (to_sync, skipped) = orchestrator.plan_sync(&base_path, repos, "github", &git, skip_dirty);
+    let skip_uncommitted = !args.no_skip_uncommitted;
+    let (to_sync, skipped) = orchestrator.plan_sync(&base_path, repos, "github", &git, skip_uncommitted);
 
     if to_sync.is_empty() {
         if skipped.is_empty() {
@@ -119,7 +119,7 @@ pub async fn run(
     let manager_options = SyncManagerOptions::new()
         .with_concurrency(effective_concurrency)
         .with_mode(mode)
-        .with_skip_dirty(skip_dirty);
+        .with_skip_uncommitted(skip_uncommitted);
 
     let manager = SyncManager::new(git, manager_options);
 

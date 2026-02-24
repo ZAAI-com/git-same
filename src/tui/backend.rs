@@ -371,7 +371,7 @@ async fn run_sync_operation(
         let manager_options = SyncManagerOptions::new()
             .with_concurrency(concurrency)
             .with_mode(sync_mode)
-            .with_skip_dirty(true);
+            .with_skip_uncommitted(true);
 
         let manager = SyncManager::new(ShellGit::new(), manager_options);
         let progress: Arc<dyn SyncProgress> = Arc::new(TuiSyncProgress { tx: tx.clone() });
@@ -433,9 +433,12 @@ async fn run_status_scan(
                         } else {
                             Some(s.branch)
                         },
-                        is_dirty: s.is_dirty || s.has_untracked,
+                        is_uncommitted: s.is_uncommitted || s.has_untracked,
                         ahead: s.ahead as usize,
                         behind: s.behind as usize,
+                        staged_count: s.staged_count,
+                        unstaged_count: s.unstaged_count,
+                        untracked_count: s.untracked_count,
                     });
                 }
                 Err(_) => {
@@ -445,9 +448,12 @@ async fn run_status_scan(
                         full_name,
                         path: path.clone(),
                         branch: None,
-                        is_dirty: false,
+                        is_uncommitted: false,
                         ahead: 0,
                         behind: 0,
+                        staged_count: 0,
+                        unstaged_count: 0,
+                        untracked_count: 0,
                     });
                 }
             }

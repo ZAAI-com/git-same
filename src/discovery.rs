@@ -92,7 +92,7 @@ impl DiscoveryOrchestrator {
         repos: Vec<OwnedRepo>,
         provider: &str,
         git: &G,
-        skip_dirty: bool,
+        skip_uncommitted: bool,
     ) -> (Vec<LocalRepo>, Vec<(OwnedRepo, String)>) {
         let mut to_sync = Vec::new();
         let mut skipped = Vec::new();
@@ -110,10 +110,10 @@ impl DiscoveryOrchestrator {
                 continue;
             }
 
-            if skip_dirty {
+            if skip_uncommitted {
                 if let Ok(status) = git.status(&local_path) {
-                    if status.is_dirty || status.has_untracked {
-                        skipped.push((repo, "working tree is dirty".to_string()));
+                    if status.is_uncommitted || status.has_untracked {
+                        skipped.push((repo, "uncommitted changes".to_string()));
                         continue;
                     }
                 }

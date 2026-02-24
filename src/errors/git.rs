@@ -41,7 +41,7 @@ pub enum GitError {
 
     /// Repository has uncommitted changes that would be overwritten.
     #[error("Repository has uncommitted changes: {path}")]
-    DirtyRepository {
+    UncommittedRepository {
         /// Path to the repository
         path: String,
     },
@@ -120,7 +120,7 @@ impl GitError {
     pub fn is_skippable(&self) -> bool {
         matches!(
             self,
-            GitError::DirtyRepository { .. }
+            GitError::UncommittedRepository { .. }
                 | GitError::PermissionDenied(_)
                 | GitError::SshKeyMissing { .. }
                 | GitError::SshAuthFailed { .. }
@@ -140,7 +140,7 @@ impl GitError {
             GitError::FetchFailed { .. } | GitError::PullFailed { .. } => {
                 "Check your network connection and repository access"
             }
-            GitError::DirtyRepository { .. } => "Commit or stash your changes before syncing",
+            GitError::UncommittedRepository { .. } => "Commit or stash your changes before syncing",
             GitError::NotARepository { .. } => {
                 "The directory exists but is not a git repository. Remove it to clone fresh"
             }
@@ -164,7 +164,7 @@ impl GitError {
             GitError::CloneFailed { repo, .. }
             | GitError::FetchFailed { repo, .. }
             | GitError::PullFailed { repo, .. } => Some(repo),
-            GitError::DirtyRepository { path } | GitError::NotARepository { path } => Some(path),
+            GitError::UncommittedRepository { path } | GitError::NotARepository { path } => Some(path),
             _ => None,
         }
     }
@@ -175,8 +175,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dirty_repository_is_skippable() {
-        let err = GitError::DirtyRepository {
+    fn test_uncommitted_repository_is_skippable() {
+        let err = GitError::UncommittedRepository {
             path: "/home/user/repo".to_string(),
         };
         assert!(err.is_skippable());
@@ -225,7 +225,7 @@ mod tests {
         };
         assert_eq!(err.repo_identifier(), Some("my-org/my-repo"));
 
-        let err = GitError::DirtyRepository {
+        let err = GitError::UncommittedRepository {
             path: "/path/to/repo".to_string(),
         };
         assert_eq!(err.repo_identifier(), Some("/path/to/repo"));

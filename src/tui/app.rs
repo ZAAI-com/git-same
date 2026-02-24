@@ -65,9 +65,12 @@ pub struct RepoEntry {
     pub full_name: String,
     pub path: PathBuf,
     pub branch: Option<String>,
-    pub is_dirty: bool,
+    pub is_uncommitted: bool,
     pub ahead: usize,
     pub behind: usize,
+    pub staged_count: usize,
+    pub unstaged_count: usize,
+    pub untracked_count: usize,
 }
 
 /// A requirement check result for the init check screen.
@@ -151,8 +154,8 @@ pub struct App {
     /// Error message to display (clears on next keypress).
     pub error_message: Option<String>,
 
-    /// Whether dirty-only filter is active in repo status.
-    pub filter_dirty: bool,
+    /// Whether uncommitted-only filter is active in repo status.
+    pub filter_uncommitted: bool,
 
     /// Whether behind-only filter is active in repo status.
     pub filter_behind: bool,
@@ -237,7 +240,7 @@ impl App {
             filter_active: false,
             dry_run: false,
             error_message: None,
-            filter_dirty: false,
+            filter_uncommitted: false,
             filter_behind: false,
             check_results: Vec::new(),
             checks_loading: false,

@@ -492,7 +492,7 @@ fn handle_status_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<
             }
         }
         KeyCode::Char('D') => {
-            app.filter_dirty = !app.filter_dirty;
+            app.filter_uncommitted = !app.filter_uncommitted;
             app.repo_index = 0;
         }
         KeyCode::Char('B') => {
@@ -549,12 +549,12 @@ fn dashboard_tab_item_count(app: &App) -> usize {
         1 => app
             .local_repos
             .iter()
-            .filter(|r| r.is_dirty || r.behind > 0 || r.ahead > 0)
+            .filter(|r| r.is_uncommitted || r.behind > 0 || r.ahead > 0)
             .count(),
         2 => 0, // Clean tab is summary-only
         3 => app.local_repos.iter().filter(|r| r.behind > 0).count(),
         4 => app.local_repos.iter().filter(|r| r.ahead > 0).count(),
-        5 => app.local_repos.iter().filter(|r| r.is_dirty).count(),
+        5 => app.local_repos.iter().filter(|r| r.is_uncommitted).count(),
         _ => 0,
     }
 }
@@ -563,7 +563,7 @@ fn filtered_repo_count(app: &App) -> usize {
     app.local_repos
         .iter()
         .filter(|r| {
-            if app.filter_dirty && !r.is_dirty {
+            if app.filter_uncommitted && !r.is_uncommitted {
                 return false;
             }
             if app.filter_behind && r.behind == 0 {

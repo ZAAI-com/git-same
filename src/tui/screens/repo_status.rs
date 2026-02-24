@@ -25,7 +25,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     let hint = if app.filter_active {
         format!("Filter: {}|  Esc: Cancel  Enter: Apply", app.filter_text)
     } else {
-        "j/k: Navigate  /: Filter  D: Dirty  B: Behind  r: Refresh  Esc: Back".to_string()
+        "j/k: Navigate  /: Filter  D: Uncommitted  B: Behind  r: Refresh  Esc: Back".to_string()
     };
     status_bar::render(frame, chunks[2], &hint);
 }
@@ -44,9 +44,9 @@ fn render_header(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
         Span::raw(format!("  Showing: {}/{}", filtered.len(), total)),
     ];
 
-    if app.filter_dirty {
+    if app.filter_uncommitted {
         spans.push(Span::styled(
-            "  [Dirty]",
+            "  [Uncommitted]",
             Style::default().fg(Color::Yellow),
         ));
     }
@@ -79,7 +79,7 @@ fn render_table(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
 
     let repos = filtered_repos(app);
 
-    let header = Row::new(vec!["Org/Repo", "Branch", "Dirty", "Ahead", "Behind"])
+    let header = Row::new(vec!["Org/Repo", "Branch", "Uncommitted", "Ahead", "Behind"])
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -100,7 +100,7 @@ fn render_table(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
             };
 
             let branch = entry.branch.as_deref().unwrap_or("-");
-            let dirty = if entry.is_dirty { "*" } else { "." };
+            let uncommitted = if entry.is_uncommitted { "*" } else { "." };
             let ahead = if entry.ahead > 0 {
                 format!("+{}", entry.ahead)
             } else {
@@ -115,7 +115,7 @@ fn render_table(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
             Row::new(vec![
                 entry.full_name.clone(),
                 branch.to_string(),
-                dirty.to_string(),
+                uncommitted.to_string(),
                 ahead,
                 behind,
             ])
@@ -143,7 +143,7 @@ fn filtered_repos(app: &App) -> Vec<&crate::tui::app::RepoEntry> {
     app.local_repos
         .iter()
         .filter(|r| {
-            if app.filter_dirty && !r.is_dirty {
+            if app.filter_uncommitted && !r.is_uncommitted {
                 return false;
             }
             if app.filter_behind && r.behind == 0 {

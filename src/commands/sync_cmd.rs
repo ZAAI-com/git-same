@@ -118,7 +118,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
         .or(workspace.concurrency)
         .unwrap_or(config.concurrency);
     let effective_concurrency = warn_if_concurrency_capped(concurrency, output);
-    let skip_dirty = !args.no_skip_dirty;
+    let skip_uncommitted = !args.no_skip_uncommitted;
 
     // Phase 1: Clone new repos
     let had_clones = !plan.to_clone.is_empty();
@@ -206,7 +206,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
 
     // Re-plan sync for existing repos
     let (to_sync, skipped) =
-        orchestrator.plan_sync(&base_path, repos, &provider_name, &git, skip_dirty);
+        orchestrator.plan_sync(&base_path, repos, &provider_name, &git, skip_uncommitted);
 
     if !to_sync.is_empty() {
         if args.dry_run {
@@ -230,7 +230,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
             let manager_options = SyncManagerOptions::new()
                 .with_concurrency(effective_concurrency)
                 .with_mode(sync_mode)
-                .with_skip_dirty(skip_dirty);
+                .with_skip_uncommitted(skip_uncommitted);
 
             let manager = SyncManager::new(ShellGit::new(), manager_options);
             let progress = Arc::new(SyncProgressBar::new(to_sync.len(), verbosity, operation));

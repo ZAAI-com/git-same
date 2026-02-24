@@ -135,7 +135,7 @@ pub struct ActionPlan {
     pub to_clone: Vec<OwnedRepo>,
     /// Existing repositories that should be synced
     pub to_sync: Vec<OwnedRepo>,
-    /// Repositories that were skipped (already exist, dirty state, etc.)
+    /// Repositories that were skipped (already exist, uncommitted changes, etc.)
     pub skipped: Vec<SkippedRepo>,
 }
 

@@ -48,24 +48,30 @@ pub struct RepoStatus {
     /// Current branch name
     pub branch: String,
     /// Whether the working tree has uncommitted changes
-    pub is_dirty: bool,
+    pub is_uncommitted: bool,
     /// Number of commits ahead of upstream
     pub ahead: u32,
     /// Number of commits behind upstream
     pub behind: u32,
     /// Whether there are untracked files
     pub has_untracked: bool,
+    /// Number of staged (index) changes
+    pub staged_count: usize,
+    /// Number of unstaged (working tree) changes
+    pub unstaged_count: usize,
+    /// Number of untracked files
+    pub untracked_count: usize,
 }
 
 impl RepoStatus {
     /// Returns true if the repo is clean and in sync with upstream.
     pub fn is_clean_and_synced(&self) -> bool {
-        !self.is_dirty && !self.has_untracked && self.ahead == 0 && self.behind == 0
+        !self.is_uncommitted && !self.has_untracked && self.ahead == 0 && self.behind == 0
     }
 
     /// Returns true if it's safe to do a fast-forward pull.
     pub fn can_fast_forward(&self) -> bool {
-        !self.is_dirty && self.ahead == 0 && self.behind > 0
+        !self.is_uncommitted && self.ahead == 0 && self.behind > 0
     }
 }
 
@@ -185,10 +191,13 @@ pub mod mock {
                 fetch_has_updates: false,
                 default_status: RepoStatus {
                     branch: "main".to_string(),
-                    is_dirty: false,
+                    is_uncommitted: false,
                     ahead: 0,
                     behind: 0,
                     has_untracked: false,
+                    staged_count: 0,
+                    unstaged_count: 0,
+                    untracked_count: 0,
                 },
                 path_statuses: HashMap::new(),
                 valid_repos: Vec::new(),
@@ -392,18 +401,21 @@ mod tests {
     fn test_repo_status_clean_and_synced() {
         let status = RepoStatus {
             branch: "main".to_string(),
-            is_dirty: false,
+            is_uncommitted: false,
             ahead: 0,
             behind: 0,
             has_untracked: false,
+            staged_count: 0,
+            unstaged_count: 0,
+            untracked_count: 0,
         };
         assert!(status.is_clean_and_synced());
 
-        let dirty = RepoStatus {
-            is_dirty: true,
+        let uncommitted_status = RepoStatus {
+            is_uncommitted: true,
             ..status.clone()
         };
-        assert!(!dirty.is_clean_and_synced());
+        assert!(!uncommitted_status.is_clean_and_synced());
 
         let ahead = RepoStatus {
             ahead: 1,
@@ -416,18 +428,21 @@ mod tests {
     fn test_repo_status_can_fast_forward() {
         let status = RepoStatus {
             branch: "main".to_string(),
-            is_dirty: false,
+            is_uncommitted: false,
             ahead: 0,
             behind: 3,
             has_untracked: false,
+            staged_count: 0,
+            unstaged_count: 0,
+            untracked_count: 0,
         };
         assert!(status.can_fast_forward());
 
-        let dirty = RepoStatus {
-            is_dirty: true,
+        let uncommitted_status = RepoStatus {
+            is_uncommitted: true,
             ..status.clone()
         };
-        assert!(!dirty.can_fast_forward());
+        assert!(!uncommitted_status.can_fast_forward());
 
         let diverged = RepoStatus {
             ahead: 1,
@@ -498,7 +513,7 @@ mod tests {
             let mock = MockGit::new();
             let status = mock.status(Path::new("/tmp/repo")).unwrap();
             assert_eq!(status.branch, "main");
-            assert!(!status.is_dirty);
+            assert!(!status.is_uncommitted);
         }
 
         #[test]
@@ -508,16 +523,19 @@ mod tests {
                 "/tmp/repo",
                 RepoStatus {
                     branch: "feature".to_string(),
-                    is_dirty: true,
+                    is_uncommitted: true,
                     ahead: 2,
                     behind: 0,
                     has_untracked: true,
+                    staged_count: 0,
+                    unstaged_count: 0,
+                    untracked_count: 0,
                 },
             );
 
             let status = mock.status(Path::new("/tmp/repo")).unwrap();
             assert_eq!(status.branch, "feature");
-            assert!(status.is_dirty);
+            assert!(status.is_uncommitted);
             assert_eq!(status.ahead, 2);
         }
 

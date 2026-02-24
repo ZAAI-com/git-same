@@ -114,7 +114,7 @@ pub struct SyncCmdArgs {
 
     /// Don't skip repositories with uncommitted changes
     #[arg(long)]
-    pub no_skip_dirty: bool,
+    pub no_skip_uncommitted: bool,
 }
 
 /// Arguments for the clone command (deprecated)
@@ -184,8 +184,8 @@ pub struct StatusArgs {
     pub workspace: Option<String>,
 
     /// Show only repositories with changes
-    #[arg(short, long)]
-    pub dirty: bool,
+    #[arg(short = 'd', long)]
+    pub uncommitted: bool,
 
     /// Show only repositories behind upstream
     #[arg(short, long)]
@@ -243,7 +243,7 @@ pub struct LegacySyncArgs {
 
     /// Don't skip repositories with uncommitted changes (sync them anyway)
     #[arg(long)]
-    pub no_skip_dirty: bool,
+    pub no_skip_uncommitted: bool,
 
     /// Filter to specific organizations (can be repeated)
     #[arg(short, long)]
@@ -358,10 +358,10 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_status() {
-        let cli = Cli::try_parse_from(["gisa", "status", "--dirty", "--detailed"]).unwrap();
+        let cli = Cli::try_parse_from(["gisa", "status", "--uncommitted", "--detailed"]).unwrap();
         match cli.command {
             Some(Command::Status(args)) => {
-                assert!(args.dirty);
+                assert!(args.uncommitted);
                 assert!(args.detailed);
                 assert!(args.workspace.is_none());
             }
@@ -407,10 +407,10 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_legacy_pull() {
-        let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-dirty"]).unwrap();
+        let cli = Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-uncommitted"]).unwrap();
         match cli.command {
             Some(Command::Pull(args)) => {
-                assert!(args.no_skip_dirty);
+                assert!(args.no_skip_uncommitted);
             }
             _ => panic!("Expected Pull command"),
         }

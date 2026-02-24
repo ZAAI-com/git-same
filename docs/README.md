@@ -78,7 +78,7 @@ gisa sync
 
 # 4. Check repository status
 gisa status
-gisa status --dirty
+gisa status --uncommitted
 gisa status --behind
 ```
 
@@ -207,7 +207,7 @@ Options:
   -n, --dry-run               Show what would be done
   -c, --concurrency <N>       Number of parallel operations (1-32)
       --refresh               Force re-discovery (ignore cache)
-      --no-skip-dirty         Don't skip repos with uncommitted changes
+      --no-skip-uncommitted         Don't skip repos with uncommitted changes
 ```
 
 ### `status`
@@ -220,7 +220,7 @@ gisa status [OPTIONS]
 Options:
   -w, --workspace <NAME>      Workspace to check
   -o, --org <ORG>...          Filter by organization (repeatable)
-  -d, --dirty                 Show only dirty repositories
+  -d, --uncommitted                 Show only repositories with uncommitted changes
   -b, --behind                Show only repositories behind upstream
       --detailed              Show detailed status information
 ```
@@ -266,7 +266,7 @@ Running `gisa` without a subcommand launches the interactive terminal UI.
 | **Setup Wizard** | Interactive workspace configuration | Step-by-step prompts |
 | **Command Picker** | Choose operation to run | `Enter`: Run |
 | **Progress** | Live sync progress with per-repo updates | `Esc`: Back when complete |
-| **Repo Status** | Table of local repos with git status | `j/k`: Navigate, `/`: Filter, `D`: Dirty, `B`: Behind, `r`: Refresh |
+| **Repo Status** | Table of local repos with git status | `j/k`: Navigate, `/`: Filter, `D`: Uncommitted, `B`: Behind, `r`: Refresh |
 | **Org Browser** | Browse discovered repos by organization | `j/k`: Navigate |
 | **Settings** | View workspace settings | `Esc`: Back |
 
@@ -287,7 +287,7 @@ gisa sync --workspace work --pull
 ### Check which repositories have uncommitted changes
 
 ```bash
-gisa status --dirty
+gisa status --uncommitted
 ```
 
 ### Dry run to see what would be synced
