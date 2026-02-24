@@ -57,7 +57,14 @@ fi
 echo "git: $(git --version)"
 echo ""
 
+# Clean build artifacts and update dependencies
+echo "--- Cleaning Build Cache ---"
+cargo clean
 echo ""
+echo "--- Updating Dependencies ---"
+cargo update
+echo ""
+
 echo "========================================"
 echo "  Setup Complete!"
 echo "========================================"

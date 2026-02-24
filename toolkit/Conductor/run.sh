@@ -9,25 +9,24 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR"
 
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
-GS_COMMAND="$CARGO_BIN_DIR/git-same"
-TEST_DIR="${1:-/tmp/gisa-prototype-test}"
+GS_COMMAND="$CARGO_BIN_DIR/gisa"
 
-# Always install to ensure all binaries are up to date
+# Install to ensure all binaries are up to date
 echo "Installing with: cargo install --path ."
 cargo install --path .
 echo ""
 
 if [ ! -x "$GS_COMMAND" ]; then
-    echo "ERROR: git-same installation failed."
+    echo "ERROR: gisa installation failed."
     exit 1
 fi
 
-# Warn if git-same is also installed elsewhere (e.g. Homebrew)
+# Warn if gisa is also installed elsewhere (e.g. Homebrew)
 RED='\033[0;31m'
 NC='\033[0m'
-OTHER_PATHS=$(which -a git-same 2>/dev/null | grep -v "$CARGO_BIN_DIR" || true)
+OTHER_PATHS=$(which -a gisa 2>/dev/null | grep -v "$CARGO_BIN_DIR" || true)
 if [ -n "$OTHER_PATHS" ]; then
-    echo -e "${RED}WARNING: git-same found in another location:${NC}"
+    echo -e "${RED}WARNING: gisa found in another location:${NC}"
     echo -e "${RED}  $OTHER_PATHS${NC}"
     echo -e "${RED}  This may shadow the version installed by this script.${NC}"
     echo -e "${RED}  Consider uninstalling it to avoid version conflicts.${NC}"
@@ -35,35 +34,47 @@ if [ -n "$OTHER_PATHS" ]; then
 fi
 
 echo "========================================"
-echo "  Feature Test Commands"
+echo "  Gisa Commands"
 echo "========================================"
 echo ""
-echo "Try these commands to test features:"
+echo "Getting started:"
 echo ""
-echo "  # Clone (dry-run first to preview)"
-echo "  $GS_COMMAND clone $TEST_DIR --dry-run"
+echo "  $GS_COMMAND init                              # Create config file"
+echo "  $GS_COMMAND setup                             # Interactive workspace wizard"
 echo ""
-echo "  # Clone with filters"
-echo "  $GS_COMMAND clone $TEST_DIR --org YOUR_ORG --depth 1"
+echo "Sync repos (discover + clone new + fetch existing):"
 echo ""
-echo "  # Check status"
-echo "  $GS_COMMAND status $TEST_DIR"
-echo "  $GS_COMMAND status $TEST_DIR --dirty"
-echo "  $GS_COMMAND status $TEST_DIR --detailed"
+echo "  $GS_COMMAND sync --dry-run                    # Preview what would happen"
+echo "  $GS_COMMAND sync                              # Run sync (fetch mode)"
+echo "  $GS_COMMAND sync --pull                       # Sync with pull instead of fetch"
+echo "  $GS_COMMAND sync --workspace github           # Sync specific workspace"
+echo "  $GS_COMMAND sync --concurrency 8              # Control parallelism"
 echo ""
-echo "  # Fetch updates"
-echo "  $GS_COMMAND fetch $TEST_DIR --dry-run"
-echo "  $GS_COMMAND fetch $TEST_DIR"
+echo "Status:"
 echo ""
-echo "  # Pull updates"
-echo "  $GS_COMMAND pull $TEST_DIR --dry-run"
+echo "  $GS_COMMAND status                            # Show all repo status"
+echo "  $GS_COMMAND status --dirty                    # Only repos with changes"
+echo "  $GS_COMMAND status --detailed                 # Full detail per repo"
 echo ""
-echo "  # Shell completions"
+echo "Workspace management:"
+echo ""
+echo "  $GS_COMMAND workspace list                    # List configured workspaces"
+echo "  $GS_COMMAND workspace default my-ws           # Set default workspace"
+echo "  $GS_COMMAND workspace default                 # Show current default"
+echo ""
+echo "Reset / cleanup:"
+echo ""
+echo "  $GS_COMMAND reset                             # Interactive cleanup"
+echo "  $GS_COMMAND reset --force                     # Force remove everything"
+echo ""
+echo "Shell completions:"
+echo ""
 echo "  $GS_COMMAND completions bash"
 echo "  $GS_COMMAND completions zsh"
 echo "  $GS_COMMAND completions fish"
 echo ""
-echo "  # Verbose and JSON output"
-echo "  $GS_COMMAND -v clone $TEST_DIR --dry-run"
-echo "  $GS_COMMAND --json status $TEST_DIR"
+echo "Verbose and JSON output:"
+echo ""
+echo "  $GS_COMMAND -v sync --dry-run"
+echo "  $GS_COMMAND --json status"
 echo ""
