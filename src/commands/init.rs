@@ -48,7 +48,7 @@ pub async fn run(args: &InitArgs, output: &Output) -> Result<()> {
     output.success(&format!("Created config at {}", config_path.display()));
 
     // Step 3: Next steps
-    output.info("Run 'gisa setup' to configure a workspace");
+    output.info("Run 'git-same setup' to configure a local folder as workspace.");
 
     Ok(())
 }

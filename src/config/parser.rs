@@ -4,6 +4,7 @@
 
 use super::provider_config::ProviderEntry;
 use crate::errors::AppError;
+use crate::operations::clone::DEFAULT_CONCURRENCY;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -108,7 +109,7 @@ fn default_structure() -> String {
 }
 
 fn default_concurrency() -> usize {
-    4
+    DEFAULT_CONCURRENCY
 }
 
 fn default_providers() -> Vec<ProviderEntry> {
@@ -202,19 +203,23 @@ impl Config {
 
     /// Generate the default configuration file content.
     pub fn default_toml() -> String {
-        r#"# Git-Same Configuration
+        format!(
+            r#"# Git-Same Configuration
 # See: https://github.com/zaai-com/git-same
 
 # Directory structure pattern
-# Placeholders: {provider}, {org}, {repo}
-structure = "{org}/{repo}"
+# Placeholders: {{provider}}, {{org}}, {{repo}}
+structure = "{{org}}/{{repo}}"
 
 # Number of parallel clone/sync operations (1-32)
 # Keeping this bounded helps avoid provider rate limits and local resource contention.
-concurrency = 4
+concurrency = {}
 
 # Sync behavior: "fetch" (safe) or "pull" (updates working tree)
-sync_mode = "fetch"
+sync_mode = "fetch""#,
+            DEFAULT_CONCURRENCY
+        )
+        + r#"
 
 [clone]
 # Clone depth (0 = full history)
@@ -251,7 +256,6 @@ prefer_ssh = true
 # token_env = "WORK_GITHUB_TOKEN"
 # base_path = "~/work/code"
 "#
-        .to_string()
     }
 
     /// Save the default_workspace setting to the config file at the default path.
@@ -342,7 +346,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.concurrency, 4);
+        assert_eq!(config.concurrency, 8);
         assert_eq!(config.sync_mode, SyncMode::Fetch);
         assert!(!config.filters.include_archived);
         assert!(!config.filters.include_forks);
@@ -420,7 +424,7 @@ token_env = "WORK_TOKEN"
     #[test]
     fn test_missing_file_returns_defaults() {
         let config = Config::load_from(Path::new("/nonexistent/config.toml")).unwrap();
-        assert_eq!(config.concurrency, 4);
+        assert_eq!(config.concurrency, 8);
     }
 
     #[test]

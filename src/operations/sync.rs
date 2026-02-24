@@ -148,7 +148,7 @@ pub struct SyncManagerOptions {
 impl Default for SyncManagerOptions {
     fn default() -> Self {
         Self {
-            concurrency: 4,
+            concurrency: crate::operations::clone::DEFAULT_CONCURRENCY,
             mode: SyncMode::Fetch,
             skip_dirty: true,
             dry_run: false,
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn test_sync_manager_options_default() {
         let options = SyncManagerOptions::default();
-        assert_eq!(options.concurrency, 4);
+        assert_eq!(options.concurrency, 8);
         assert_eq!(options.mode, SyncMode::Fetch);
         assert!(options.skip_dirty);
         assert!(!options.dry_run);

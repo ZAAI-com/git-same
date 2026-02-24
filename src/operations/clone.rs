@@ -43,6 +43,9 @@ pub const MAX_CONCURRENCY: usize = 16;
 /// Minimum concurrency (at least one clone at a time).
 pub const MIN_CONCURRENCY: usize = 1;
 
+/// Default concurrency when not specified in config.
+pub const DEFAULT_CONCURRENCY: usize = 8;
+
 /// Progress callback for clone operations.
 pub trait CloneProgress: Send + Sync {
     /// Called when a clone starts.
@@ -99,7 +102,7 @@ pub struct CloneManagerOptions {
 impl Default for CloneManagerOptions {
     fn default() -> Self {
         Self {
-            concurrency: 4,
+            concurrency: DEFAULT_CONCURRENCY,
             clone_options: CloneOptions::default(),
             structure: "{org}/{repo}".to_string(),
             prefer_ssh: true,
@@ -349,7 +352,7 @@ mod tests {
     #[test]
     fn test_clone_manager_options_default() {
         let options = CloneManagerOptions::default();
-        assert_eq!(options.concurrency, 4);
+        assert_eq!(options.concurrency, 8);
         assert!(options.prefer_ssh);
         assert!(!options.dry_run);
         assert_eq!(options.structure, "{org}/{repo}");
