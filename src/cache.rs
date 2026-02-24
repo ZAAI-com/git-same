@@ -117,7 +117,7 @@ pub struct CacheManager {
 impl CacheManager {
     /// Create a cache manager for a specific workspace.
     ///
-    /// Cache is stored at `~/.config/git-same/workspaces/<name>/cache.json`.
+    /// Cache is stored at `~/.config/git-same/<name>/workspace-cache.json`.
     pub fn for_workspace(workspace_name: &str) -> Result<Self> {
         let cache_path = crate::config::WorkspaceManager::cache_path(workspace_name)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn test_cache_save_and_load() {
         let temp_dir = TempDir::new().unwrap();
-        let cache_path = temp_dir.path().join("cache.json");
+        let cache_path = temp_dir.path().join("workspace-cache.json");
 
         let manager = CacheManager::with_path(cache_path.clone());
 
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn test_cache_expiration() {
         let temp_dir = TempDir::new().unwrap();
-        let cache_path = temp_dir.path().join("cache.json");
+        let cache_path = temp_dir.path().join("workspace-cache.json");
 
         // Use a generous TTL to ensure cache is valid when first loaded
         let manager = CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_secs(1));
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         let temp_dir = TempDir::new().unwrap();
-        let cache_path = temp_dir.path().join("cache.json");
+        let cache_path = temp_dir.path().join("workspace-cache.json");
 
         let manager = CacheManager::with_path(cache_path.clone());
 

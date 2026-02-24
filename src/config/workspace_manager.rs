@@ -2,10 +2,11 @@
 //!
 //! Handles CRUD operations for workspace config files.
 //! Each workspace is a subdirectory of `~/.config/git-same/<name>/`
-//! containing a `workspace.toml` and optionally a `cache.json`.
+//! containing a `workspace-config.toml` and optionally a `workspace-cache.json`.
 
 use super::workspace::WorkspaceConfig;
 use crate::errors::AppError;
+use crate::types::ProviderKind;
 use std::path::{Path, PathBuf};
 
 /// Manages workspace configuration files.
@@ -23,7 +24,7 @@ impl WorkspaceManager {
 
     /// List all workspace configs.
     ///
-    /// Scans subdirectories of `~/.config/git-same/` for `workspace.toml` files.
+    /// Scans subdirectories of `~/.config/git-same/` for `workspace-config.toml` files.
     pub fn list() -> Result<Vec<WorkspaceConfig>, AppError> {
         let dir = Self::config_dir()?;
         if !dir.exists() {
@@ -39,7 +40,7 @@ impl WorkspaceManager {
                 .map_err(|e| AppError::config(format!("Failed to read directory entry: {}", e)))?;
             let path = entry.path();
             if path.is_dir() {
-                let config_file = path.join("workspace.toml");
+                let config_file = path.join("workspace-config.toml");
                 if config_file.exists() {
                     match Self::load_from_path(&config_file) {
                         Ok(ws) => workspaces.push(ws),
@@ -119,19 +120,21 @@ impl WorkspaceManager {
         Ok(None)
     }
 
-    /// Derive a workspace name from a path.
+    /// Derive a workspace name from a base path and provider.
     ///
-    /// Examples:
-    /// - `~/github` → `"github"`
-    /// - `~/work/code` → `"work-code"`
-    /// - `/home/user/my repos` → `"my-repos"`
-    pub fn name_from_path(path: &Path) -> String {
+    /// Format: `{provider}-{last_path_component}`, lowercased, with
+    /// spaces and underscores replaced by hyphens.
+    ///
+    /// Examples (with GitHub provider):
+    /// - `~/repos` → `"github-repos"`
+    /// - `~/work/code` → `"github-code"`
+    /// - `/home/user/my repos` → `"github-my-repos"`
+    pub fn name_from_path(path: &Path, provider: ProviderKind) -> String {
         let lossy = path.to_string_lossy();
         let expanded = shellexpand::tilde(&lossy);
         let path = Path::new(expanded.as_ref());
 
-        // Take the last 1-2 path components
-        let components: Vec<&str> = path
+        let last_component = path
             .components()
             .filter_map(|c| {
                 if let std::path::Component::Normal(s) = c {
@@ -140,20 +143,39 @@ impl WorkspaceManager {
                     None
                 }
             })
-            .collect();
+            .next_back()
+            .unwrap_or("workspace");
 
-        let name_parts = if components.len() >= 2 {
-            vec![
-                components[components.len() - 2],
-                components[components.len() - 1],
-            ]
-        } else if let Some(last) = components.last() {
-            vec![*last]
-        } else {
-            vec!["workspace"]
+        let prefix = match provider {
+            ProviderKind::GitHub => "github",
+            ProviderKind::GitHubEnterprise => "ghe",
+            ProviderKind::GitLab => "gitlab",
+            ProviderKind::Bitbucket => "bitbucket",
         };
+        format!("{}-{}", prefix, last_component)
+            .to_lowercase()
+            .replace([' ', '_'], "-")
+    }
 
-        name_parts.join("-").to_lowercase().replace([' ', '_'], "-")
+    /// Return a unique workspace name, appending `-2`, `-3`, etc. on collision.
+    pub fn unique_name(base: &str) -> Result<String, AppError> {
+        let dir = Self::workspace_dir(base)?;
+        if !dir.exists() {
+            return Ok(base.to_string());
+        }
+
+        for suffix in 2..=100 {
+            let candidate = format!("{}-{}", base, suffix);
+            let candidate_dir = Self::workspace_dir(&candidate)?;
+            if !candidate_dir.exists() {
+                return Ok(candidate);
+            }
+        }
+
+        Err(AppError::config(format!(
+            "Could not find a unique workspace name based on '{}'",
+            base
+        )))
     }
 
     /// Resolve which workspace to use.
@@ -202,14 +224,14 @@ impl WorkspaceManager {
         Ok(Self::config_dir()?.join(name))
     }
 
-    /// Returns the file path for a workspace config: `~/.config/git-same/<name>/workspace.toml`.
+    /// Returns the file path for a workspace config: `~/.config/git-same/<name>/workspace-config.toml`.
     fn config_path(name: &str) -> Result<PathBuf, AppError> {
-        Ok(Self::workspace_dir(name)?.join("workspace.toml"))
+        Ok(Self::workspace_dir(name)?.join("workspace-config.toml"))
     }
 
-    /// Returns the cache file path for a workspace: `~/.config/git-same/<name>/cache.json`.
+    /// Returns the cache file path for a workspace: `~/.config/git-same/<name>/workspace-cache.json`.
     pub fn cache_path(name: &str) -> Result<PathBuf, AppError> {
-        Ok(Self::workspace_dir(name)?.join("cache.json"))
+        Ok(Self::workspace_dir(name)?.join("workspace-cache.json"))
     }
 
     /// Load a workspace config from a specific file path.
@@ -251,34 +273,47 @@ mod tests {
         let content = ws.to_toml().unwrap();
         let ws_dir = config_dir.join("test-ws");
         std::fs::create_dir_all(&ws_dir).unwrap();
-        std::fs::write(ws_dir.join("workspace.toml"), &content).unwrap();
+        std::fs::write(ws_dir.join("workspace-config.toml"), &content).unwrap();
 
         f(config_dir);
     }
 
     #[test]
     fn test_name_from_path_simple() {
-        let name = WorkspaceManager::name_from_path(Path::new("/home/user/github"));
-        assert_eq!(name, "user-github");
+        let name =
+            WorkspaceManager::name_from_path(Path::new("/home/user/github"), ProviderKind::GitHub);
+        assert_eq!(name, "github-github");
     }
 
     #[test]
     fn test_name_from_path_with_spaces() {
-        let name = WorkspaceManager::name_from_path(Path::new("/home/user/my repos"));
-        assert_eq!(name, "user-my-repos");
+        let name = WorkspaceManager::name_from_path(
+            Path::new("/home/user/my repos"),
+            ProviderKind::GitHub,
+        );
+        assert_eq!(name, "github-my-repos");
     }
 
     #[test]
     fn test_name_from_path_single_component() {
-        let name = WorkspaceManager::name_from_path(Path::new("/github"));
-        assert_eq!(name, "github");
+        let name = WorkspaceManager::name_from_path(Path::new("/repos"), ProviderKind::GitLab);
+        assert_eq!(name, "gitlab-repos");
     }
 
     #[test]
     fn test_name_from_path_deep() {
-        let name = WorkspaceManager::name_from_path(Path::new("/a/b/c/work/code"));
-        // Takes last 2 components
-        assert_eq!(name, "work-code");
+        let name =
+            WorkspaceManager::name_from_path(Path::new("/a/b/c/work/code"), ProviderKind::GitHub);
+        assert_eq!(name, "github-code");
+    }
+
+    #[test]
+    fn test_name_from_path_enterprise() {
+        let name = WorkspaceManager::name_from_path(
+            Path::new("/home/user/work"),
+            ProviderKind::GitHubEnterprise,
+        );
+        assert_eq!(name, "ghe-work");
     }
 
     #[test]
@@ -294,7 +329,7 @@ mod tests {
 
             let ws_dir = dir.join("roundtrip-test");
             std::fs::create_dir_all(&ws_dir).unwrap();
-            let path = ws_dir.join("workspace.toml");
+            let path = ws_dir.join("workspace-config.toml");
             let content = ws.to_toml().unwrap();
             std::fs::write(&path, &content).unwrap();
 
@@ -317,17 +352,19 @@ mod tests {
         let content = ws.to_toml().unwrap();
         let ws_dir = temp.path().join("my-github");
         std::fs::create_dir_all(&ws_dir).unwrap();
-        std::fs::write(ws_dir.join("workspace.toml"), &content).unwrap();
+        std::fs::write(ws_dir.join("workspace-config.toml"), &content).unwrap();
 
         // Name comes from the folder, not from any field in the TOML
-        let loaded = WorkspaceManager::load_from_path(&ws_dir.join("workspace.toml")).unwrap();
+        let loaded =
+            WorkspaceManager::load_from_path(&ws_dir.join("workspace-config.toml")).unwrap();
         assert_eq!(loaded.name, "my-github");
 
         // Simulate a folder rename
         let renamed_dir = temp.path().join("renamed-workspace");
         std::fs::rename(&ws_dir, &renamed_dir).unwrap();
 
-        let loaded = WorkspaceManager::load_from_path(&renamed_dir.join("workspace.toml")).unwrap();
+        let loaded =
+            WorkspaceManager::load_from_path(&renamed_dir.join("workspace-config.toml")).unwrap();
         assert_eq!(loaded.name, "renamed-workspace");
     }
 
@@ -336,7 +373,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let ws_dir = temp.path().join("bad-ws");
         std::fs::create_dir_all(&ws_dir).unwrap();
-        let path = ws_dir.join("workspace.toml");
+        let path = ws_dir.join("workspace-config.toml");
         std::fs::write(&path, "invalid toml {{{").unwrap();
 
         let result = WorkspaceManager::load_from_path(&path);
@@ -352,7 +389,7 @@ mod tests {
         let entries: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir() && e.path().join("workspace.toml").exists())
+            .filter(|e| e.path().is_dir() && e.path().join("workspace-config.toml").exists())
             .collect();
         assert_eq!(entries.len(), 0);
     }
@@ -365,13 +402,13 @@ mod tests {
             let content = ws2.to_toml().unwrap();
             let ws2_dir = dir.join("another-ws");
             std::fs::create_dir_all(&ws2_dir).unwrap();
-            std::fs::write(ws2_dir.join("workspace.toml"), &content).unwrap();
+            std::fs::write(ws2_dir.join("workspace-config.toml"), &content).unwrap();
 
             // Count subdirectories that contain workspace.toml
             let entries: Vec<_> = std::fs::read_dir(dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_dir() && e.path().join("workspace.toml").exists())
+                .filter(|e| e.path().is_dir() && e.path().join("workspace-config.toml").exists())
                 .collect();
             assert_eq!(entries.len(), 2);
         });

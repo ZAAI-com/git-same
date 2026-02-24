@@ -175,9 +175,12 @@ impl SetupState {
             SetupStep::SelectProvider => SetupStep::Authenticate,
             SetupStep::Authenticate => SetupStep::SelectPath,
             SetupStep::SelectPath => {
-                // Derive workspace name from base_path
+                // Derive workspace name from base_path + provider
                 let path = std::path::Path::new(&self.base_path);
-                self.workspace_name = crate::config::WorkspaceManager::name_from_path(path);
+                let base =
+                    crate::config::WorkspaceManager::name_from_path(path, self.selected_provider());
+                self.workspace_name =
+                    crate::config::WorkspaceManager::unique_name(&base).unwrap_or(base);
                 SetupStep::SelectOrgs
             }
             SetupStep::SelectOrgs => SetupStep::Confirm,

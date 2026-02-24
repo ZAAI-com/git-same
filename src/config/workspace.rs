@@ -2,7 +2,7 @@
 //!
 //! Each workspace represents a sync target folder with its own provider,
 //! selected organizations, and repository filters. Each workspace is a
-//! subdirectory of `~/.config/git-same/<name>/` containing `workspace.toml`.
+//! subdirectory of `~/.config/git-same/<name>/` containing `workspace-config.toml`.
 
 use super::provider_config::AuthMethod;
 use super::{ConfigCloneOptions, FilterOptions, SyncMode};
@@ -71,7 +71,7 @@ impl WorkspaceProvider {
 pub struct WorkspaceConfig {
     /// Workspace name, derived from the config folder name at load time.
     ///
-    /// Not stored in `workspace.toml` — the folder name is the source of truth.
+    /// Not stored in `workspace-config.toml` — the folder name is the source of truth.
     #[serde(skip_serializing, default)]
     pub name: String,
 
