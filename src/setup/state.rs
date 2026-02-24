@@ -43,6 +43,13 @@ pub struct ProviderChoice {
     pub available: bool,
 }
 
+/// A suggested directory path for the path selector.
+#[derive(Debug, Clone)]
+pub struct PathSuggestion {
+    pub path: String,
+    pub label: String,
+}
+
 /// The wizard state (model).
 pub struct SetupState {
     /// Current wizard step.
@@ -64,6 +71,11 @@ pub struct SetupState {
     // Step 3: Path
     pub base_path: String,
     pub path_cursor: usize,
+    pub path_suggestions_mode: bool,
+    pub path_suggestions: Vec<PathSuggestion>,
+    pub path_suggestion_index: usize,
+    pub path_completions: Vec<String>,
+    pub path_completion_index: usize,
 
     // Step 4: Org selection
     pub orgs: Vec<OrgEntry>,
@@ -90,6 +102,16 @@ pub enum AuthStatus {
     Success,
     /// Authentication failed.
     Failed(String),
+}
+
+/// Collapse an absolute path's home directory prefix into `~`.
+pub fn tilde_collapse(path: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if path.starts_with(&home) {
+            return format!("~{}", &path[home.len()..]);
+        }
+    }
+    path.to_string()
 }
 
 impl SetupState {
@@ -132,6 +154,11 @@ impl SetupState {
             auth_token: None,
             base_path,
             path_cursor,
+            path_suggestions_mode: true,
+            path_suggestions: Vec::new(),
+            path_suggestion_index: 0,
+            path_completions: Vec::new(),
+            path_completion_index: 0,
             orgs: Vec::new(),
             org_index: 0,
             org_loading: false,
@@ -168,12 +195,61 @@ impl SetupState {
             .collect()
     }
 
+    /// Populate the path suggestions list for the SelectPath step.
+    pub fn populate_path_suggestions(&mut self) {
+        let mut suggestions = Vec::new();
+
+        // 1. Default path (always first)
+        suggestions.push(PathSuggestion {
+            path: self.base_path.clone(),
+            label: "default".to_string(),
+        });
+
+        // 2. Current working directory (if different)
+        if let Ok(cwd) = std::env::current_dir() {
+            let display = tilde_collapse(&cwd.to_string_lossy());
+            if display != self.base_path {
+                suggestions.push(PathSuggestion {
+                    path: display,
+                    label: "current directory".to_string(),
+                });
+            }
+        }
+
+        // 3. Common developer directories (only if they exist)
+        for candidate in &["~/Developer", "~/Projects", "~/repos", "~/code"] {
+            let expanded = shellexpand::tilde(candidate);
+            let path = std::path::Path::new(expanded.as_ref());
+            if path.is_dir() && !suggestions.iter().any(|s| s.path == *candidate) {
+                suggestions.push(PathSuggestion {
+                    path: candidate.to_string(),
+                    label: String::new(),
+                });
+            }
+        }
+
+        // 4. Home directory (always last)
+        if !suggestions.iter().any(|s| s.path == "~") {
+            suggestions.push(PathSuggestion {
+                path: "~".to_string(),
+                label: "home".to_string(),
+            });
+        }
+
+        self.path_suggestions = suggestions;
+        self.path_suggestion_index = 0;
+        self.path_suggestions_mode = true;
+    }
+
     /// Move to the next step.
     pub fn next_step(&mut self) {
         self.error_message = None;
         self.step = match self.step {
             SetupStep::SelectProvider => SetupStep::Authenticate,
-            SetupStep::Authenticate => SetupStep::SelectPath,
+            SetupStep::Authenticate => {
+                self.populate_path_suggestions();
+                SetupStep::SelectPath
+            }
             SetupStep::SelectPath => {
                 // Derive workspace name from base_path + provider
                 let path = std::path::Path::new(&self.base_path);
@@ -203,7 +279,10 @@ impl SetupState {
             }
             SetupStep::Authenticate => SetupStep::SelectProvider,
             SetupStep::SelectPath => SetupStep::Authenticate,
-            SetupStep::SelectOrgs => SetupStep::SelectPath,
+            SetupStep::SelectOrgs => {
+                self.populate_path_suggestions();
+                SetupStep::SelectPath
+            }
             SetupStep::Confirm => SetupStep::SelectOrgs,
         };
     }
@@ -222,6 +301,31 @@ mod tests {
         assert_eq!(state.provider_choices.len(), 4);
         assert!(state.provider_choices[0].available);
         assert!(!state.provider_choices[2].available); // GitLab
+        assert!(state.path_suggestions_mode);
+        assert!(state.path_suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_populate_path_suggestions() {
+        let mut state = SetupState::new("~/github");
+        state.populate_path_suggestions();
+        // First suggestion is always the default
+        assert!(!state.path_suggestions.is_empty());
+        assert_eq!(state.path_suggestions[0].path, "~/github");
+        assert_eq!(state.path_suggestions[0].label, "default");
+        // Last suggestion is always home
+        let last = state.path_suggestions.last().unwrap();
+        assert_eq!(last.path, "~");
+        assert_eq!(last.label, "home");
+    }
+
+    #[test]
+    fn test_tilde_collapse() {
+        if let Ok(home) = std::env::var("HOME") {
+            let path = format!("{}/projects", home);
+            assert_eq!(super::tilde_collapse(&path), "~/projects");
+        }
+        assert_eq!(super::tilde_collapse("/tmp/foo"), "/tmp/foo");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! Setup wizard event handling.
 
-use super::state::{AuthStatus, OrgEntry, SetupOutcome, SetupState, SetupStep};
+use super::state::{tilde_collapse, AuthStatus, OrgEntry, SetupOutcome, SetupState, SetupStep};
 use crate::auth::{get_auth_for_provider, gh_cli};
 use crate::config::{WorkspaceConfig, WorkspaceManager};
 use crate::provider::{create_provider, Credentials};
@@ -89,17 +89,84 @@ async fn do_authenticate(state: &mut SetupState) {
 }
 
 fn handle_path(state: &mut SetupState, key: KeyEvent) {
+    if state.path_suggestions_mode {
+        handle_path_suggestions(state, key);
+    } else {
+        handle_path_input(state, key);
+    }
+}
+
+fn confirm_path(state: &mut SetupState) {
+    if state.base_path.is_empty() {
+        state.error_message = Some("Base path cannot be empty".to_string());
+    } else {
+        state.error_message = None;
+        state.org_loading = true;
+        state.orgs.clear();
+        state.org_error = None;
+        state.next_step();
+    }
+}
+
+fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Enter => {
-            if state.base_path.is_empty() {
-                state.error_message = Some("Base path cannot be empty".to_string());
-            } else {
-                state.error_message = None;
-                state.org_loading = true;
-                state.orgs.clear();
-                state.org_error = None;
-                state.next_step();
+        KeyCode::Up => {
+            if state.path_suggestion_index > 0 {
+                state.path_suggestion_index -= 1;
             }
+        }
+        KeyCode::Down => {
+            if state.path_suggestion_index + 1 < state.path_suggestions.len() {
+                state.path_suggestion_index += 1;
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
+                state.base_path = s.path.clone();
+                state.path_cursor = state.base_path.len();
+            }
+            confirm_path(state);
+        }
+        KeyCode::Tab => {
+            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
+                state.base_path = s.path.clone();
+                state.path_cursor = state.base_path.len();
+            }
+            state.path_suggestions_mode = false;
+            state.path_completions = compute_completions(&state.base_path);
+            state.path_completion_index = 0;
+        }
+        KeyCode::Esc => {
+            state.prev_step();
+        }
+        KeyCode::Backspace => {
+            state.path_suggestions_mode = false;
+            if state.path_cursor > 0 {
+                state.path_cursor -= 1;
+                state.base_path.remove(state.path_cursor);
+            }
+            state.path_completions = compute_completions(&state.base_path);
+            state.path_completion_index = 0;
+        }
+        KeyCode::Char(c) => {
+            state.path_suggestions_mode = false;
+            state.base_path.clear();
+            state.base_path.push(c);
+            state.path_cursor = 1;
+            state.path_completions = compute_completions(&state.base_path);
+            state.path_completion_index = 0;
+        }
+        _ => {}
+    }
+}
+
+fn handle_path_input(state: &mut SetupState, key: KeyEvent) {
+    match key.code {
+        KeyCode::Tab => {
+            apply_tab_completion(state);
+        }
+        KeyCode::Enter => {
+            confirm_path(state);
         }
         KeyCode::Esc => {
             state.prev_step();
@@ -108,11 +175,15 @@ fn handle_path(state: &mut SetupState, key: KeyEvent) {
             if state.path_cursor > 0 {
                 state.path_cursor -= 1;
                 state.base_path.remove(state.path_cursor);
+                state.path_completions = compute_completions(&state.base_path);
+                state.path_completion_index = 0;
             }
         }
         KeyCode::Delete => {
             if state.path_cursor < state.base_path.len() {
                 state.base_path.remove(state.path_cursor);
+                state.path_completions = compute_completions(&state.base_path);
+                state.path_completion_index = 0;
             }
         }
         KeyCode::Left => {
@@ -134,9 +205,95 @@ fn handle_path(state: &mut SetupState, key: KeyEvent) {
         KeyCode::Char(c) => {
             state.base_path.insert(state.path_cursor, c);
             state.path_cursor += 1;
+            state.path_completions = compute_completions(&state.base_path);
+            state.path_completion_index = 0;
         }
         _ => {}
     }
+}
+
+/// Compute directory completions for the current input path.
+fn compute_completions(input: &str) -> Vec<String> {
+    if input.is_empty() {
+        return Vec::new();
+    }
+    let expanded = shellexpand::tilde(input);
+    let path = std::path::Path::new(expanded.as_ref());
+
+    let (parent, prefix) = if expanded.ends_with('/') {
+        (path.to_path_buf(), String::new())
+    } else {
+        let parent = path.parent().unwrap_or(path).to_path_buf();
+        let prefix = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+        (parent, prefix)
+    };
+
+    let mut results = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&parent) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            if prefix.is_empty() || name.starts_with(&prefix) {
+                let full = parent.join(&name);
+                let display = tilde_collapse(&full.to_string_lossy());
+                results.push(format!("{}/", display));
+            }
+        }
+    }
+    results.sort();
+    results
+}
+
+fn apply_tab_completion(state: &mut SetupState) {
+    if state.path_completions.is_empty() {
+        return;
+    }
+    if state.path_completions.len() == 1 {
+        state.base_path = state.path_completions[0].clone();
+        state.path_cursor = state.base_path.len();
+        state.path_completions = compute_completions(&state.base_path);
+        state.path_completion_index = 0;
+    } else {
+        let common = longest_common_prefix(&state.path_completions);
+        if common.len() > state.base_path.len() {
+            state.base_path = common;
+            state.path_cursor = state.base_path.len();
+            state.path_completions = compute_completions(&state.base_path);
+            state.path_completion_index = 0;
+        } else {
+            // Already at common prefix, cycle through completions
+            state.base_path = state.path_completions[state.path_completion_index].clone();
+            state.path_cursor = state.base_path.len();
+            state.path_completion_index =
+                (state.path_completion_index + 1) % state.path_completions.len();
+        }
+    }
+}
+
+fn longest_common_prefix(strings: &[String]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+    let first = &strings[0];
+    let mut len = first.len();
+    for s in &strings[1..] {
+        len = len.min(s.len());
+        for (i, (a, b)) in first.bytes().zip(s.bytes()).enumerate() {
+            if a != b {
+                len = len.min(i);
+                break;
+            }
+        }
+    }
+    first[..len].to_string()
 }
 
 async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
