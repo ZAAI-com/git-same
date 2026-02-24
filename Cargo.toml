@@ -33,7 +33,7 @@ tui = ["dep:ratatui", "dep:crossterm"]
 [dependencies]
 # CLI parsing
 clap = { version = "4", features = ["derive"] }
-clap_complete = "4"
+
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

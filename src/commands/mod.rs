@@ -39,11 +39,6 @@ pub async fn run_command(
     if let Command::Reset(args) = command {
         return reset::run(args, output).await;
     }
-    if let Command::Completions(args) = command {
-        crate::cli::generate_completions(args.shell);
-        return Ok(());
-    }
-
     #[cfg(feature = "tui")]
     if let Command::Setup(args) = command {
         return setup::run(args, output).await;
@@ -53,7 +48,7 @@ pub async fn run_command(
     let config = load_config(config_path)?;
 
     match command {
-        Command::Init(_) | Command::Reset(_) | Command::Completions(_) => unreachable!(),
+        Command::Init(_) | Command::Reset(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,

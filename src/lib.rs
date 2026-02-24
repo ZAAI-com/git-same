@@ -69,7 +69,6 @@ pub mod types;
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
-    pub use crate::cli::{generate_completions, ShellType};
     pub use crate::cli::{
         Cli, CloneArgs, Command, InitArgs, LegacySyncArgs, ResetArgs, StatusArgs, SyncCmdArgs,
     };

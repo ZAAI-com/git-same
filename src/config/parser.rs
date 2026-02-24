@@ -218,8 +218,7 @@ concurrency = {}
 # Sync behavior: "fetch" (safe) or "pull" (updates working tree)
 sync_mode = "fetch""#,
             DEFAULT_CONCURRENCY
-        )
-        + r#"
+        ) + r#"
 
 [clone]
 # Clone depth (0 = full history)

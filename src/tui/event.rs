@@ -46,6 +46,14 @@ pub enum BackendMessage {
     OperationError(String),
     /// Status scan results.
     StatusResults(Vec<RepoEntry>),
+    /// Init: config file created successfully.
+    InitConfigCreated(String),
+    /// Init: config creation failed.
+    InitConfigError(String),
+    /// Default workspace was set/cleared successfully.
+    DefaultWorkspaceUpdated(Option<String>),
+    /// Default workspace operation failed.
+    DefaultWorkspaceError(String),
 }
 
 /// Spawn the terminal event reader in a blocking thread.

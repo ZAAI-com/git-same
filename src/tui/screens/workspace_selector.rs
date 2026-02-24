@@ -49,6 +49,7 @@ pub fn render(app: &App, frame: &mut Frame) {
                 Style::default()
             };
 
+            let is_default = app.config.default_workspace.as_deref() == Some(ws.name.as_str());
             let last_synced = ws.last_synced.as_deref().unwrap_or("never synced");
             let org_info = if ws.orgs.is_empty() {
                 "all orgs".to_string()
@@ -56,16 +57,26 @@ pub fn render(app: &App, frame: &mut Frame) {
                 format!("{} orgs", ws.orgs.len())
             };
 
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(format!("  {} ", marker), style),
                 Span::styled(format!("{:<16}", ws.name), style),
+            ];
+            if is_default {
+                spans.push(Span::styled(
+                    "(default) ",
+                    Style::default().fg(Color::Green),
+                ));
+            }
+            spans.extend([
                 Span::styled(&ws.base_path, Style::default().fg(Color::DarkGray)),
                 Span::styled("  (", Style::default().fg(Color::DarkGray)),
                 Span::styled(org_info, Style::default().fg(Color::DarkGray)),
                 Span::styled(", ", Style::default().fg(Color::DarkGray)),
                 Span::styled(last_synced, Style::default().fg(Color::DarkGray)),
                 Span::styled(")", Style::default().fg(Color::DarkGray)),
-            ]))
+            ]);
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -77,5 +88,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     );
     frame.render_widget(list, chunks[1]);
 
-    status_bar::render(frame, chunks[2], "j/k: Navigate  Enter: Select  q: Quit");
+    status_bar::render(
+        frame,
+        chunks[2],
+        "j/k: Navigate  Enter: Select  d: Set default  q: Quit",
+    );
 }

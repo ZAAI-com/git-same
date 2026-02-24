@@ -27,7 +27,6 @@ fn test_help_command() {
     assert!(stdout.contains("status"));
     assert!(stdout.contains("workspace"));
     assert!(stdout.contains("reset"));
-    assert!(stdout.contains("completions"));
 }
 
 #[test]
@@ -121,43 +120,6 @@ fn test_init_help() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Initialize"));
     assert!(stdout.contains("--force"));
-}
-
-#[test]
-fn test_completions_bash() {
-    let output = Command::new(git_same_binary())
-        .args(["completions", "bash"])
-        .output()
-        .expect("Failed to execute git-same");
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("_gisa"));
-    assert!(stdout.contains("complete -F"));
-}
-
-#[test]
-fn test_completions_zsh() {
-    let output = Command::new(git_same_binary())
-        .args(["completions", "zsh"])
-        .output()
-        .expect("Failed to execute git-same");
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("#compdef"));
-}
-
-#[test]
-fn test_completions_fish() {
-    let output = Command::new(git_same_binary())
-        .args(["completions", "fish"])
-        .output()
-        .expect("Failed to execute git-same");
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("complete"));
 }
 
 #[test]

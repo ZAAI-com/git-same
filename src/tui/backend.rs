@@ -9,13 +9,13 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::auth::get_auth_for_provider;
 use crate::config::{Config, WorkspaceConfig};
 use crate::discovery::DiscoveryOrchestrator;
-use crate::git::{CloneOptions, FetchResult, PullResult, ShellGit};
+use crate::git::{CloneOptions, FetchResult, GitOperations, PullResult, ShellGit};
 use crate::operations::clone::{CloneManager, CloneManagerOptions, CloneProgress};
 use crate::operations::sync::{SyncManager, SyncManagerOptions, SyncMode, SyncProgress};
 use crate::provider::{create_provider, DiscoveryProgress};
 use crate::types::{OpSummary, OwnedRepo};
 
-use super::app::{App, Operation};
+use super::app::{App, Operation, RepoEntry};
 use super::event::{AppEvent, BackendMessage};
 
 // -- Progress adapters that send events to the TUI via channels --
@@ -196,10 +196,10 @@ pub fn spawn_operation(operation: Operation, app: &App, tx: UnboundedSender<AppE
             });
         }
         Operation::Status => {
-            let repos = app.local_repos.clone();
+            let workspace = app.active_workspace.clone();
+            let config = app.config.clone();
             tokio::spawn(async move {
-                // Status is just re-scanning local repos — handled by the caller
-                let _ = tx.send(AppEvent::Backend(BackendMessage::StatusResults(repos)));
+                run_status_scan(config, workspace, tx).await;
             });
         }
     }
@@ -383,4 +383,78 @@ async fn run_sync_operation(
             OpSummary::new(),
         )));
     }
+}
+
+/// Scans local repositories and gets their git status.
+async fn run_status_scan(
+    config: Config,
+    workspace: Option<WorkspaceConfig>,
+    tx: UnboundedSender<AppEvent>,
+) {
+    let workspace = match workspace {
+        Some(ws) => ws,
+        None => {
+            let _ = tx.send(AppEvent::Backend(BackendMessage::OperationError(
+                "No workspace selected.".to_string(),
+            )));
+            return;
+        }
+    };
+
+    let base_path = workspace.expanded_base_path();
+    if !base_path.exists() {
+        let _ = tx.send(AppEvent::Backend(BackendMessage::StatusResults(vec![])));
+        return;
+    }
+
+    let structure = workspace
+        .structure
+        .clone()
+        .unwrap_or_else(|| config.structure.clone());
+
+    let entries = tokio::task::spawn_blocking(move || {
+        let git = ShellGit::new();
+        let orchestrator = DiscoveryOrchestrator::new(workspace.filters.clone(), structure);
+        let local_repos = orchestrator.scan_local(&base_path, &git);
+        let mut entries = Vec::new();
+
+        for (path, org, name) in &local_repos {
+            let full_name = format!("{}/{}", org, name);
+            match git.status(path) {
+                Ok(s) => {
+                    entries.push(RepoEntry {
+                        owner: org.clone(),
+                        name: name.clone(),
+                        full_name,
+                        path: path.clone(),
+                        branch: if s.branch.is_empty() {
+                            None
+                        } else {
+                            Some(s.branch)
+                        },
+                        is_dirty: s.is_dirty || s.has_untracked,
+                        ahead: s.ahead as usize,
+                        behind: s.behind as usize,
+                    });
+                }
+                Err(_) => {
+                    entries.push(RepoEntry {
+                        owner: org.clone(),
+                        name: name.clone(),
+                        full_name,
+                        path: path.clone(),
+                        branch: None,
+                        is_dirty: false,
+                        ahead: 0,
+                        behind: 0,
+                    });
+                }
+            }
+        }
+        entries
+    })
+    .await
+    .unwrap_or_default();
+
+    let _ = tx.send(AppEvent::Backend(BackendMessage::StatusResults(entries)));
 }

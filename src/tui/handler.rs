@@ -5,7 +5,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::app::{App, CheckEntry, Operation, OperationState, Screen};
 use super::event::{AppEvent, BackendMessage};
-use crate::config::WorkspaceManager;
+use crate::config::{Config, WorkspaceManager};
 use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
 
 /// Handle an incoming event, updating app state and optionally spawning backend work.
@@ -88,18 +88,24 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
 
     // Screen-specific keybindings
     match app.screen {
-        Screen::InitCheck => handle_init_check_key(app, key).await,
+        Screen::InitCheck => handle_init_check_key(app, key, backend_tx).await,
         Screen::SetupWizard => unreachable!(), // handled above
-        Screen::WorkspaceSelector => handle_workspace_selector_key(app, key),
+        Screen::WorkspaceSelector => {
+            handle_workspace_selector_key(app, key, backend_tx).await;
+        }
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
         Screen::CommandPicker => handle_picker_key(app, key, backend_tx).await,
         Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
-        Screen::RepoStatus => handle_status_key(app, key),
+        Screen::RepoStatus => handle_status_key(app, key, backend_tx),
     }
 }
 
-async fn handle_init_check_key(app: &mut App, key: KeyEvent) {
+async fn handle_init_check_key(
+    app: &mut App,
+    key: KeyEvent,
+    backend_tx: &UnboundedSender<AppEvent>,
+) {
     match key.code {
         KeyCode::Enter if !app.checks_loading => {
             // Run requirement checks
@@ -115,6 +121,54 @@ async fn handle_init_check_key(app: &mut App, key: KeyEvent) {
                 })
                 .collect();
             app.checks_loading = false;
+        }
+        KeyCode::Char('c') if !app.check_results.is_empty() && !app.config_created => {
+            // Create config file
+            let tx = backend_tx.clone();
+            tokio::spawn(async move {
+                match Config::default_path() {
+                    Ok(config_path) => {
+                        if config_path.exists() {
+                            let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                format!(
+                                    "Config already exists at {}. Delete it first to recreate.",
+                                    config_path.display()
+                                ),
+                            )));
+                            return;
+                        }
+                        if let Some(parent) = config_path.parent() {
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                        format!("Failed to create config directory: {}", e),
+                                    )));
+                                return;
+                            }
+                        }
+                        let default_config = Config::default_toml();
+                        match std::fs::write(&config_path, default_config) {
+                            Ok(()) => {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigCreated(
+                                        config_path.display().to_string(),
+                                    )));
+                            }
+                            Err(e) => {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                        format!("Failed to write config: {}", e),
+                                    )));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                            format!("Cannot determine config path: {}", e),
+                        )));
+                    }
+                }
+            });
         }
         KeyCode::Char('s') => {
             // Launch setup wizard
@@ -152,7 +206,11 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_workspace_selector_key(app: &mut App, key: KeyEvent) {
+async fn handle_workspace_selector_key(
+    app: &mut App,
+    key: KeyEvent,
+    backend_tx: &UnboundedSender<AppEvent>,
+) {
     let num_ws = app.workspaces.len();
     if num_ws == 0 {
         return;
@@ -164,6 +222,34 @@ fn handle_workspace_selector_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('k') | KeyCode::Up => {
             app.workspace_index = (app.workspace_index + num_ws - 1) % num_ws;
+        }
+        KeyCode::Char('d') => {
+            // Toggle default workspace
+            if let Some(ws) = app.workspaces.get(app.workspace_index) {
+                let ws_name = ws.name.clone();
+                let is_already_default = app.config.default_workspace.as_deref() == Some(&ws_name);
+                let new_default = if is_already_default {
+                    None
+                } else {
+                    Some(ws_name)
+                };
+                let tx = backend_tx.clone();
+                let default_clone = new_default.clone();
+                tokio::spawn(async move {
+                    match Config::save_default_workspace(default_clone.as_deref()) {
+                        Ok(()) => {
+                            let _ = tx.send(AppEvent::Backend(
+                                BackendMessage::DefaultWorkspaceUpdated(default_clone),
+                            ));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppEvent::Backend(
+                                BackendMessage::DefaultWorkspaceError(format!("{}", e)),
+                            ));
+                        }
+                    }
+                });
+            }
         }
         KeyCode::Enter => {
             app.select_workspace(app.workspace_index);
@@ -184,6 +270,7 @@ async fn handle_dashboard_key(
             start_operation(app, Operation::Sync, backend_tx);
         }
         KeyCode::Char('t') => {
+            app.status_loading = true;
             app.navigate_to(Screen::RepoStatus);
             start_operation(app, Operation::Status, backend_tx);
         }
@@ -281,7 +368,7 @@ fn handle_progress_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_status_key(app: &mut App, key: KeyEvent) {
+fn handle_status_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
     let filtered_count = filtered_repo_count(app);
     match key.code {
         KeyCode::Char('j') | KeyCode::Down => {
@@ -305,6 +392,10 @@ fn handle_status_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('/') => {
             app.filter_active = true;
             app.filter_text.clear();
+        }
+        KeyCode::Char('r') => {
+            app.status_loading = true;
+            start_operation(app, Operation::Status, backend_tx);
         }
         _ => {}
     }
@@ -437,6 +528,20 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
         BackendMessage::StatusResults(entries) => {
             app.local_repos = entries;
             app.operation_state = OperationState::Idle;
+            app.status_loading = false;
+        }
+        BackendMessage::InitConfigCreated(path) => {
+            app.config_created = true;
+            app.config_path_display = Some(path);
+        }
+        BackendMessage::InitConfigError(msg) => {
+            app.error_message = Some(msg);
+        }
+        BackendMessage::DefaultWorkspaceUpdated(name) => {
+            app.config.default_workspace = name;
+        }
+        BackendMessage::DefaultWorkspaceError(msg) => {
+            app.error_message = Some(msg);
         }
     }
 }

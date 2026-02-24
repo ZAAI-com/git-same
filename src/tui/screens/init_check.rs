@@ -91,19 +91,45 @@ pub fn render(app: &App, frame: &mut Frame) {
         frame.render_widget(list, chunks[1]);
     }
 
-    // Help text
-    let help_text = if app.check_results.is_empty() {
-        "No workspaces configured. Press 's' to set up a workspace."
+    // Help text / config status
+    let help_lines = if app.config_created {
+        let path = app
+            .config_path_display
+            .as_deref()
+            .unwrap_or("~/.config/git-same/config.toml");
+        vec![Line::from(vec![
+            Span::styled("  Config created at ", Style::default().fg(Color::Green)),
+            Span::styled(path, Style::default().fg(Color::Cyan)),
+            Span::styled(
+                "  — Press 's' to set up a workspace.",
+                Style::default().fg(Color::Yellow),
+            ),
+        ])]
+    } else if !app.check_results.is_empty() {
+        vec![Line::from(vec![
+            Span::styled(
+                "  Press 'c' to create config",
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                "  or 's' to set up a workspace.",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ])]
     } else {
-        "Press 's' to set up a workspace."
+        vec![Line::from(Span::styled(
+            "  No workspaces configured. Press 's' to set up a workspace.",
+            Style::default().fg(Color::Yellow),
+        ))]
     };
-    let help = Paragraph::new(Line::from(Span::styled(
-        help_text,
-        Style::default().fg(Color::Yellow),
-    )))
-    .centered()
-    .block(Block::default().borders(Borders::TOP));
+
+    let help = Paragraph::new(help_lines).block(Block::default().borders(Borders::TOP));
     frame.render_widget(help, chunks[2]);
 
-    status_bar::render(frame, chunks[3], "s: Setup  Enter: Check  q: Quit");
+    let hint = if !app.check_results.is_empty() && !app.config_created {
+        "Enter: Re-check  c: Create Config  s: Setup  q: Quit"
+    } else {
+        "s: Setup  Enter: Check  q: Quit"
+    };
+    status_bar::render(frame, chunks[3], hint);
 }

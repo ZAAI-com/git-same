@@ -25,7 +25,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     let hint = if app.filter_active {
         format!("Filter: {}|  Esc: Cancel  Enter: Apply", app.filter_text)
     } else {
-        "j/k: Navigate  /: Filter  D: Dirty only  B: Behind only  Esc: Back".to_string()
+        "j/k: Navigate  /: Filter  D: Dirty  B: Behind  r: Refresh  Esc: Back".to_string()
     };
     status_bar::render(frame, chunks[2], &hint);
 }
@@ -63,6 +63,20 @@ fn render_header(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
 }
 
 fn render_table(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
+    if app.status_loading {
+        let loading = Paragraph::new(Line::from(Span::styled(
+            "  Scanning repositories...",
+            Style::default().fg(Color::Yellow),
+        )))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        frame.render_widget(loading, area);
+        return;
+    }
+
     let repos = filtered_repos(app);
 
     let header = Row::new(vec!["Org/Repo", "Branch", "Dirty", "Ahead", "Behind"])

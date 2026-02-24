@@ -164,6 +164,15 @@ pub struct App {
 
     /// Setup wizard state (active when on SetupWizard screen).
     pub setup_state: Option<SetupState>,
+
+    /// Whether the config file was successfully created by init.
+    pub config_created: bool,
+
+    /// Path where config was written (for display).
+    pub config_path_display: Option<String>,
+
+    /// Whether status scan is in progress.
+    pub status_loading: bool,
 }
 
 impl App {
@@ -224,6 +233,9 @@ impl App {
             } else {
                 None
             },
+            config_created: false,
+            config_path_display: None,
+            status_loading: false,
         }
     }
 

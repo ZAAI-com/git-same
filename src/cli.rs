@@ -3,8 +3,7 @@
 //! This module defines the command-line interface for git-same,
 //! including all subcommands and their options.
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use clap_complete::Shell;
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 /// Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
@@ -56,9 +55,6 @@ pub enum Command {
 
     /// Reset gisa — remove all config, workspaces, and cache
     Reset(ResetArgs),
-
-    /// Generate shell completions
-    Completions(CompletionsArgs),
 
     /// [deprecated] Clone repositories — use 'gisa sync' instead
     #[command(hide = true)]
@@ -270,36 +266,6 @@ pub struct ResetArgs {
     pub force: bool,
 }
 
-/// Arguments for the completions command
-#[derive(Args, Debug)]
-pub struct CompletionsArgs {
-    /// Shell to generate completions for
-    #[arg(value_enum)]
-    pub shell: ShellType,
-}
-
-/// Supported shells for completions
-#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellType {
-    Bash,
-    Zsh,
-    Fish,
-    PowerShell,
-    Elvish,
-}
-
-impl From<ShellType> for Shell {
-    fn from(shell: ShellType) -> Self {
-        match shell {
-            ShellType::Bash => Shell::Bash,
-            ShellType::Zsh => Shell::Zsh,
-            ShellType::Fish => Shell::Fish,
-            ShellType::PowerShell => Shell::PowerShell,
-            ShellType::Elvish => Shell::Elvish,
-        }
-    }
-}
-
 impl Cli {
     /// Parse command line arguments.
     pub fn parse_args() -> Self {
@@ -324,17 +290,6 @@ impl Cli {
     pub fn is_json(&self) -> bool {
         self.json
     }
-}
-
-/// Generate shell completions.
-pub fn generate_completions(shell: ShellType) {
-    use clap::CommandFactory;
-    use clap_complete::generate;
-    use std::io;
-
-    let mut cmd = Cli::command();
-    let shell: Shell = shell.into();
-    generate(shell, &mut cmd, "gisa", &mut io::stdout());
 }
 
 #[cfg(test)]
@@ -480,15 +435,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_parsing_completions() {
-        let cli = Cli::try_parse_from(["gisa", "completions", "bash"]).unwrap();
-        match cli.command {
-            Some(Command::Completions(args)) => assert_eq!(args.shell, ShellType::Bash),
-            _ => panic!("Expected Completions command"),
-        }
-    }
-
-    #[test]
     fn test_cli_global_flags() {
         let cli = Cli::try_parse_from(["gisa", "-vvv", "--json", "sync"]).unwrap();
         assert_eq!(cli.verbose, 3);
@@ -502,15 +448,6 @@ mod tests {
         assert!(cli.quiet);
         assert!(cli.is_quiet());
         assert_eq!(cli.verbosity(), 0);
-    }
-
-    #[test]
-    fn test_shell_type_conversion() {
-        assert_eq!(Shell::from(ShellType::Bash), Shell::Bash);
-        assert_eq!(Shell::from(ShellType::Zsh), Shell::Zsh);
-        assert_eq!(Shell::from(ShellType::Fish), Shell::Fish);
-        assert_eq!(Shell::from(ShellType::PowerShell), Shell::PowerShell);
-        assert_eq!(Shell::from(ShellType::Elvish), Shell::Elvish);
     }
 
     #[test]

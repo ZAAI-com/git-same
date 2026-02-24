@@ -265,33 +265,6 @@ Options:
       --detailed              Show detailed status information
 ```
 
-### `completions`
-
-Generate shell completions:
-
-```bash
-git-same completions <SHELL>
-
-Shells: bash, zsh, fish, powershell, elvish
-```
-
-#### Installation
-
-**Bash:**
-```bash
-git-same completions bash > ~/.local/share/bash-completion/completions/git-same
-```
-
-**Zsh:**
-```bash
-git-same completions zsh > ~/.zfunc/_git-same
-```
-
-**Fish:**
-```bash
-git-same completions fish > ~/.config/fish/completions/git-same.fish
-```
-
 ## Examples
 
 ### Clone all repositories from specific orgs
@@ -411,7 +384,6 @@ Contributions welcome! Please open an issue or PR on [GitHub](https://github.com
 - [x] Parallel cloning
 - [x] Smart filtering
 - [x] Progress bars
-- [x] Shell completions
 - [ ] GitLab support
 - [ ] Bitbucket support
 - [ ] Interactive mode
