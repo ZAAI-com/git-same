@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::types::{OpSummary, OwnedRepo};
 
-use super::app::{CheckEntry, RepoEntry};
+use super::app::{CheckEntry, Operation, RepoEntry};
 
 /// Events that the TUI loop processes.
 #[derive(Debug)]
@@ -34,10 +34,16 @@ pub enum BackendMessage {
     DiscoveryComplete(Vec<OwnedRepo>),
     /// Discovery failed.
     DiscoveryError(String),
+    /// Operation phase started with N total repos.
+    OperationStarted {
+        operation: Operation,
+        total: usize,
+    },
     /// Operation progress: one repo processed.
     RepoProgress {
         repo_name: String,
         success: bool,
+        skipped: bool,
         message: String,
     },
     /// Operation complete.

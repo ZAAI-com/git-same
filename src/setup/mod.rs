@@ -26,7 +26,10 @@ use std::time::Duration;
 /// Returns `Ok(true)` if the wizard completed (workspace saved),
 /// `Ok(false)` if the user cancelled.
 pub async fn run_setup() -> Result<bool> {
-    let mut state = SetupState::new("~/github");
+    let default_path = std::env::current_dir()
+        .map(|p| state::tilde_collapse(&p.to_string_lossy()))
+        .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+    let mut state = SetupState::new(&default_path);
 
     // Setup terminal
     enable_raw_mode()?;

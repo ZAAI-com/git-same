@@ -100,10 +100,15 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     }
 
     if key.code == KeyCode::Esc {
-        // Don't go back from InitCheck or WorkspaceSelector (they're entry points)
-        if !matches!(app.screen, Screen::InitCheck | Screen::WorkspaceSelector) {
-            app.go_back();
+        // Don't go back from entry points (no screen stack)
+        if app.screen == Screen::InitCheck {
+            return;
         }
+        // WorkspaceSelector: only go back if navigated to (has screen stack)
+        if app.screen == Screen::WorkspaceSelector && app.screen_stack.is_empty() {
+            return;
+        }
+        app.go_back();
         return;
     }
 
@@ -119,7 +124,7 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
         Screen::RepoStatus => handle_status_key(app, key, backend_tx),
-        Screen::Settings => {} // Settings uses only global keys (q, Esc)
+        Screen::Settings => handle_settings_key(app, key),
     }
 }
 
@@ -194,7 +199,10 @@ async fn handle_init_check_key(
         }
         KeyCode::Char('s') => {
             // Launch setup wizard
-            app.setup_state = Some(SetupState::new("~/github"));
+            let default_path = std::env::current_dir()
+                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+            app.setup_state = Some(SetupState::new(&default_path));
             app.navigate_to(Screen::SetupWizard);
         }
         _ => {}
@@ -234,18 +242,23 @@ async fn handle_workspace_selector_key(
     backend_tx: &UnboundedSender<AppEvent>,
 ) {
     let num_ws = app.workspaces.len();
-    if num_ws == 0 {
-        return;
-    }
 
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Char('n') => {
+            // Launch setup wizard to create a new workspace
+            let default_path = std::env::current_dir()
+                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+            app.setup_state = Some(SetupState::new(&default_path));
+            app.navigate_to(Screen::SetupWizard);
+        }
+        KeyCode::Char('j') | KeyCode::Down if num_ws > 0 => {
             app.workspace_index = (app.workspace_index + 1) % num_ws;
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Char('k') | KeyCode::Up if num_ws > 0 => {
             app.workspace_index = (app.workspace_index + num_ws - 1) % num_ws;
         }
-        KeyCode::Char('d') => {
+        KeyCode::Char('d') if num_ws > 0 => {
             // Toggle default workspace
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
                 let ws_name = ws.name.clone();
@@ -273,7 +286,7 @@ async fn handle_workspace_selector_key(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Enter if num_ws > 0 => {
             app.select_workspace(app.workspace_index);
             app.screen = Screen::Dashboard;
             app.screen_stack.clear();
@@ -302,19 +315,8 @@ async fn handle_dashboard_key(
         KeyCode::Char('e') => {
             app.navigate_to(Screen::Settings);
         }
-        KeyCode::Char('c') => {
-            // Open config directory in Finder / file manager
-            if let Ok(path) = crate::config::Config::default_path() {
-                if let Some(parent) = path.parent() {
-                    let _ = std::process::Command::new("open").arg(parent).spawn();
-                }
-            }
-        }
         KeyCode::Char('w') => {
-            if app.workspaces.len() > 1 {
-                app.screen = Screen::WorkspaceSelector;
-                app.screen_stack.clear();
-            }
+            app.navigate_to(Screen::WorkspaceSelector);
         }
         KeyCode::Char('m') | KeyCode::Enter => {
             app.navigate_to(Screen::CommandPicker);
@@ -325,6 +327,27 @@ async fn handle_dashboard_key(
         KeyCode::Right | KeyCode::Char('l') => {
             if app.stat_index < 5 {
                 app.stat_index += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_settings_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('c') => {
+            // Open config directory in Finder / file manager
+            if let Ok(path) = crate::config::Config::default_path() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::process::Command::new("open").arg(parent).spawn();
+                }
+            }
+        }
+        KeyCode::Char('w') => {
+            // Open active workspace base_path in Finder / file manager
+            if let Some(ref ws) = app.active_workspace {
+                let path = ws.expanded_base_path();
+                let _ = std::process::Command::new("open").arg(&path).spawn();
             }
         }
         _ => {}

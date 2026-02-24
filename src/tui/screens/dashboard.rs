@@ -15,7 +15,8 @@ pub fn render(app: &App, frame: &mut Frame) {
         Constraint::Length(8), // Banner
         Constraint::Length(1), // Tagline + version
         Constraint::Length(1), // Config / requirements
-        Constraint::Length(1), // Workspace info
+        Constraint::Length(1), // Workspace info line 1
+        Constraint::Length(1), // Workspace info line 2
         Constraint::Length(5), // Stats
         Constraint::Min(1),    // Spacer
         Constraint::Length(2), // Bottom actions (2 lines)
@@ -25,9 +26,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     render_banner(frame, chunks[0]);
     render_tagline(frame, chunks[1]);
     render_config_reqs(app, frame, chunks[2]);
-    render_workspace_info(app, frame, chunks[3]);
-    render_stats(app, frame, chunks[4]);
-    render_bottom_actions(app, frame, chunks[6]);
+    render_workspace_info(app, frame, chunks[3], chunks[4]);
+    render_stats(app, frame, chunks[5]);
+    render_bottom_actions(app, frame, chunks[7]);
 }
 
 fn render_banner(frame: &mut Frame, area: Rect) {
@@ -72,7 +73,7 @@ fn render_tagline(frame: &mut Frame, area: Rect) {
     let line = Line::from(vec![
         Span::styled(description, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("  v{}", version),
+            format!("  Version {}", version),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -91,10 +92,16 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let mut spans: Vec<Span> = Vec::new();
 
     if app.checks_loading {
+        spans.push(Span::styled("Global Config", dim));
+        spans.push(Span::styled("  │  ", dim));
         spans.push(Span::styled("Checking requirements...", loading));
     } else if app.check_results.is_empty() {
-        spans.push(Span::styled("Requirements: checking...", dim));
+        spans.push(Span::styled("Global Config", dim));
+        spans.push(Span::styled("  │  ", dim));
+        spans.push(Span::styled("Checking...", dim));
     } else {
+        spans.push(Span::styled("Global Config", dim));
+        spans.push(Span::styled("  │  ", dim));
         for (i, check) in app.check_results.iter().enumerate() {
             if i > 0 {
                 spans.push(Span::styled("  ", dim));
@@ -117,12 +124,12 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(p, area);
 }
 
-fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
+fn render_workspace_info(app: &App, frame: &mut Frame, line1: Rect, line2: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
     let cyan = Style::default().fg(Color::Cyan);
     let sep = Span::styled("  │  ", dim);
 
-    let spans = match &app.active_workspace {
+    match &app.active_workspace {
         Some(ws) => {
             let org_count = if ws.orgs.is_empty() {
                 "all orgs".to_string()
@@ -132,28 +139,36 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
             let last = ws.last_synced.as_deref().unwrap_or("never");
             let provider = ws.provider.kind.display_name();
 
-            vec![
+            // Line 1: Workspace name + path
+            let top = Line::from(vec![
                 Span::styled("Workspace: ", dim),
                 Span::styled(&ws.name, cyan),
                 sep.clone(),
                 Span::styled("Path: ", dim),
                 Span::styled(&ws.base_path, cyan),
-                sep.clone(),
+            ]);
+
+            // Line 2: Provider + orgs + last synced
+            let bottom = Line::from(vec![
                 Span::styled(format!("Provider: {}", provider), dim),
                 sep.clone(),
                 Span::styled(format!("Orgs: {}", org_count), dim),
                 sep,
                 Span::styled(format!("Last synced: {}", last), dim),
-            ]
-        }
-        None => vec![Span::styled(
-            "No workspace selected",
-            Style::default().fg(Color::Yellow),
-        )],
-    };
+            ]);
 
-    let p = Paragraph::new(vec![Line::from(spans)]).centered();
-    frame.render_widget(p, area);
+            frame.render_widget(Paragraph::new(vec![top]).centered(), line1);
+            frame.render_widget(Paragraph::new(vec![bottom]).centered(), line2);
+        }
+        None => {
+            let p = Paragraph::new(vec![Line::from(Span::styled(
+                "No workspace selected",
+                Style::default().fg(Color::Yellow),
+            ))])
+            .centered();
+            frame.render_widget(p, line1);
+        }
+    }
 }
 
 fn render_stats(app: &App, frame: &mut Frame, area: Rect) {
@@ -253,7 +268,7 @@ fn render_stat_box(
     frame.render_widget(content, area);
 }
 
-fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
+fn render_bottom_actions(_app: &App, frame: &mut Frame, area: Rect) {
     let rows = Layout::vertical([
         Constraint::Length(1), // Actions
         Constraint::Length(1), // Navigation
@@ -280,16 +295,15 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled("[e]", key_style),
         Span::styled(" Settings", dim),
         Span::raw("   "),
-        Span::styled("[c]", key_style),
-        Span::styled(" Config", dim),
-        Span::raw("   "),
         Span::styled("[m]", key_style),
         Span::styled(" Menu", dim),
     ]);
 
-    // Line 2: Navigation
-    let has_multiple_ws = app.workspaces.len() > 1;
-    let mut nav_spans = vec![
+    // Line 2: Navigation — left-aligned (Quit, Back) and right-aligned (Left, Right, Select)
+    let nav_cols =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).split(rows[1]);
+
+    let left_spans = vec![
         Span::raw(" "),
         Span::styled("[q]", key_style),
         Span::styled(" Quit", dim),
@@ -297,6 +311,11 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled("[Esc]", key_style),
         Span::styled(" Back", dim),
         Span::raw("   "),
+        Span::styled("[w]", key_style),
+        Span::styled(" Workspace", dim),
+    ];
+
+    let right_spans = vec![
         Span::styled("[←]", key_style),
         Span::styled(" Left", dim),
         Span::raw("   "),
@@ -305,17 +324,14 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("   "),
         Span::styled("[↵]", key_style),
         Span::styled(" Select", dim),
+        Span::raw(" "),
     ];
-    if has_multiple_ws {
-        nav_spans.push(Span::raw("   "));
-        nav_spans.push(Span::styled("[w]", key_style));
-        nav_spans.push(Span::styled(" Workspace", dim));
-    }
-    let navigation = Line::from(nav_spans);
 
     let actions_p = Paragraph::new(vec![actions]).centered();
-    let nav_p = Paragraph::new(vec![navigation]).centered();
+    let nav_left = Paragraph::new(vec![Line::from(left_spans)]);
+    let nav_right = Paragraph::new(vec![Line::from(right_spans)]).right_aligned();
 
     frame.render_widget(actions_p, rows[0]);
-    frame.render_widget(nav_p, rows[1]);
+    frame.render_widget(nav_left, nav_cols[0]);
+    frame.render_widget(nav_right, nav_cols[1]);
 }

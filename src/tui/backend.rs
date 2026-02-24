@@ -62,15 +62,7 @@ struct TuiCloneProgress {
 }
 
 impl CloneProgress for TuiCloneProgress {
-    fn on_start(&self, repo: &OwnedRepo, _index: usize, _total: usize) {
-        let _ = self
-            .tx
-            .send(AppEvent::Backend(BackendMessage::RepoProgress {
-                repo_name: repo.full_name().to_string(),
-                success: true,
-                message: "cloning...".to_string(),
-            }));
-    }
+    fn on_start(&self, _repo: &OwnedRepo, _index: usize, _total: usize) {}
 
     fn on_complete(&self, repo: &OwnedRepo, _index: usize, _total: usize) {
         let _ = self
@@ -78,6 +70,7 @@ impl CloneProgress for TuiCloneProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: true,
+                skipped: false,
                 message: "cloned".to_string(),
             }));
     }
@@ -88,6 +81,7 @@ impl CloneProgress for TuiCloneProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: false,
+                skipped: false,
                 message: error.to_string(),
             }));
     }
@@ -98,6 +92,7 @@ impl CloneProgress for TuiCloneProgress {
             .send(AppEvent::Backend(BackendMessage::RepoProgress {
                 repo_name: repo.full_name().to_string(),
                 success: true,
+                skipped: true,
                 message: format!("skipped: {}", reason),
             }));
     }

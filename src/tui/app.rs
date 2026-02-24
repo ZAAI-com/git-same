@@ -1,7 +1,7 @@
 //! TUI application state (the "Model" in Elm architecture).
 
 use crate::config::{Config, WorkspaceConfig};
-use crate::setup::state::SetupState;
+use crate::setup::state::{self, SetupState};
 use crate::types::{OpSummary, OwnedRepo};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -233,7 +233,10 @@ impl App {
             checks_loading: false,
             sync_pull: false,
             setup_state: if screen == Screen::SetupWizard {
-                Some(SetupState::new("~/github"))
+                let default_path = std::env::current_dir()
+                    .map(|p| state::tilde_collapse(&p.to_string_lossy()))
+                    .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+                Some(SetupState::new(&default_path))
             } else {
                 None
             },

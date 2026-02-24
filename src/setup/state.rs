@@ -199,25 +199,20 @@ impl SetupState {
     pub fn populate_path_suggestions(&mut self) {
         let mut suggestions = Vec::new();
 
-        // 1. Default path (always first)
+        // 1. Current path (always first — this is the default)
         suggestions.push(PathSuggestion {
             path: self.base_path.clone(),
-            label: "default".to_string(),
+            label: "current directory".to_string(),
         });
 
-        // 2. Current working directory (if different)
-        if let Ok(cwd) = std::env::current_dir() {
-            let display = tilde_collapse(&cwd.to_string_lossy());
-            if display != self.base_path {
-                suggestions.push(PathSuggestion {
-                    path: display,
-                    label: "current directory".to_string(),
-                });
-            }
-        }
-
-        // 3. Common developer directories (only if they exist)
-        for candidate in &["~/Developer", "~/Projects", "~/repos", "~/code"] {
+        // 2. Common developer directories (only if they exist and differ)
+        for candidate in &[
+            "~/Git-Same/GitHub",
+            "~/Developer",
+            "~/Projects",
+            "~/repos",
+            "~/code",
+        ] {
             let expanded = shellexpand::tilde(candidate);
             let path = std::path::Path::new(expanded.as_ref());
             if path.is_dir() && !suggestions.iter().any(|s| s.path == *candidate) {
@@ -228,7 +223,7 @@ impl SetupState {
             }
         }
 
-        // 4. Home directory (always last)
+        // 3. Home directory (always last)
         if !suggestions.iter().any(|s| s.path == "~") {
             suggestions.push(PathSuggestion {
                 path: "~".to_string(),
@@ -294,10 +289,10 @@ mod tests {
 
     #[test]
     fn test_new_state() {
-        let state = SetupState::new("~/github");
+        let state = SetupState::new("~/Git-Same/GitHub");
         assert_eq!(state.step, SetupStep::SelectProvider);
         assert!(!state.should_quit);
-        assert_eq!(state.base_path, "~/github");
+        assert_eq!(state.base_path, "~/Git-Same/GitHub");
         assert_eq!(state.provider_choices.len(), 4);
         assert!(state.provider_choices[0].available);
         assert!(!state.provider_choices[2].available); // GitLab
@@ -307,12 +302,12 @@ mod tests {
 
     #[test]
     fn test_populate_path_suggestions() {
-        let mut state = SetupState::new("~/github");
+        let mut state = SetupState::new("~/test-path");
         state.populate_path_suggestions();
-        // First suggestion is always the default
+        // First suggestion is always the current directory (default)
         assert!(!state.path_suggestions.is_empty());
-        assert_eq!(state.path_suggestions[0].path, "~/github");
-        assert_eq!(state.path_suggestions[0].label, "default");
+        assert_eq!(state.path_suggestions[0].path, "~/test-path");
+        assert_eq!(state.path_suggestions[0].label, "current directory");
         // Last suggestion is always home
         let last = state.path_suggestions.last().unwrap();
         assert_eq!(last.path, "~");
@@ -330,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_step_navigation() {
-        let mut state = SetupState::new("~/github");
+        let mut state = SetupState::new("~/Git-Same/GitHub");
         assert_eq!(state.step, SetupStep::SelectProvider);
 
         state.next_step();
@@ -345,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_selected_orgs() {
-        let mut state = SetupState::new("~/github");
+        let mut state = SetupState::new("~/Git-Same/GitHub");
         state.orgs = vec![
             OrgEntry {
                 name: "org1".to_string(),
@@ -369,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_cancel_from_first_step() {
-        let mut state = SetupState::new("~/github");
+        let mut state = SetupState::new("~/Git-Same/GitHub");
         state.prev_step();
         assert!(state.should_quit);
         assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));

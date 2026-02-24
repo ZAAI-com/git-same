@@ -35,7 +35,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     frame.render_widget(title, chunks[0]);
 
     // Workspace list
-    let items: Vec<ListItem> = app
+    let mut items: Vec<ListItem> = app
         .workspaces
         .iter()
         .enumerate()
@@ -80,6 +80,19 @@ pub fn render(app: &App, frame: &mut Frame) {
         })
         .collect();
 
+    // Add "New Workspace" entry at the bottom
+    let new_ws_style = Style::default()
+        .fg(Color::Green)
+        .add_modifier(Modifier::BOLD);
+    items.push(ListItem::new(Line::from(vec![
+        Span::raw("    "),
+        Span::styled("[n]", new_ws_style),
+        Span::styled(
+            " Create new workspace",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])));
+
     let list = List::new(items).block(
         Block::default()
             .title(" Workspaces ")
@@ -91,6 +104,6 @@ pub fn render(app: &App, frame: &mut Frame) {
     status_bar::render(
         frame,
         chunks[2],
-        "j/k: Navigate  Enter: Select  d: Set default  q: Quit",
+        "j/k: Navigate  Enter: Select  d: Set default  n: New workspace  Esc: Back  q: Quit",
     );
 }
