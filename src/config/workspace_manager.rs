@@ -1,7 +1,8 @@
 //! Workspace configuration management.
 //!
-//! Handles CRUD operations for workspace config files stored in
-//! `~/.config/git-same/workspaces/`.
+//! Handles CRUD operations for workspace config files.
+//! Each workspace is a subdirectory of `~/.config/git-same/<name>/`
+//! containing a `workspace.toml` and optionally a `cache.json`.
 
 use super::workspace::WorkspaceConfig;
 use crate::errors::AppError;
@@ -11,50 +12,44 @@ use std::path::{Path, PathBuf};
 pub struct WorkspaceManager;
 
 impl WorkspaceManager {
-    /// Returns the workspaces directory: `~/.config/git-same/workspaces/`.
-    pub fn workspaces_dir() -> Result<PathBuf, AppError> {
+    /// Returns the config directory: `~/.config/git-same/`.
+    pub fn config_dir() -> Result<PathBuf, AppError> {
         let config_path = crate::config::Config::default_path()?;
-        let config_dir = config_path
+        config_path
             .parent()
-            .ok_or_else(|| AppError::config("Cannot determine config directory"))?;
-        Ok(config_dir.join("workspaces"))
-    }
-
-    /// Ensure the workspaces directory exists.
-    pub fn ensure_dir() -> Result<PathBuf, AppError> {
-        let dir = Self::workspaces_dir()?;
-        if !dir.exists() {
-            std::fs::create_dir_all(&dir).map_err(|e| {
-                AppError::config(format!("Failed to create workspaces directory: {}", e))
-            })?;
-        }
-        Ok(dir)
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| AppError::config("Cannot determine config directory"))
     }
 
     /// List all workspace configs.
+    ///
+    /// Scans subdirectories of `~/.config/git-same/` for `workspace.toml` files.
     pub fn list() -> Result<Vec<WorkspaceConfig>, AppError> {
-        let dir = Self::workspaces_dir()?;
+        let dir = Self::config_dir()?;
         if !dir.exists() {
             return Ok(Vec::new());
         }
 
         let mut workspaces = Vec::new();
         let entries = std::fs::read_dir(&dir)
-            .map_err(|e| AppError::config(format!("Failed to read workspaces directory: {}", e)))?;
+            .map_err(|e| AppError::config(format!("Failed to read config directory: {}", e)))?;
 
         for entry in entries {
             let entry = entry
                 .map_err(|e| AppError::config(format!("Failed to read directory entry: {}", e)))?;
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "toml") {
-                match Self::load_from_path(&path) {
-                    Ok(ws) => workspaces.push(ws),
-                    Err(e) => {
-                        tracing::warn!(
-                            path = %path.display(),
-                            error = %e,
-                            "Skipping invalid workspace config"
-                        );
+            if path.is_dir() {
+                let config_file = path.join("workspace.toml");
+                if config_file.exists() {
+                    match Self::load_from_path(&config_file) {
+                        Ok(ws) => workspaces.push(ws),
+                        Err(e) => {
+                            tracing::warn!(
+                                path = %config_file.display(),
+                                error = %e,
+                                "Skipping invalid workspace config"
+                            );
+                        }
                     }
                 }
             }
@@ -79,8 +74,13 @@ impl WorkspaceManager {
 
     /// Save a workspace config (create or update).
     pub fn save(workspace: &WorkspaceConfig) -> Result<(), AppError> {
-        let dir = Self::ensure_dir()?;
-        let path = dir.join(format!("{}.toml", workspace.name));
+        let path = Self::config_path(&workspace.name)?;
+        // Ensure the workspace subdirectory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::config(format!("Failed to create workspace directory: {}", e))
+            })?;
+        }
         let content = workspace.to_toml()?;
         std::fs::write(&path, content).map_err(|e| {
             AppError::config(format!(
@@ -92,13 +92,13 @@ impl WorkspaceManager {
         Ok(())
     }
 
-    /// Delete a workspace by name.
+    /// Delete a workspace by name (removes the entire workspace directory).
     pub fn delete(name: &str) -> Result<(), AppError> {
-        let path = Self::config_path(name)?;
-        if !path.exists() {
+        let dir = Self::workspace_dir(name)?;
+        if !dir.exists() {
             return Err(AppError::config(format!("Workspace '{}' not found", name)));
         }
-        std::fs::remove_file(&path).map_err(|e| {
+        std::fs::remove_dir_all(&dir).map_err(|e| {
             AppError::config(format!("Failed to delete workspace '{}': {}", name, e))
         })?;
         Ok(())
@@ -197,10 +197,19 @@ impl WorkspaceManager {
         }
     }
 
-    /// Returns the file path for a workspace config.
+    /// Returns the directory path for a workspace: `~/.config/git-same/<name>/`.
+    pub fn workspace_dir(name: &str) -> Result<PathBuf, AppError> {
+        Ok(Self::config_dir()?.join(name))
+    }
+
+    /// Returns the file path for a workspace config: `~/.config/git-same/<name>/workspace.toml`.
     fn config_path(name: &str) -> Result<PathBuf, AppError> {
-        let dir = Self::workspaces_dir()?;
-        Ok(dir.join(format!("{}.toml", name)))
+        Ok(Self::workspace_dir(name)?.join("workspace.toml"))
+    }
+
+    /// Returns the cache file path for a workspace: `~/.config/git-same/<name>/cache.json`.
+    pub fn cache_path(name: &str) -> Result<PathBuf, AppError> {
+        Ok(Self::workspace_dir(name)?.join("cache.json"))
     }
 
     /// Load a workspace config from a specific file path.
@@ -221,17 +230,18 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn with_temp_workspaces_dir(f: impl FnOnce(&Path)) {
+    fn with_temp_config_dir(f: impl FnOnce(&Path)) {
         let temp = TempDir::new().unwrap();
-        let workspaces_dir = temp.path().join("workspaces");
-        std::fs::create_dir_all(&workspaces_dir).unwrap();
+        let config_dir = temp.path();
 
-        // Create a workspace config in the temp dir
+        // Create a workspace config in a subdirectory
         let ws = WorkspaceConfig::new("test-ws", "~/github");
         let content = ws.to_toml().unwrap();
-        std::fs::write(workspaces_dir.join("test-ws.toml"), &content).unwrap();
+        let ws_dir = config_dir.join("test-ws");
+        std::fs::create_dir_all(&ws_dir).unwrap();
+        std::fs::write(ws_dir.join("workspace.toml"), &content).unwrap();
 
-        f(&workspaces_dir);
+        f(config_dir);
     }
 
     #[test]
@@ -261,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_workspace_config_save_and_load_roundtrip() {
-        with_temp_workspaces_dir(|dir| {
+        with_temp_config_dir(|dir| {
             let ws = WorkspaceConfig {
                 name: "roundtrip-test".to_string(),
                 base_path: "~/test".to_string(),
@@ -270,7 +280,9 @@ mod tests {
                 ..WorkspaceConfig::new("roundtrip-test", "~/test")
             };
 
-            let path = dir.join("roundtrip-test.toml");
+            let ws_dir = dir.join("roundtrip-test");
+            std::fs::create_dir_all(&ws_dir).unwrap();
+            let path = ws_dir.join("workspace.toml");
             let content = ws.to_toml().unwrap();
             std::fs::write(&path, &content).unwrap();
 
@@ -287,7 +299,9 @@ mod tests {
     #[test]
     fn test_load_from_path_invalid_toml() {
         let temp = TempDir::new().unwrap();
-        let path = temp.path().join("bad.toml");
+        let ws_dir = temp.path().join("bad-ws");
+        std::fs::create_dir_all(&ws_dir).unwrap();
+        let path = ws_dir.join("workspace.toml");
         std::fs::write(&path, "invalid toml {{{").unwrap();
 
         let result = WorkspaceManager::load_from_path(&path);
@@ -297,28 +311,32 @@ mod tests {
     #[test]
     fn test_list_empty_dir() {
         let temp = TempDir::new().unwrap();
-        let dir = temp.path().join("workspaces");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = temp.path();
 
-        // Read directory directly since we can't override workspaces_dir
-        let entries = std::fs::read_dir(&dir).unwrap();
-        let count = entries.count();
-        assert_eq!(count, 0);
+        // An empty config dir has no workspace subdirectories
+        let entries: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir() && e.path().join("workspace.toml").exists())
+            .collect();
+        assert_eq!(entries.len(), 0);
     }
 
     #[test]
     fn test_list_with_configs() {
-        with_temp_workspaces_dir(|dir| {
-            // Add a second workspace
+        with_temp_config_dir(|dir| {
+            // Add a second workspace in its own subdirectory
             let ws2 = WorkspaceConfig::new("another-ws", "~/work");
             let content = ws2.to_toml().unwrap();
-            std::fs::write(dir.join("another-ws.toml"), &content).unwrap();
+            let ws2_dir = dir.join("another-ws");
+            std::fs::create_dir_all(&ws2_dir).unwrap();
+            std::fs::write(ws2_dir.join("workspace.toml"), &content).unwrap();
 
-            // Read directory
+            // Count subdirectories that contain workspace.toml
             let entries: Vec<_> = std::fs::read_dir(dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
+                .filter(|e| e.path().is_dir() && e.path().join("workspace.toml").exists())
                 .collect();
             assert_eq!(entries.len(), 2);
         });

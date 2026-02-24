@@ -2,7 +2,6 @@
 
 use super::{expand_path, warn_if_concurrency_capped};
 use crate::auth::get_auth;
-use crate::cache::{CacheManager, DiscoveryCache};
 use crate::cli::CloneArgs;
 use crate::config::Config;
 use crate::discovery::DiscoveryOrchestrator;
@@ -54,55 +53,13 @@ pub async fn run(args: &CloneArgs, config: &Config, output: &Output) -> Result<(
 
     let orchestrator = DiscoveryOrchestrator::new(filters, config.structure.clone());
 
-    // Check cache unless --no-cache or --refresh
-    let mut repos = Vec::new();
-    let use_cache = !args.no_cache;
-    let force_refresh = args.refresh;
-
-    if use_cache && !force_refresh {
-        if let Ok(cache_manager) = CacheManager::new() {
-            if let Ok(Some(cache)) = cache_manager.load() {
-                output.verbose(&format!(
-                    "Using cached discovery ({} repos, {} seconds old)",
-                    cache.repo_count,
-                    cache.age_secs()
-                ));
-                // Extract repos from cache
-                for provider_repos in cache.repos.values() {
-                    repos.extend(provider_repos.clone());
-                }
-            }
-        }
-    }
-
-    // If no cache or forced refresh, discover from API
-    if repos.is_empty() {
-        output.info("Discovering repositories...");
-        let progress_bar = DiscoveryProgressBar::new(verbosity);
-        repos = orchestrator
-            .discover(provider.as_ref(), &progress_bar)
-            .await?;
-        progress_bar.finish();
-
-        // Save to cache unless --no-cache
-        if use_cache {
-            if let Ok(cache_manager) = CacheManager::new() {
-                let mut repos_by_provider = std::collections::HashMap::new();
-                let provider_name = provider_entry
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| provider_entry.kind.to_string());
-                repos_by_provider.insert(provider_name, repos.clone());
-                let cache = DiscoveryCache::new(
-                    auth.username.clone().unwrap_or_default(),
-                    repos_by_provider,
-                );
-                if let Err(e) = cache_manager.save(&cache) {
-                    output.verbose(&format!("Warning: Failed to save discovery cache: {}", e));
-                }
-            }
-        }
-    }
+    // Discover repositories from API
+    output.info("Discovering repositories...");
+    let progress_bar = DiscoveryProgressBar::new(verbosity);
+    let repos = orchestrator
+        .discover(provider.as_ref(), &progress_bar)
+        .await?;
+    progress_bar.finish();
 
     if repos.is_empty() {
         output.warn("No repositories found matching filters");

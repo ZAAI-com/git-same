@@ -59,7 +59,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
     let use_cache = !args.refresh;
 
     if use_cache {
-        if let Ok(cache_manager) = CacheManager::new() {
+        if let Ok(cache_manager) = CacheManager::for_workspace(&workspace.name) {
             if let Ok(Some(cache)) = cache_manager.load() {
                 output.verbose(&format!(
                     "Using cached discovery ({} repos, {} seconds old)",
@@ -82,7 +82,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
         progress_bar.finish();
 
         // Save to cache
-        if let Ok(cache_manager) = CacheManager::new() {
+        if let Ok(cache_manager) = CacheManager::for_workspace(&workspace.name) {
             let provider_name = provider_entry
                 .name
                 .clone()

@@ -3,7 +3,6 @@
 //! Removes all gisa configuration, workspace configs, and cache,
 //! returning the tool to an uninitialized state.
 
-use crate::cache::CacheManager;
 use crate::cli::ResetArgs;
 use crate::config::{Config, WorkspaceManager};
 use crate::errors::{AppError, Result};
@@ -16,13 +15,11 @@ struct ResetTarget {
     config_dir: PathBuf,
     config_file: Option<PathBuf>,
     workspace_names: Vec<String>,
-    workspaces_dir: Option<PathBuf>,
-    cache_file: Option<PathBuf>,
 }
 
 impl ResetTarget {
     fn is_empty(&self) -> bool {
-        self.config_file.is_none() && self.workspaces_dir.is_none() && self.cache_file.is_none()
+        self.config_file.is_none() && self.workspace_names.is_empty()
     }
 }
 
@@ -42,24 +39,15 @@ pub async fn run(args: &ResetArgs, output: &Output) -> Result<()> {
         return Ok(());
     }
 
-    // Delete in order: cache → workspaces → config → parent dir
-    if let Some(ref path) = target.cache_file {
-        match std::fs::remove_file(path) {
-            Ok(()) => output.success(&format!("Removed cache: {}", path.display())),
-            Err(e) => output.warn(&format!("Failed to remove cache: {}", e)),
+    // Delete workspaces (each is a subdirectory of config_dir)
+    for name in &target.workspace_names {
+        match WorkspaceManager::delete(name) {
+            Ok(()) => output.success(&format!("Removed workspace: {}", name)),
+            Err(e) => output.warn(&format!("Failed to remove workspace '{}': {}", name, e)),
         }
     }
 
-    if let Some(ref dir) = target.workspaces_dir {
-        match std::fs::remove_dir_all(dir) {
-            Ok(()) => output.success(&format!(
-                "Removed {} workspace config(s)",
-                target.workspace_names.len()
-            )),
-            Err(e) => output.warn(&format!("Failed to remove workspaces directory: {}", e)),
-        }
-    }
-
+    // Delete global config file
     if let Some(ref path) = target.config_file {
         match std::fs::remove_file(path) {
             Ok(()) => output.success(&format!("Removed config: {}", path.display())),
@@ -101,28 +89,16 @@ fn discover_targets() -> Result<ResetTarget> {
         None
     };
 
-    let (workspaces_dir, workspace_names) = match WorkspaceManager::workspaces_dir() {
-        Ok(dir) if dir.exists() => {
-            let names: Vec<String> = WorkspaceManager::list()
-                .unwrap_or_default()
-                .iter()
-                .map(|ws| ws.name.clone())
-                .collect();
-            (Some(dir), names)
-        }
-        _ => (None, Vec::new()),
-    };
-
-    let cache_file = CacheManager::default_cache_path()
-        .ok()
-        .filter(|p| p.exists());
+    let workspace_names: Vec<String> = WorkspaceManager::list()
+        .unwrap_or_default()
+        .iter()
+        .map(|ws| ws.name.clone())
+        .collect();
 
     Ok(ResetTarget {
         config_dir,
         config_file,
         workspace_names,
-        workspaces_dir,
-        cache_file,
     })
 }
 
@@ -131,26 +107,17 @@ fn display_targets(target: &ResetTarget, output: &Output) {
     output.warn("The following will be permanently deleted:");
 
     if let Some(ref path) = target.config_file {
-        output.info(&format!("  Global config:  {}", path.display()));
+        output.info(&format!("  Global config: {}", path.display()));
     }
 
-    if let Some(ref dir) = target.workspaces_dir {
-        if target.workspace_names.is_empty() {
-            output.info(&format!("  Workspaces dir: {} (empty)", dir.display()));
-        } else {
-            output.info(&format!(
-                "  Workspaces ({}): {}",
-                target.workspace_names.len(),
-                dir.display()
-            ));
-            for name in &target.workspace_names {
-                output.info(&format!("    - {}", name));
-            }
+    if !target.workspace_names.is_empty() {
+        output.info(&format!(
+            "  Workspaces ({}, including caches):",
+            target.workspace_names.len(),
+        ));
+        for name in &target.workspace_names {
+            output.info(&format!("    - {}", name));
         }
-    }
-
-    if let Some(ref path) = target.cache_file {
-        output.info(&format!("  Cache:          {}", path.display()));
     }
 }
 
@@ -177,8 +144,6 @@ mod tests {
             config_dir: PathBuf::from("/nonexistent"),
             config_file: None,
             workspace_names: Vec::new(),
-            workspaces_dir: None,
-            cache_file: None,
         };
         assert!(target.is_empty());
     }
@@ -189,8 +154,6 @@ mod tests {
             config_dir: PathBuf::from("/some/dir"),
             config_file: Some(PathBuf::from("/some/dir/config.toml")),
             workspace_names: Vec::new(),
-            workspaces_dir: None,
-            cache_file: None,
         };
         assert!(!target.is_empty());
     }
@@ -201,20 +164,6 @@ mod tests {
             config_dir: PathBuf::from("/some/dir"),
             config_file: None,
             workspace_names: vec!["ws1".to_string()],
-            workspaces_dir: Some(PathBuf::from("/some/dir/workspaces")),
-            cache_file: None,
-        };
-        assert!(!target.is_empty());
-    }
-
-    #[test]
-    fn test_reset_target_not_empty_with_cache() {
-        let target = ResetTarget {
-            config_dir: PathBuf::from("/some/dir"),
-            config_file: None,
-            workspace_names: Vec::new(),
-            workspaces_dir: None,
-            cache_file: Some(PathBuf::from("/some/dir/cache.json")),
         };
         assert!(!target.is_empty());
     }
@@ -225,8 +174,6 @@ mod tests {
             config_dir: PathBuf::from("/tmp/test"),
             config_file: Some(PathBuf::from("/tmp/test/config.toml")),
             workspace_names: vec!["ws1".to_string(), "ws2".to_string()],
-            workspaces_dir: Some(PathBuf::from("/tmp/test/workspaces")),
-            cache_file: Some(PathBuf::from("/tmp/test/cache.json")),
         };
         let output = Output::new(crate::output::Verbosity::Quiet, false);
         display_targets(&target, &output);

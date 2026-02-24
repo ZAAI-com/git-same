@@ -181,14 +181,6 @@ pub struct CloneArgs {
     /// Provider to use (default: all configured)
     #[arg(short, long)]
     pub provider: Option<String>,
-
-    /// Force re-discovery (ignore cache)
-    #[arg(long)]
-    pub refresh: bool,
-
-    /// Skip using cache entirely
-    #[arg(long)]
-    pub no_cache: bool,
 }
 
 /// Arguments for the status command

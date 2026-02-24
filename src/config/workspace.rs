@@ -1,8 +1,8 @@
 //! Workspace configuration.
 //!
 //! Each workspace represents a sync target folder with its own provider,
-//! selected organizations, and repository filters. Workspace configs are
-//! stored as individual TOML files in `~/.config/git-same/workspaces/`.
+//! selected organizations, and repository filters. Each workspace is a
+//! subdirectory of `~/.config/git-same/<name>/` containing `workspace.toml`.
 
 use super::provider_config::AuthMethod;
 use super::{ConfigCloneOptions, FilterOptions, SyncMode};

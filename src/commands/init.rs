@@ -47,17 +47,7 @@ pub async fn run(args: &InitArgs, output: &Output) -> Result<()> {
 
     output.success(&format!("Created config at {}", config_path.display()));
 
-    // Step 3: Create workspaces directory
-    let workspaces_dir = config_path
-        .parent()
-        .map(|p| p.join("workspaces"))
-        .ok_or_else(|| AppError::path("Cannot determine config directory"))?;
-    if !workspaces_dir.exists() {
-        std::fs::create_dir_all(&workspaces_dir)
-            .map_err(|e| AppError::path(format!("Failed to create workspaces directory: {}", e)))?;
-    }
-
-    // Step 4: Next steps
+    // Step 3: Next steps
     output.info("Run 'gisa setup' to configure a workspace");
 
     Ok(())
@@ -110,7 +100,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_init_creates_workspaces_dir() {
+    async fn test_init_creates_config_dir() {
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("git-same/config.toml");
         let args = InitArgs {
@@ -122,9 +112,9 @@ mod tests {
         let result = run(&args, &output).await;
         assert!(result.is_ok());
 
-        let workspaces_dir = temp.path().join("git-same/workspaces");
-        assert!(workspaces_dir.exists());
-        assert!(workspaces_dir.is_dir());
+        let config_dir = temp.path().join("git-same");
+        assert!(config_dir.exists());
+        assert!(config_dir.is_dir());
     }
 
     #[tokio::test]

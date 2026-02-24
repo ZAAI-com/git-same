@@ -115,16 +115,19 @@ pub struct CacheManager {
 }
 
 impl CacheManager {
-    /// Create a new cache manager with default cache path
-    pub fn new() -> Result<Self> {
-        let cache_path = Self::default_cache_path()?;
+    /// Create a cache manager for a specific workspace.
+    ///
+    /// Cache is stored at `~/.config/git-same/workspaces/<name>/cache.json`.
+    pub fn for_workspace(workspace_name: &str) -> Result<Self> {
+        let cache_path = crate::config::WorkspaceManager::cache_path(workspace_name)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(Self {
             cache_path,
             ttl: DEFAULT_CACHE_TTL,
         })
     }
 
-    /// Create a cache manager with a custom path
+    /// Create a cache manager with a custom path.
     pub fn with_path(cache_path: PathBuf) -> Self {
         Self {
             cache_path,
@@ -132,28 +135,10 @@ impl CacheManager {
         }
     }
 
-    /// Create a cache manager with a custom TTL
+    /// Create a cache manager with a custom TTL.
     pub fn with_ttl(mut self, ttl: Duration) -> Self {
         self.ttl = ttl;
         self
-    }
-
-    /// Get the default cache path (~/.config/git-same/cache.json)
-    pub fn default_cache_path() -> Result<PathBuf> {
-        #[cfg(target_os = "macos")]
-        let config_dir = {
-            let home = std::env::var("HOME").context("HOME environment variable not set")?;
-            PathBuf::from(home).join(".config").join("git-same")
-        };
-        #[cfg(not(target_os = "macos"))]
-        let config_dir = if let Some(dir) = directories::ProjectDirs::from("", "", "git-same") {
-            dir.config_dir().to_path_buf()
-        } else {
-            let home = std::env::var("HOME").context("HOME environment variable not set")?;
-            PathBuf::from(home).join(".config").join("git-same")
-        };
-
-        Ok(config_dir.join("cache.json"))
     }
 
     /// Load the cache if it exists and is valid

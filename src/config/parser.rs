@@ -296,10 +296,7 @@ prefer_ssh = true
     /// Save the default_workspace setting to a specific config file.
     ///
     /// Uses targeted text replacement to preserve comments and formatting.
-    pub fn save_default_workspace_to(
-        path: &Path,
-        workspace: Option<&str>,
-    ) -> Result<(), AppError> {
+    pub fn save_default_workspace_to(path: &Path, workspace: Option<&str>) -> Result<(), AppError> {
         let content = if path.exists() {
             std::fs::read_to_string(path)
                 .map_err(|e| AppError::config(format!("Failed to read config: {}", e)))?
@@ -657,10 +654,8 @@ auth = "gh-cli"
 
     #[test]
     fn test_save_default_workspace_to_nonexistent_file() {
-        let result = Config::save_default_workspace_to(
-            Path::new("/nonexistent/config.toml"),
-            Some("ws"),
-        );
+        let result =
+            Config::save_default_workspace_to(Path::new("/nonexistent/config.toml"), Some("ws"));
         assert!(result.is_err());
     }
 }
