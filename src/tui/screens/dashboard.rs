@@ -14,7 +14,7 @@ use crate::tui::app::App;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
-        Constraint::Length(4), // Banner
+        Constraint::Length(8), // Banner
         Constraint::Length(1), // Tagline + version
         Constraint::Length(1), // Config / requirements
         Constraint::Length(1), // Workspace info line 1
@@ -34,21 +34,36 @@ pub fn render(app: &App, frame: &mut Frame) {
 }
 
 fn render_banner(frame: &mut Frame, area: Rect) {
-    let colors = [
-        Color::Rgb(168, 85, 247), // Purple
-        Color::Rgb(59, 130, 246), // Blue
-        Color::Rgb(6, 182, 212),  // Cyan
+    let style = Style::default()
+        .fg(Color::Blue)
+        .add_modifier(Modifier::BOLD);
+    let banner_lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "  ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗",
+            style,
+        )),
+        Line::from(Span::styled(
+            " ██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝",
+            style,
+        )),
+        Line::from(Span::styled(
+            " ██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗  ",
+            style,
+        )),
+        Line::from(Span::styled(
+            " ██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝  ",
+            style,
+        )),
+        Line::from(Span::styled(
+            " ╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗",
+            style,
+        )),
+        Line::from(Span::styled(
+            "  ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝",
+            style,
+        )),
     ];
-    let lines = [
-        "█▀▀ █ ▀█▀   █▀▀ █▀█ █▀▄▀█ █▀▀",
-        "█▄█ █  █  ─ ▀▀█ █▀█ █ ▀ █ █▀▀",
-        "▀▀▀ ▀  ▀    ▀▀▀ ▀ ▀ ▀   ▀ ▀▀▀",
-    ];
-    let mut banner_lines = vec![Line::from("")];
-    for (line, color) in lines.iter().zip(colors.iter()) {
-        let style = Style::default().fg(*color).add_modifier(Modifier::BOLD);
-        banner_lines.push(Line::from(Span::styled(*line, style)));
-    }
     let banner = Paragraph::new(banner_lines).centered();
     frame.render_widget(banner, area);
 }
