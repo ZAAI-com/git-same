@@ -239,7 +239,9 @@ fn test_status_nonexistent_workspace() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("not found") || stderr.contains("No workspaces"),
+        stderr.contains("not found")
+            || stderr.contains("No workspaces")
+            || stderr.contains("No workspace configured"),
         "Expected workspace not found error, got: {}",
         stderr
     );

@@ -54,11 +54,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 && !app.status_loading
             {
                 app.status_loading = true;
-                super::backend::spawn_operation(
-                    Operation::Status,
-                    app,
-                    backend_tx.clone(),
-                );
+                super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
             }
         }
         AppEvent::Resize(_, _) => {} // ratatui handles resize
@@ -108,9 +104,14 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     }
 
     if key.code == KeyCode::Char('q') {
-        app.should_quit = true;
+        if app.quit_pending {
+            app.should_quit = true;
+        } else {
+            app.quit_pending = true;
+        }
         return;
     }
+    app.quit_pending = false;
 
     if key.code == KeyCode::Esc {
         // Don't go back from entry points (no screen stack)
@@ -337,12 +338,28 @@ async fn handle_dashboard_key(
         KeyCode::Char('m') | KeyCode::Enter => {
             app.navigate_to(Screen::CommandPicker);
         }
+        // Tab navigation (left/right between stat boxes)
         KeyCode::Left | KeyCode::Char('h') => {
             app.stat_index = app.stat_index.saturating_sub(1);
+            app.dashboard_list_index = 0;
         }
         KeyCode::Right | KeyCode::Char('l') => {
             if app.stat_index < 5 {
                 app.stat_index += 1;
+                app.dashboard_list_index = 0;
+            }
+        }
+        // List navigation (up/down within tab content)
+        KeyCode::Down => {
+            let count = dashboard_tab_item_count(app);
+            if count > 0 {
+                app.dashboard_list_index = (app.dashboard_list_index + 1) % count;
+            }
+        }
+        KeyCode::Up => {
+            let count = dashboard_tab_item_count(app);
+            if count > 0 {
+                app.dashboard_list_index = (app.dashboard_list_index + count - 1) % count;
             }
         }
         _ => {}
@@ -355,12 +372,12 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
         KeyCode::Tab => {
             app.settings_index = (app.settings_index + 1) % num_categories;
         }
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Down => {
             if app.settings_index < num_categories - 1 {
                 app.settings_index += 1;
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Up => {
             app.settings_index = app.settings_index.saturating_sub(1);
         }
         KeyCode::Char('c') => {
@@ -519,6 +536,27 @@ fn current_org_repo_count(app: &App) -> usize {
         .and_then(|org| app.repos_by_org.get(org))
         .map(|repos| repos.len())
         .unwrap_or(0)
+}
+
+fn dashboard_tab_item_count(app: &App) -> usize {
+    match app.stat_index {
+        0 => app
+            .local_repos
+            .iter()
+            .map(|r| r.owner.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        1 => app
+            .local_repos
+            .iter()
+            .filter(|r| r.is_dirty || r.behind > 0 || r.ahead > 0)
+            .count(),
+        2 => 0, // Clean tab is summary-only
+        3 => app.local_repos.iter().filter(|r| r.behind > 0).count(),
+        4 => app.local_repos.iter().filter(|r| r.ahead > 0).count(),
+        5 => app.local_repos.iter().filter(|r| r.is_dirty).count(),
+        _ => 0,
+    }
 }
 
 fn filtered_repo_count(app: &App) -> usize {

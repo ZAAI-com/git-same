@@ -27,7 +27,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     render_log(app, frame, chunks[3]);
 
     let hint = match &app.operation_state {
-        OperationState::Finished { .. } => "Esc: Back  q: Quit",
+        OperationState::Finished { .. } => "Esc: Back  qq: Quit",
         OperationState::Running { .. } => "j/k: Scroll log  Ctrl+C: Quit",
         _ => "Ctrl+C: Quit",
     };

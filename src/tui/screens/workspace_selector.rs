@@ -9,6 +9,7 @@ use ratatui::{
 };
 
 use crate::tui::app::App;
+use crate::tui::screens::dashboard::format_timestamp;
 use crate::tui::widgets::status_bar;
 
 pub fn render(app: &App, frame: &mut Frame) {
@@ -50,30 +51,37 @@ pub fn render(app: &App, frame: &mut Frame) {
             };
 
             let is_default = app.config.default_workspace.as_deref() == Some(ws.name.as_str());
-            let last_synced = ws.last_synced.as_deref().unwrap_or("never synced");
+            let last_synced = ws
+                .last_synced
+                .as_deref()
+                .map(format_timestamp)
+                .unwrap_or_else(|| "never".to_string());
             let org_info = if ws.orgs.is_empty() {
                 "all orgs".to_string()
             } else {
                 format!("{} orgs", ws.orgs.len())
             };
 
+            let provider_label = ws.provider.kind.display_name();
             let mut spans = vec![
                 Span::styled(format!("  {} ", marker), style),
-                Span::styled(format!("{:<16}", ws.name), style),
+                Span::styled(&ws.base_path, style),
             ];
+            spans.push(Span::styled(
+                format!("  ({})", provider_label),
+                Style::default().fg(Color::DarkGray),
+            ));
             if is_default {
                 spans.push(Span::styled(
-                    "(default) ",
+                    " (default)",
                     Style::default().fg(Color::Green),
                 ));
             }
             spans.extend([
-                Span::styled(&ws.base_path, Style::default().fg(Color::DarkGray)),
-                Span::styled("  (", Style::default().fg(Color::DarkGray)),
+                Span::styled("  ", Style::default().fg(Color::DarkGray)),
                 Span::styled(org_info, Style::default().fg(Color::DarkGray)),
                 Span::styled(", ", Style::default().fg(Color::DarkGray)),
                 Span::styled(last_synced, Style::default().fg(Color::DarkGray)),
-                Span::styled(")", Style::default().fg(Color::DarkGray)),
             ]);
 
             ListItem::new(Line::from(spans))
@@ -104,6 +112,6 @@ pub fn render(app: &App, frame: &mut Frame) {
     status_bar::render(
         frame,
         chunks[2],
-        "j/k: Navigate  Enter: Select  d: Set default  n: New workspace  Esc: Back  q: Quit",
+        "j/k: Navigate  Enter: Select  d: Set default  n: New workspace  Esc: Back  qq: Quit",
     );
 }

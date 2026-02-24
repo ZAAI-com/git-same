@@ -35,10 +35,7 @@ pub enum BackendMessage {
     /// Discovery failed.
     DiscoveryError(String),
     /// Operation phase started with N total repos.
-    OperationStarted {
-        operation: Operation,
-        total: usize,
-    },
+    OperationStarted { operation: Operation, total: usize },
     /// Operation progress: one repo processed.
     RepoProgress {
         repo_name: String,

@@ -149,6 +149,14 @@ impl WorkspaceConfig {
         std::path::PathBuf::from(expanded.as_ref())
     }
 
+    /// Returns a user-friendly label: `"~/repos (GitHub)"`.
+    ///
+    /// This is the primary user-facing workspace identity. The internal `name`
+    /// field is a filesystem key and should never be shown to users.
+    pub fn display_label(&self) -> String {
+        format!("{} ({})", self.base_path, self.provider.kind.display_name())
+    }
+
     /// Returns a short display summary for selectors.
     pub fn summary(&self) -> String {
         let orgs = if self.orgs.is_empty() {
@@ -157,7 +165,7 @@ impl WorkspaceConfig {
             format!("{} org(s)", self.orgs.len())
         };
         let synced = self.last_synced.as_deref().unwrap_or("never synced");
-        format!("{} — {} ({}, {})", self.name, self.base_path, orgs, synced)
+        format!("{} ({}, {})", self.display_label(), orgs, synced)
     }
 
     /// Serialize to TOML string.
@@ -284,6 +292,12 @@ mod tests {
         assert!(summary.contains("github"));
         assert!(summary.contains("2 org(s)"));
         assert!(summary.contains("never synced"));
+    }
+
+    #[test]
+    fn test_display_label() {
+        let ws = WorkspaceConfig::new("github-repos", "~/repos");
+        assert_eq!(ws.display_label(), "~/repos (GitHub)");
     }
 
     #[test]

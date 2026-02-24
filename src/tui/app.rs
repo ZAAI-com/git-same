@@ -84,6 +84,9 @@ pub struct App {
     /// Whether the user has requested quit.
     pub should_quit: bool,
 
+    /// Whether the first 'q' has been pressed (waiting for second 'q' to confirm quit).
+    pub quit_pending: bool,
+
     /// Active screen.
     pub screen: Screen,
 
@@ -178,6 +181,9 @@ pub struct App {
     /// Selected stat box index on dashboard (0-5) for ←/→ navigation.
     pub stat_index: usize,
 
+    /// Selected item index within the dashboard tab content list.
+    pub dashboard_list_index: usize,
+
     /// Selected category index in settings screen (0 = Folders, 1 = Options).
     pub settings_index: usize,
 }
@@ -209,6 +215,7 @@ impl App {
 
         Self {
             should_quit: false,
+            quit_pending: false,
             screen,
             screen_stack: Vec::new(),
             config,
@@ -247,6 +254,7 @@ impl App {
             config_path_display: None,
             status_loading: false,
             stat_index: 0,
+            dashboard_list_index: 0,
             settings_index: 0,
         }
     }

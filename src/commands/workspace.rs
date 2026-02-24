@@ -39,16 +39,19 @@ fn list(config: &Config, output: &Output) -> Result<()> {
         } else {
             format!("{} orgs", ws.orgs.len())
         };
+        let provider_label = ws.provider.kind.display_name();
 
         println!(
-            "  {} {:<16} {}  ({}, last synced: {})",
-            marker, ws.name, ws.base_path, org_info, last_synced
+            "  {} {}  ({}, {}, last synced: {})",
+            marker, ws.base_path, provider_label, org_info, last_synced
         );
     }
 
     if !default_name.is_empty() {
-        println!();
-        output.info(&format!("Default workspace: {}", default_name));
+        if let Ok(default_ws) = WorkspaceManager::load(default_name) {
+            println!();
+            output.info(&format!("Default: {}", default_ws.display_label()));
+        }
     }
 
     Ok(())
@@ -56,18 +59,30 @@ fn list(config: &Config, output: &Output) -> Result<()> {
 
 fn show_default(config: &Config, output: &Output) -> Result<()> {
     match &config.default_workspace {
-        Some(name) => output.info(&format!("Default workspace: {}", name)),
-        None => output.info("No default workspace set. Use 'gisa workspace default <name>'."),
+        Some(name) => {
+            if let Ok(ws) = WorkspaceManager::load(name) {
+                output.info(&format!("Default workspace: {}", ws.display_label()));
+            } else {
+                output.info(&format!("Default workspace: {} (not found)", name));
+            }
+        }
+        None => output.info("No default workspace set. Use 'gisa workspace default <path>'."),
     }
     Ok(())
 }
 
-fn set_default(name: &str, output: &Output) -> Result<()> {
-    // Validate workspace exists
-    WorkspaceManager::load(name)?;
+fn set_default(name_or_path: &str, output: &Output) -> Result<()> {
+    // Try name first (backward compat), then path
+    let ws = match WorkspaceManager::load(name_or_path) {
+        Ok(ws) => ws,
+        Err(_) => WorkspaceManager::load_by_path(name_or_path)?,
+    };
 
-    Config::save_default_workspace(Some(name))?;
-    output.success(&format!("Default workspace set to '{}'", name));
+    Config::save_default_workspace(Some(&ws.name))?;
+    output.success(&format!(
+        "Default workspace set to '{}'",
+        ws.display_label()
+    ));
     Ok(())
 }
 

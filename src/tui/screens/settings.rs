@@ -37,9 +37,8 @@ pub fn render(app: &App, frame: &mut Frame) {
     frame.render_widget(title, chunks[0]);
 
     // Two-pane split
-    let panes =
-        Layout::horizontal([Constraint::Percentage(25), Constraint::Percentage(75)])
-            .split(chunks[1]);
+    let panes = Layout::horizontal([Constraint::Percentage(25), Constraint::Percentage(75)])
+        .split(chunks[1]);
 
     render_category_nav(app, frame, panes[0]);
 
@@ -59,12 +58,12 @@ pub fn render(app: &App, frame: &mut Frame) {
                 format!("  1-{}: Open workspace", max)
             };
             format!(
-                "Tab: Switch  j/k: Nav  c: Config{}  Esc: Back  q: Quit",
+                "Tab: Switch  ↑/↓: Nav  c: Config{}  Esc: Back  qq: Quit",
                 ws_hint
             )
         }
-        1 => "Tab: Switch  j/k: Nav  d: Dry-run  m: Mode  Esc: Back  q: Quit".to_string(),
-        _ => "Esc: Back  q: Quit".to_string(),
+        1 => "Tab: Switch  ↑/↓: Nav  d: Dry-run  m: Mode  Esc: Back  qq: Quit".to_string(),
+        _ => "Esc: Back  qq: Quit".to_string(),
     };
     status_bar::render(frame, chunks[2], &hint);
 }
@@ -139,14 +138,15 @@ fn render_folders_detail(app: &App, frame: &mut Frame, area: Rect) {
             let is_active = app
                 .active_workspace
                 .as_ref()
-                .map(|active| active.name == ws.name)
+                .map(|active| active.base_path == ws.base_path)
                 .unwrap_or(false);
 
+            let provider_label = ws.provider.kind.display_name();
             let mut spans = vec![
                 Span::styled("    ", dim),
                 Span::styled(format!("[{}]", i + 1), key_style),
-                Span::styled(format!("  {}", ws.name), dim),
-                Span::styled(format!("  — {}", ws.base_path), dim),
+                Span::styled(format!("  {}", ws.base_path), dim),
+                Span::styled(format!("  ({})", provider_label), dim),
             ];
             if is_active {
                 spans.push(Span::styled("  (active)", active_style));
@@ -193,12 +193,10 @@ fn render_options_detail(app: &App, frame: &mut Frame, area: Rect) {
         Line::from(""),
         Line::from(Span::styled("  Global Config", section_style)),
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                format!("    Concurrency: {}", app.config.concurrency),
-                dim,
-            ),
-        ]),
+        Line::from(vec![Span::styled(
+            format!("    Concurrency: {}", app.config.concurrency),
+            dim,
+        )]),
         Line::from(""),
         Line::from(Span::styled("  Options", section_style)),
         Line::from(""),

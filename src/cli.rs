@@ -92,7 +92,7 @@ pub struct SetupArgs {
 /// Arguments for the sync command
 #[derive(Args, Debug)]
 pub struct SyncCmdArgs {
-    /// Workspace name to sync (selects interactively if multiple exist)
+    /// Workspace path or name to sync
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -179,7 +179,7 @@ pub struct CloneArgs {
 /// Arguments for the status command
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Workspace name (selects interactively if multiple exist)
+    /// Workspace path or name
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -219,7 +219,7 @@ pub enum WorkspaceCommand {
 /// Arguments for the workspace default subcommand
 #[derive(Args, Debug)]
 pub struct WorkspaceDefaultArgs {
-    /// Workspace name to set as default (omit to show current)
+    /// Workspace path or name to set as default (omit to show current)
     pub name: Option<String>,
 
     /// Clear the default workspace

@@ -42,10 +42,6 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let lines = vec![
         Line::raw(""),
         Line::from(vec![
-            Span::styled("  Workspace:  ", label_style),
-            Span::styled(&state.workspace_name, value_style),
-        ]),
-        Line::from(vec![
             Span::styled("  Provider:   ", label_style),
             Span::styled(provider.display_name(), value_style),
         ]),

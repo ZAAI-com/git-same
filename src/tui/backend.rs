@@ -297,8 +297,7 @@ async fn run_sync_operation(
     let provider_name = provider_entry.kind.to_string().to_lowercase();
     let plan = orchestrator.plan_clone(&base_path, repos.clone(), &provider_name, &git);
 
-    let (to_sync, _skipped) =
-        orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
+    let (to_sync, _skipped) = orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
 
     // Send OperationStarted so the UI transitions to Running state
     let total = plan.to_clone.len() + to_sync.len();

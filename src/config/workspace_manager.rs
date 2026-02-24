@@ -120,6 +120,39 @@ impl WorkspaceManager {
         Ok(None)
     }
 
+    /// Load a workspace by its base_path string.
+    ///
+    /// Tries exact string match first, then canonical path comparison.
+    pub fn load_by_path(path_str: &str) -> Result<WorkspaceConfig, AppError> {
+        let workspaces = Self::list()?;
+
+        // Exact string match on base_path
+        for ws in &workspaces {
+            if ws.base_path == path_str {
+                return Ok(ws.clone());
+            }
+        }
+
+        // Canonical path comparison
+        let expanded = shellexpand::tilde(path_str);
+        let target = Path::new(expanded.as_ref());
+        let target_canonical =
+            std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+
+        for ws in workspaces {
+            let ws_expanded = ws.expanded_base_path();
+            let ws_canonical = std::fs::canonicalize(&ws_expanded).unwrap_or(ws_expanded);
+            if ws_canonical == target_canonical {
+                return Ok(ws);
+            }
+        }
+
+        Err(AppError::config(format!(
+            "No workspace configured for path '{}'",
+            path_str
+        )))
+    }
+
     /// Derive a workspace name from a base path and provider.
     ///
     /// Format: `{provider}-{last_path_component}`, lowercased, with
@@ -180,13 +213,14 @@ impl WorkspaceManager {
 
     /// Resolve which workspace to use.
     ///
-    /// Priority: explicit name → default from config → auto-select if only 1 → error.
+    /// Priority: explicit name/path → default from config → auto-select if only 1 → error.
     pub fn resolve(
         name: Option<&str>,
         config: &super::parser::Config,
     ) -> Result<WorkspaceConfig, AppError> {
-        if let Some(name) = name {
-            return Self::load(name);
+        if let Some(value) = name {
+            // Try name first (backward compat), then path
+            return Self::load(value).or_else(|_| Self::load_by_path(value));
         }
 
         if let Some(ref default) = config.default_workspace {
@@ -209,11 +243,11 @@ impl WorkspaceManager {
             )),
             1 => Ok(workspaces.into_iter().next().unwrap()),
             _ => {
-                let names: Vec<&str> = workspaces.iter().map(|w| w.name.as_str()).collect();
+                let labels: Vec<String> = workspaces.iter().map(|w| w.display_label()).collect();
                 Err(AppError::config(format!(
-                    "Multiple workspaces configured. Use --workspace to select one, \
-                     or set a default with 'gisa workspace default <name>': {}",
-                    names.join(", ")
+                    "Multiple workspaces configured. Use --workspace <path> to select one, \
+                     or set a default with 'gisa workspace default <path>': {}",
+                    labels.join(", ")
                 )))
             }
         }
@@ -438,7 +472,17 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Multiple workspaces"));
-        assert!(err.contains("ws1"));
-        assert!(err.contains("ws2"));
+        assert!(err.contains("~/github"));
+        assert!(err.contains("~/work"));
+    }
+
+    #[test]
+    fn test_load_by_path_exact_match() {
+        with_temp_config_dir(|dir| {
+            // The helper already creates a "test-ws" workspace with base_path "~/github"
+            let config_file = dir.join("test-ws").join("workspace-config.toml");
+            let ws = WorkspaceManager::load_from_path(&config_file).unwrap();
+            assert_eq!(ws.base_path, "~/github");
+        });
     }
 }

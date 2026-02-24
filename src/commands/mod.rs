@@ -129,8 +129,8 @@ pub(crate) fn ensure_base_path(workspace: &mut WorkspaceConfig, output: &Output)
     output.info(&format!("Current directory: {}", cwd.display()));
 
     let prompt = format!(
-        "Update workspace '{}' to use '{}'? [y/N] ",
-        workspace.name,
+        "Update workspace at '{}' to use '{}'? [y/N] ",
+        workspace.base_path,
         cwd.display()
     );
 

@@ -156,8 +156,7 @@ fn display_detailed_targets(scope: &ResetScope, target: &ResetTarget, output: &O
 
 /// Display detail for a single workspace.
 fn display_workspace_detail(ws: &WorkspaceDetail, output: &Output) {
-    output.info(&format!("  Workspace \"{}\":", ws.name));
-    output.info(&format!("    Path:        {}", ws.base_path));
+    output.info(&format!("  Workspace at {}:", ws.base_path));
 
     if ws.orgs.is_empty() {
         output.info("    Orgs:        (all)");
@@ -211,9 +210,9 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
         ResetScope::Workspace(name) => {
             if let Some(ws) = target.workspaces.iter().find(|w| w.name == *name) {
                 remove_workspace_dir(ws, output);
-                output.success(&format!("Workspace \"{}\" removed.", name));
+                output.success(&format!("Workspace at {} removed.", ws.base_path));
             } else {
-                output.warn(&format!("Workspace \"{}\" not found.", name));
+                output.warn(&format!("Workspace '{}' not found.", name));
             }
         }
     }
@@ -222,10 +221,10 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
 
 fn remove_workspace_dir(ws: &WorkspaceDetail, output: &Output) {
     match std::fs::remove_dir_all(&ws.dir) {
-        Ok(()) => output.success(&format!("Removed workspace \"{}\"", ws.name)),
+        Ok(()) => output.success(&format!("Removed workspace at {}", ws.base_path)),
         Err(e) => output.warn(&format!(
-            "Failed to remove workspace \"{}\": {}",
-            ws.name, e
+            "Failed to remove workspace at {}: {}",
+            ws.base_path, e
         )),
     }
 }
@@ -312,14 +311,7 @@ fn prompt_workspace(workspaces: &[WorkspaceDetail]) -> Result<ResetScope> {
             .as_deref()
             .map(humanize_timestamp)
             .unwrap_or_else(|| "never synced".to_string());
-        eprintln!(
-            "  {}. {:<12} {}  ({}, {})",
-            i + 1,
-            ws.name,
-            ws.base_path,
-            orgs,
-            synced
-        );
+        eprintln!("  {}. {}  ({}, {})", i + 1, ws.base_path, orgs, synced);
     }
 
     let choice = prompt_number("> ", workspaces.len())?;
