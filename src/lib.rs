@@ -71,7 +71,7 @@ pub mod prelude {
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
     pub use crate::cli::{generate_completions, ShellType};
     pub use crate::cli::{
-        Cli, CloneArgs, Command, InitArgs, LegacySyncArgs, StatusArgs, SyncCmdArgs,
+        Cli, CloneArgs, Command, InitArgs, LegacySyncArgs, ResetArgs, StatusArgs, SyncCmdArgs,
     };
     pub use crate::config::{
         AuthMethod, Config, ConfigCloneOptions, FilterOptions, ProviderEntry,

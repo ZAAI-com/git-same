@@ -26,7 +26,21 @@ fn test_help_command() {
     assert!(stdout.contains("sync"));
     assert!(stdout.contains("status"));
     assert!(stdout.contains("workspace"));
+    assert!(stdout.contains("reset"));
     assert!(stdout.contains("completions"));
+}
+
+#[test]
+fn test_reset_help() {
+    let output = Command::new(git_same_binary())
+        .args(["reset", "--help"])
+        .output()
+        .expect("Failed to execute git-same");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Reset"));
+    assert!(stdout.contains("--force"));
 }
 
 #[test]

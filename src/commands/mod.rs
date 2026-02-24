@@ -5,6 +5,7 @@
 
 pub mod clone;
 pub mod init;
+pub mod reset;
 #[cfg(feature = "tui")]
 pub mod setup;
 pub mod status;
@@ -30,9 +31,12 @@ pub async fn run_command(
     config_path: Option<&Path>,
     output: &Output,
 ) -> Result<()> {
-    // Init doesn't need config
+    // Init and Reset don't need config
     if let Command::Init(args) = command {
         return run_init(args, output).await;
+    }
+    if let Command::Reset(args) = command {
+        return reset::run(args, output).await;
     }
 
     // Setup only needs config for defaults
@@ -46,7 +50,7 @@ pub async fn run_command(
     let config = load_config(config_path)?;
 
     match command {
-        Command::Init(_) => unreachable!(),
+        Command::Init(_) | Command::Reset(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,

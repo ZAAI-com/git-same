@@ -57,6 +57,9 @@ pub enum Command {
     /// Manage workspaces (list, set default)
     Workspace(WorkspaceArgs),
 
+    /// Reset gisa — remove all config, workspaces, and cache
+    Reset(ResetArgs),
+
     /// Generate shell completions
     Completions(CompletionsArgs),
 
@@ -270,6 +273,14 @@ pub struct LegacySyncArgs {
     pub filter: Option<String>,
 }
 
+/// Arguments for the reset command
+#[derive(Args, Debug)]
+pub struct ResetArgs {
+    /// Skip confirmation prompt
+    #[arg(short, long)]
+    pub force: bool,
+}
+
 /// Arguments for the completions command
 #[derive(Args, Debug)]
 pub struct CompletionsArgs {
@@ -458,6 +469,24 @@ mod tests {
                 assert!(args.no_skip_dirty);
             }
             _ => panic!("Expected Pull command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_reset() {
+        let cli = Cli::try_parse_from(["gisa", "reset"]).unwrap();
+        match cli.command {
+            Some(Command::Reset(args)) => assert!(!args.force),
+            _ => panic!("Expected Reset command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_reset_force() {
+        let cli = Cli::try_parse_from(["gisa", "reset", "--force"]).unwrap();
+        match cli.command {
+            Some(Command::Reset(args)) => assert!(args.force),
+            _ => panic!("Expected Reset command"),
         }
     }
 

@@ -77,7 +77,7 @@ fn render_info(app: &App, frame: &mut Frame, area: Rect) {
                 Span::raw("  Workspace: "),
                 Span::styled(&ws.name, Style::default().fg(Color::Cyan)),
                 Span::styled(
-                    format!("  v{}", version),
+                    format!("  Version {}", version),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::raw("  Path: "),
@@ -92,7 +92,7 @@ fn render_info(app: &App, frame: &mut Frame, area: Rect) {
                 Style::default().fg(Color::Yellow),
             ),
             Span::styled(
-                format!("  v{}", version),
+                format!("  Version {}", version),
                 Style::default().fg(Color::DarkGray),
             ),
         ],
