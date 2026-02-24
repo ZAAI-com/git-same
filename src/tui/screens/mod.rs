@@ -6,4 +6,5 @@ pub mod init_check;
 pub mod org_browser;
 pub mod progress;
 pub mod repo_status;
+pub mod settings;
 pub mod workspace_selector;

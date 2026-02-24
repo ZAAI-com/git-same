@@ -19,5 +19,6 @@ pub fn render(app: &App, frame: &mut Frame) {
         Screen::OrgBrowser => screens::org_browser::render(app, frame),
         Screen::Progress => screens::progress::render(app, frame),
         Screen::RepoStatus => screens::repo_status::render(app, frame),
+        Screen::Settings => screens::settings::render(app, frame),
     }
 }

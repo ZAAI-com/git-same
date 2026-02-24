@@ -26,6 +26,27 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     }
                 }
             }
+            // Run background requirement checks when on Dashboard
+            if app.screen == Screen::Dashboard
+                && app.check_results.is_empty()
+                && !app.checks_loading
+            {
+                app.checks_loading = true;
+                let tx = backend_tx.clone();
+                tokio::spawn(async move {
+                    let results = crate::checks::check_requirements().await;
+                    let entries: Vec<CheckEntry> = results
+                        .into_iter()
+                        .map(|r| CheckEntry {
+                            name: r.name,
+                            passed: r.passed,
+                            message: r.message,
+                            critical: r.critical,
+                        })
+                        .collect();
+                    let _ = tx.send(AppEvent::Backend(BackendMessage::CheckResults(entries)));
+                });
+            }
         }
         AppEvent::Resize(_, _) => {} // ratatui handles resize
     }
@@ -98,6 +119,7 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
         Screen::RepoStatus => handle_status_key(app, key, backend_tx),
+        Screen::Settings => {} // Settings uses only global keys (q, Esc)
     }
 }
 
@@ -277,14 +299,33 @@ async fn handle_dashboard_key(
         KeyCode::Char('o') => {
             app.navigate_to(Screen::OrgBrowser);
         }
+        KeyCode::Char('e') => {
+            app.navigate_to(Screen::Settings);
+        }
+        KeyCode::Char('c') => {
+            // Open config directory in Finder / file manager
+            if let Ok(path) = crate::config::Config::default_path() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::process::Command::new("open").arg(parent).spawn();
+                }
+            }
+        }
         KeyCode::Char('w') => {
             if app.workspaces.len() > 1 {
                 app.screen = Screen::WorkspaceSelector;
                 app.screen_stack.clear();
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char('m') | KeyCode::Enter => {
             app.navigate_to(Screen::CommandPicker);
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            app.stat_index = app.stat_index.saturating_sub(1);
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            if app.stat_index < 5 {
+                app.stat_index += 1;
+            }
         }
         _ => {}
     }
@@ -542,6 +583,10 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
         }
         BackendMessage::DefaultWorkspaceError(msg) => {
             app.error_message = Some(msg);
+        }
+        BackendMessage::CheckResults(entries) => {
+            app.check_results = entries;
+            app.checks_loading = false;
         }
     }
 }

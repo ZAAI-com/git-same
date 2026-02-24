@@ -20,11 +20,11 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     };
 
     let chunks = Layout::vertical([
-        Constraint::Length(3),          // Title
-        Constraint::Length(3),          // Input
+        Constraint::Length(3),           // Title
+        Constraint::Length(3),           // Input
         Constraint::Length(list_height), // Suggestions or completions
-        Constraint::Min(3),            // Info
-        Constraint::Length(2),         // Help
+        Constraint::Min(3),              // Info
+        Constraint::Length(2),           // Help
     ])
     .split(area);
 

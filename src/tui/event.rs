@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::types::{OpSummary, OwnedRepo};
 
-use super::app::RepoEntry;
+use super::app::{CheckEntry, RepoEntry};
 
 /// Events that the TUI loop processes.
 #[derive(Debug)]
@@ -54,6 +54,8 @@ pub enum BackendMessage {
     DefaultWorkspaceUpdated(Option<String>),
     /// Default workspace operation failed.
     DefaultWorkspaceError(String),
+    /// Requirement check results (background).
+    CheckResults(Vec<CheckEntry>),
 }
 
 /// Spawn the terminal event reader in a blocking thread.

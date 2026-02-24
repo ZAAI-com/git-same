@@ -17,6 +17,7 @@ pub enum Screen {
     OrgBrowser,
     Progress,
     RepoStatus,
+    Settings,
 }
 
 /// Which operation is running or was last selected.
@@ -173,6 +174,9 @@ pub struct App {
 
     /// Whether status scan is in progress.
     pub status_loading: bool,
+
+    /// Selected stat box index on dashboard (0-5) for ←/→ navigation.
+    pub stat_index: usize,
 }
 
 impl App {
@@ -236,6 +240,7 @@ impl App {
             config_created: false,
             config_path_display: None,
             status_loading: false,
+            stat_index: 0,
         }
     }
 
