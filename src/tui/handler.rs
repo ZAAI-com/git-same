@@ -42,9 +42,10 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     }
                 }
             }
-            // Drive setup wizard org discovery on tick
+            // Drive setup wizard tick and org discovery on tick
             if app.screen == Screen::SetupWizard {
                 if let Some(ref mut setup) = app.setup_state {
+                    setup.tick_count = setup.tick_count.wrapping_add(1);
                     if setup.step == SetupStep::SelectOrgs && setup.org_loading {
                         crate::setup::handler::handle_key(
                             setup,
@@ -149,6 +150,12 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     app.quit_pending = false;
 
     if key.code == KeyCode::Esc {
+        // On Progress screen, collapse expanded entry before navigating back
+        if app.screen == Screen::Progress && app.expanded_repo.is_some() {
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+            return;
+        }
         // Don't go back from entry points (no screen stack)
         if app.screen == Screen::InitCheck {
             return;
@@ -294,13 +301,23 @@ async fn handle_workspace_key(
     let total_entries = num_ws + 1; // workspaces + "Create Workspace"
 
     match key.code {
-        KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab if total_entries > 0 => {
+        // Arrows: scroll detail pane when config is expanded, navigate sidebar otherwise
+        KeyCode::Down if app.settings_config_expanded => {
+            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_add(1);
+        }
+        KeyCode::Up if app.settings_config_expanded => {
+            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_sub(1);
+        }
+        // Tab/arrows navigate the sidebar
+        KeyCode::Down | KeyCode::Tab if total_entries > 0 => {
             app.workspace_index = (app.workspace_index + 1) % total_entries;
             app.settings_config_expanded = false;
+            app.workspace_detail_scroll = 0;
         }
-        KeyCode::Char('k') | KeyCode::Up if total_entries > 0 => {
+        KeyCode::Up if total_entries > 0 => {
             app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
             app.settings_config_expanded = false;
+            app.workspace_detail_scroll = 0;
         }
         KeyCode::Enter => {
             if app.workspace_index < num_ws {
@@ -313,6 +330,7 @@ async fn handle_workspace_key(
                 if is_active {
                     // Toggle config expansion
                     app.settings_config_expanded = !app.settings_config_expanded;
+                    app.workspace_detail_scroll = 0;
                 } else {
                     // Switch active workspace and go to dashboard
                     app.select_workspace(app.workspace_index);
@@ -430,18 +448,18 @@ async fn handle_dashboard_key(
             app.dashboard_table_state.select(Some(0));
         }
         // Tab navigation (left/right between stat boxes)
-        KeyCode::Left | KeyCode::Char('h') => {
+        KeyCode::Left => {
             app.stat_index = app.stat_index.saturating_sub(1);
             app.dashboard_table_state.select(Some(0));
         }
-        KeyCode::Right | KeyCode::Char('l') => {
+        KeyCode::Right => {
             if app.stat_index < 5 {
                 app.stat_index += 1;
                 app.dashboard_table_state.select(Some(0));
             }
         }
         // List navigation (up/down within tab content)
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down => {
             let count = dashboard_tab_item_count(app);
             if count > 0 {
                 let current = app.dashboard_table_state.selected().unwrap_or(0);
@@ -450,7 +468,7 @@ async fn handle_dashboard_key(
                 }
             }
         }
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up => {
             let count = dashboard_tab_item_count(app);
             if count > 0 {
                 let current = app.dashboard_table_state.selected().unwrap_or(0);
@@ -500,19 +518,27 @@ fn handle_progress_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSende
 
     match key.code {
         // Scroll log
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Down => {
             if is_finished {
-                let count = filtered_log_count(app);
-                if count > 0 && app.sync_log_index < count.saturating_sub(1) {
-                    app.sync_log_index += 1;
+                if app.log_filter == LogFilter::Changelog {
+                    app.changelog_scroll += 1;
+                } else {
+                    let count = filtered_log_count(app);
+                    if count > 0 && app.sync_log_index < count.saturating_sub(1) {
+                        app.sync_log_index += 1;
+                    }
                 }
             } else if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
                 app.scroll_offset += 1;
             }
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Up => {
             if is_finished {
-                app.sync_log_index = app.sync_log_index.saturating_sub(1);
+                if app.log_filter == LogFilter::Changelog {
+                    app.changelog_scroll = app.changelog_scroll.saturating_sub(1);
+                } else {
+                    app.sync_log_index = app.sync_log_index.saturating_sub(1);
+                }
             } else {
                 app.scroll_offset = app.scroll_offset.saturating_sub(1);
             }
@@ -567,6 +593,22 @@ fn handle_progress_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSende
             app.sync_log_index = 0;
             app.expanded_repo = None;
             app.repo_commits.clear();
+            app.changelog_scroll = 0;
+
+            // Collect updated repos with paths for batch commit fetch
+            let updated_repos: Vec<(String, std::path::PathBuf)> = app
+                .sync_log_entries
+                .iter()
+                .filter(|e| e.had_updates)
+                .filter_map(|e| e.path.clone().map(|p| (e.repo_name.clone(), p)))
+                .collect();
+            app.changelog_total = updated_repos.len();
+            app.changelog_loaded = 0;
+            app.changelog_commits.clear();
+
+            if !updated_repos.is_empty() {
+                super::backend::spawn_changelog_fetch(updated_repos, backend_tx.clone());
+            }
         }
         // Sync history overlay toggle
         KeyCode::Char('h') if is_finished => {
@@ -1014,9 +1056,14 @@ fn handle_backend_message(
             app.last_status_scan = Some(std::time::Instant::now());
         }
         BackendMessage::RepoCommitLog { repo_name, commits } => {
-            // Only update if the user is still viewing this repo
+            // Single repo deep dive (Enter key)
             if app.expanded_repo.as_deref() == Some(&repo_name) {
-                app.repo_commits = commits;
+                app.repo_commits = commits.clone();
+            }
+            // Changelog aggregation (c key)
+            if app.log_filter == LogFilter::Changelog {
+                app.changelog_commits.insert(repo_name, commits);
+                app.changelog_loaded += 1;
             }
         }
         BackendMessage::InitConfigCreated(path) => {

@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Author:** Manuel from Eggenfelden.
+
 ## Build & Test Commands
 
 ```bash
@@ -46,11 +48,11 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
-- **`app.rs`** — `App` struct holds all TUI state. `Screen` enum: `InitCheck`, `SetupWizard`, `WorkspaceSelector`, `Dashboard`, `CommandPicker`, `OrgBrowser`, `Progress`, `RepoStatus`, `Settings`
+- **`app.rs`** — `App` struct holds all TUI state. `Screen` enum: `InitCheck`, `SetupWizard`, `Workspace`, `Dashboard`, `Progress`, `Settings`
 - **`handler.rs`** — Keyboard input handlers per screen + `handle_backend_message` for async results
 - **`backend.rs`** — Spawns Tokio tasks for async operations (sync, status scan), sends `BackendMessage` variants via unbounded channels
 - **`event.rs`** — `AppEvent` (terminal input, backend messages, ticks) and `BackendMessage` enum
-- **`screens/`** — Stateless render functions per screen (dashboard, workspace selector, repo status, etc.)
+- **`screens/`** — Stateless render functions per screen (dashboard, workspace, settings, etc.)
 - **`widgets/`** — Shared widgets (status bar, spinner)
 - **`setup/`** — Setup wizard state machine (shared between CLI `setup` command and TUI `SetupWizard` screen)
 
@@ -60,6 +62,7 @@ Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 - **Concurrency:** Tokio tasks with `Arc<dyn Trait>` for sharing progress reporters across tasks
 - **Error handling:** `thiserror` for typed errors + `anyhow` for propagation. Custom `Result` type alias in `errors/`
 - **Channel-based TUI updates:** Backend operations send `BackendMessage` through `mpsc::UnboundedSender<AppEvent>`, processed by the TUI event loop
+- **Arrow-only navigation:** All directional movement uses arrow keys only (`←` `↑` `↓` `→`). No vim-style `j`/`k`/`h`/`l` letter navigation. Display hints use `[←] [↑] [↓] [→] Move`.
 
 ## Formatting
 

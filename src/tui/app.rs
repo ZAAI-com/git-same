@@ -259,6 +259,9 @@ pub struct App {
     /// Whether the config TOML section is expanded in workspace detail.
     pub settings_config_expanded: bool,
 
+    /// Scroll offset for the workspace detail right pane.
+    pub workspace_detail_scroll: u16,
+
     /// Tick counter for driving animations on the Progress screen.
     pub tick_count: u64,
 
@@ -282,6 +285,18 @@ pub struct App {
 
     /// Selected index in the post-sync filterable log.
     pub sync_log_index: usize,
+
+    /// Aggregated commits per repo for changelog view.
+    pub changelog_commits: HashMap<String, Vec<String>>,
+
+    /// Total number of repos to fetch commits for in changelog.
+    pub changelog_total: usize,
+
+    /// Number of repos whose commits have been loaded for changelog.
+    pub changelog_loaded: usize,
+
+    /// Scroll offset for the changelog view.
+    pub changelog_scroll: usize,
 }
 
 impl App {
@@ -347,7 +362,7 @@ impl App {
                 let default_path = std::env::current_dir()
                     .map(|p| state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-                Some(SetupState::new(&default_path))
+                Some(SetupState::with_first_setup(&default_path, true))
             } else {
                 None
             },
@@ -359,6 +374,7 @@ impl App {
             dashboard_table_state: TableState::default().with_selected(0),
             settings_index: 0,
             settings_config_expanded: false,
+            workspace_detail_scroll: 0,
             tick_count: 0,
             sync_log_entries: Vec::new(),
             log_filter: LogFilter::All,
@@ -367,6 +383,10 @@ impl App {
             expanded_repo: None,
             repo_commits: Vec::new(),
             sync_log_index: 0,
+            changelog_commits: HashMap::new(),
+            changelog_total: 0,
+            changelog_loaded: 0,
+            changelog_scroll: 0,
         }
     }
 

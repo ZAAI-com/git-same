@@ -231,6 +231,29 @@ pub fn spawn_commit_fetch(
     });
 }
 
+/// Spawn commit fetches for multiple repos (aggregate changelog).
+pub fn spawn_changelog_fetch(
+    repos: Vec<(String, std::path::PathBuf)>,
+    tx: UnboundedSender<AppEvent>,
+) {
+    for (repo_name, repo_path) in repos {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let commits = tokio::task::spawn_blocking(move || {
+                let git = ShellGit::new();
+                git.recent_commits(&repo_path, 30).unwrap_or_default()
+            })
+            .await
+            .unwrap_or_default();
+
+            let _ = tx.send(AppEvent::Backend(BackendMessage::RepoCommitLog {
+                repo_name,
+                commits,
+            }));
+        });
+    }
+}
+
 /// Spawn a backend operation as a Tokio task.
 pub fn spawn_operation(operation: Operation, app: &App, tx: UnboundedSender<AppEvent>) {
     let config = app.config.clone();

@@ -6,6 +6,8 @@ use crate::types::ProviderKind;
 /// Which step of the wizard is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupStep {
+    /// Step 0: Welcome screen (first-time only).
+    Welcome,
     /// Step 1: Select a provider.
     SelectProvider,
     /// Step 2: Authenticate and detect username.
@@ -16,6 +18,8 @@ pub enum SetupStep {
     SelectOrgs,
     /// Step 5: Review and save.
     Confirm,
+    /// Step 6: Success / completion screen.
+    Complete,
 }
 
 /// An organization entry in the org selector.
@@ -89,6 +93,12 @@ pub struct SetupState {
 
     // General
     pub error_message: Option<String>,
+
+    // Animation / UX
+    /// Tick counter for spinner and animation effects.
+    pub tick_count: u64,
+    /// Whether this is the first workspace setup (controls Welcome screen).
+    pub is_first_setup: bool,
 }
 
 /// Authentication status during step 2.
@@ -116,7 +126,14 @@ pub fn tilde_collapse(path: &str) -> String {
 
 impl SetupState {
     /// Create initial wizard state.
+    ///
+    /// If `is_first_setup` is true, the wizard starts with a Welcome screen.
     pub fn new(default_base_path: &str) -> Self {
+        Self::with_first_setup(default_base_path, false)
+    }
+
+    /// Create wizard state, optionally starting with the Welcome screen.
+    pub fn with_first_setup(default_base_path: &str, is_first_setup: bool) -> Self {
         let provider_choices = vec![
             ProviderChoice {
                 kind: ProviderKind::GitHub,
@@ -143,8 +160,14 @@ impl SetupState {
         let base_path = default_base_path.to_string();
         let path_cursor = base_path.len();
 
+        let step = if is_first_setup {
+            SetupStep::Welcome
+        } else {
+            SetupStep::SelectProvider
+        };
+
         Self {
-            step: SetupStep::SelectProvider,
+            step,
             should_quit: false,
             outcome: None,
             provider_choices,
@@ -166,6 +189,8 @@ impl SetupState {
             workspace_name: String::new(),
             name_editing: false,
             error_message: None,
+            tick_count: 0,
+            is_first_setup,
         }
     }
 
@@ -236,10 +261,27 @@ impl SetupState {
         self.path_suggestions_mode = true;
     }
 
+    /// The 1-based step number for display (Welcome is not counted).
+    pub fn step_number(&self) -> usize {
+        match self.step {
+            SetupStep::Welcome => 0,
+            SetupStep::SelectProvider => 1,
+            SetupStep::Authenticate => 2,
+            SetupStep::SelectPath => 3,
+            SetupStep::SelectOrgs => 4,
+            SetupStep::Confirm => 5,
+            SetupStep::Complete => 5,
+        }
+    }
+
+    /// Total number of numbered steps (excluding Welcome and Complete).
+    pub const TOTAL_STEPS: usize = 5;
+
     /// Move to the next step.
     pub fn next_step(&mut self) {
         self.error_message = None;
         self.step = match self.step {
+            SetupStep::Welcome => SetupStep::SelectProvider,
             SetupStep::SelectProvider => SetupStep::Authenticate,
             SetupStep::Authenticate => {
                 self.populate_path_suggestions();
@@ -255,10 +297,11 @@ impl SetupState {
                 SetupStep::SelectOrgs
             }
             SetupStep::SelectOrgs => SetupStep::Confirm,
-            SetupStep::Confirm => {
+            SetupStep::Confirm => SetupStep::Complete,
+            SetupStep::Complete => {
                 self.outcome = Some(SetupOutcome::Completed);
                 self.should_quit = true;
-                SetupStep::Confirm
+                SetupStep::Complete
             }
         };
     }
@@ -267,6 +310,11 @@ impl SetupState {
     pub fn prev_step(&mut self) {
         self.error_message = None;
         self.step = match self.step {
+            SetupStep::Welcome => {
+                self.outcome = Some(SetupOutcome::Cancelled);
+                self.should_quit = true;
+                SetupStep::Welcome
+            }
             SetupStep::SelectProvider => {
                 self.outcome = Some(SetupOutcome::Cancelled);
                 self.should_quit = true;
@@ -279,6 +327,7 @@ impl SetupState {
                 SetupStep::SelectPath
             }
             SetupStep::Confirm => SetupStep::SelectOrgs,
+            SetupStep::Complete => SetupStep::Confirm,
         };
     }
 }
@@ -298,6 +347,22 @@ mod tests {
         assert!(!state.provider_choices[2].available); // GitLab
         assert!(state.path_suggestions_mode);
         assert!(state.path_suggestions.is_empty());
+        assert_eq!(state.tick_count, 0);
+        assert!(!state.is_first_setup);
+    }
+
+    #[test]
+    fn test_first_setup_starts_with_welcome() {
+        let state = SetupState::with_first_setup("~/Git-Same/GitHub", true);
+        assert_eq!(state.step, SetupStep::Welcome);
+        assert!(state.is_first_setup);
+    }
+
+    #[test]
+    fn test_non_first_setup_starts_with_provider() {
+        let state = SetupState::with_first_setup("~/Git-Same/GitHub", false);
+        assert_eq!(state.step, SetupStep::SelectProvider);
+        assert!(!state.is_first_setup);
     }
 
     #[test]
@@ -339,6 +404,34 @@ mod tests {
     }
 
     #[test]
+    fn test_welcome_navigation() {
+        let mut state = SetupState::with_first_setup("~/Git-Same/GitHub", true);
+        assert_eq!(state.step, SetupStep::Welcome);
+
+        state.next_step();
+        assert_eq!(state.step, SetupStep::SelectProvider);
+        assert!(!state.should_quit);
+    }
+
+    #[test]
+    fn test_confirm_goes_to_complete() {
+        let mut state = SetupState::new("~/Git-Same/GitHub");
+        state.step = SetupStep::Confirm;
+        state.next_step();
+        assert_eq!(state.step, SetupStep::Complete);
+        assert!(!state.should_quit);
+    }
+
+    #[test]
+    fn test_complete_next_quits() {
+        let mut state = SetupState::new("~/Git-Same/GitHub");
+        state.step = SetupStep::Complete;
+        state.next_step();
+        assert!(state.should_quit);
+        assert!(matches!(state.outcome, Some(SetupOutcome::Completed)));
+    }
+
+    #[test]
     fn test_selected_orgs() {
         let mut state = SetupState::new("~/Git-Same/GitHub");
         state.orgs = vec![
@@ -368,5 +461,31 @@ mod tests {
         state.prev_step();
         assert!(state.should_quit);
         assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+    }
+
+    #[test]
+    fn test_cancel_from_welcome() {
+        let mut state = SetupState::with_first_setup("~/Git-Same/GitHub", true);
+        state.prev_step();
+        assert!(state.should_quit);
+        assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+    }
+
+    #[test]
+    fn test_step_number() {
+        let mut state = SetupState::with_first_setup("~/Git-Same/GitHub", true);
+        assert_eq!(state.step_number(), 0);
+        state.step = SetupStep::SelectProvider;
+        assert_eq!(state.step_number(), 1);
+        state.step = SetupStep::Authenticate;
+        assert_eq!(state.step_number(), 2);
+        state.step = SetupStep::SelectPath;
+        assert_eq!(state.step_number(), 3);
+        state.step = SetupStep::SelectOrgs;
+        assert_eq!(state.step_number(), 4);
+        state.step = SetupStep::Confirm;
+        assert_eq!(state.step_number(), 5);
+        state.step = SetupStep::Complete;
+        assert_eq!(state.step_number(), 5);
     }
 }

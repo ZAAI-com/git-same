@@ -1,10 +1,10 @@
-//! Step 3: Base path input screen with suggestions and tab completion.
+//! Step 3: Base path input screen with suggestions, tab completion, and live preview.
 
 use crate::setup::state::SetupState;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
@@ -20,25 +20,29 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     };
 
     let chunks = Layout::vertical([
-        Constraint::Length(3),           // Title
+        Constraint::Length(4),           // Title + info
         Constraint::Length(3),           // Input
         Constraint::Length(list_height), // Suggestions or completions
-        Constraint::Min(3),              // Info
-        Constraint::Length(2),           // Help
+        Constraint::Min(3),              // Preview + error
     ])
     .split(area);
 
-    // Title
-    let title = Paragraph::new("Where should repos be cloned?")
-        .style(
+    // Title and info (above input)
+    let title_lines = vec![
+        Line::from(Span::styled(
+            "  Where should repositories be cloned?",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::BOTTOM));
-    frame.render_widget(title, chunks[0]);
+        )),
+        Line::from(Span::styled(
+            "  Repos will be organized as: <path>/<org>/<repo>",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(title_lines), chunks[0]);
 
-    // Path input
+    // Path input with styled border
     let input_style = if state.path_suggestions_mode {
         Style::default().fg(Color::DarkGray)
     } else {
@@ -47,25 +51,31 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let cursor_pos = state.path_cursor.min(state.base_path.len());
 
     let input_line = Line::from(vec![
-        Span::styled("Path: ", Style::default().fg(Color::White)),
+        Span::styled("  ", Style::default()),
         Span::styled(&state.base_path, input_style),
     ]);
-    let border_style = if state.path_suggestions_mode {
-        Style::default().fg(Color::DarkGray)
+    let border_type = if state.path_suggestions_mode {
+        BorderType::Plain
     } else {
-        Style::default()
+        BorderType::Thick
+    };
+    let border_color = if state.path_suggestions_mode {
+        Color::DarkGray
+    } else {
+        Color::Cyan
     };
     let input = Paragraph::new(input_line).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Base Path")
-            .border_style(border_style),
+            .title(" Base Path ")
+            .border_type(border_type)
+            .border_style(Style::default().fg(border_color)),
     );
     frame.render_widget(input, chunks[1]);
 
-    // Only show cursor in input mode
+    // Show cursor in input mode
     if !state.path_suggestions_mode {
-        let cursor_x = chunks[1].x + 1 + 6 + cursor_pos as u16;
+        let cursor_x = chunks[1].x + 1 + 2 + cursor_pos as u16;
         let cursor_y = chunks[1].y + 1;
         frame.set_cursor_position((cursor_x, cursor_y));
     }
@@ -77,37 +87,28 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         render_completions(state, frame, chunks[2]);
     }
 
-    // Info
-    let info_lines = vec![
-        Line::raw(""),
-        Line::from(Span::styled(
-            "This is the root directory where all repositories will be cloned.",
+    // Preview + error
+    let mut preview_lines: Vec<Line> = Vec::new();
+    if !state.base_path.is_empty() {
+        preview_lines.push(Line::from(Span::styled(
+            "  Preview:",
             Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            "Repos will be organized as: <path>/<org>/<repo>",
+        )));
+        preview_lines.push(Line::from(Span::styled(
+            format!("    {}/acme-corp/my-repo/", state.base_path),
             Style::default().fg(Color::DarkGray),
-        )),
-    ];
-    let info = Paragraph::new(info_lines);
-    frame.render_widget(info, chunks[3]);
-
-    // Error
-    if let Some(ref err) = state.error_message {
-        let error = Paragraph::new(Span::styled(err.as_str(), Style::default().fg(Color::Red)));
-        frame.render_widget(error, chunks[3]);
+        )));
     }
 
-    // Help (mode-dependent)
-    let help_text = if state.path_suggestions_mode {
-        "\u{2191}/\u{2193} Select  Enter Confirm  Type to edit  Esc Back"
-    } else if !state.path_completions.is_empty() {
-        "Tab Complete  Enter Confirm  Esc Back"
-    } else {
-        "Enter Confirm  Esc Back"
-    };
-    let help = Paragraph::new(help_text).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(help, chunks[4]);
+    if let Some(ref err) = state.error_message {
+        preview_lines.push(Line::raw(""));
+        preview_lines.push(Line::from(Span::styled(
+            format!("  {}", err),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(preview_lines), chunks[3]);
 }
 
 fn render_suggestions(state: &SetupState, frame: &mut Frame, area: Rect) {
@@ -121,7 +122,7 @@ fn render_suggestions(state: &SetupState, frame: &mut Frame, area: Rect) {
         let marker = if is_selected { "  \u{25b8} " } else { "    " };
         let path_style = if is_selected {
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)

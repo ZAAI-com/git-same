@@ -77,6 +77,9 @@ async fn run_wizard(
             continue;
         }
 
+        // Increment tick counter for animations
+        state.tick_count = state.tick_count.wrapping_add(1);
+
         // Wait for input with a short timeout for responsive tick
         if crossterm::event::poll(Duration::from_millis(100))? {
             if let Ok(event) = crossterm::event::read() {

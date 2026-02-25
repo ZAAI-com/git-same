@@ -1,64 +1,73 @@
-//! Step 1: Provider selection screen.
+//! Step 1: Provider selection screen with descriptions.
 
 use crate::setup::state::SetupState;
-use ratatui::layout::{Constraint, Layout, Rect};
+use crate::types::ProviderKind;
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
+/// Get a short description for each provider.
+fn provider_description(kind: ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::GitHub => "github.com \u{2014} Public and private repositories",
+        ProviderKind::GitHubEnterprise => "Self-hosted GitHub instance",
+        ProviderKind::GitLab => "gitlab.com or self-hosted",
+        ProviderKind::Bitbucket => "bitbucket.org",
+    }
+}
+
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let chunks = Layout::vertical([
-        Constraint::Length(3), // Title
-        Constraint::Min(8),    // Provider list
-        Constraint::Length(2), // Help
-    ])
-    .split(area);
+    let mut lines: Vec<Line> = Vec::new();
 
     // Title
-    let title = Paragraph::new("Select a provider")
-        .style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(Block::default().borders(Borders::BOTTOM));
-    frame.render_widget(title, chunks[0]);
+    lines.push(Line::from(Span::styled(
+        "  Select your Git provider",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::raw(""));
 
-    // Provider list
-    let items: Vec<ListItem> = state
-        .provider_choices
-        .iter()
-        .enumerate()
-        .map(|(i, choice)| {
-            let marker = if i == state.provider_index {
-                "▸ "
-            } else {
-                "  "
-            };
+    // Provider list with descriptions
+    for (i, choice) in state.provider_choices.iter().enumerate() {
+        let is_selected = i == state.provider_index;
+        let marker = if is_selected { "  \u{25b8}  " } else { "     " };
 
-            let style = if !choice.available {
-                Style::default().fg(Color::DarkGray)
-            } else if i == state.provider_index {
+        let (label_style, desc_style) = if !choice.available {
+            (
+                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::DarkGray),
+            )
+        } else if is_selected {
+            (
                 Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::White),
+            )
+        } else {
+            (
+                Style::default().fg(Color::White),
+                Style::default().fg(Color::DarkGray),
+            )
+        };
 
-            ListItem::new(Line::from(vec![
-                Span::styled(marker, style),
-                Span::styled(&choice.label, style),
-            ]))
-        })
-        .collect();
+        lines.push(Line::from(vec![
+            Span::styled(marker, label_style),
+            Span::styled(&choice.label, label_style),
+        ]));
 
-    let list = List::new(items).block(Block::default().borders(Borders::NONE));
-    frame.render_widget(list, chunks[1]);
+        // Description line
+        lines.push(Line::from(Span::styled(
+            format!("        {}", provider_description(choice.kind)),
+            desc_style,
+        )));
 
-    // Help
-    let help = Paragraph::new("↑/↓ Navigate  Enter Select  Esc Cancel")
-        .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(help, chunks[2]);
+        lines.push(Line::raw(""));
+    }
+
+    let widget = Paragraph::new(lines);
+    frame.render_widget(widget, area);
 }

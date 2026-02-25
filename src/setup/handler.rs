@@ -18,11 +18,25 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
 
     match state.step {
+        SetupStep::Welcome => handle_welcome(state, key),
         SetupStep::SelectProvider => handle_provider(state, key),
         SetupStep::Authenticate => handle_auth(state, key).await,
         SetupStep::SelectPath => handle_path(state, key),
         SetupStep::SelectOrgs => handle_orgs(state, key).await,
         SetupStep::Confirm => handle_confirm(state, key),
+        SetupStep::Complete => handle_complete(state, key),
+    }
+}
+
+fn handle_welcome(state: &mut SetupState, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter => {
+            state.next_step();
+        }
+        KeyCode::Esc => {
+            state.prev_step();
+        }
+        _ => {}
     }
 }
 
@@ -397,15 +411,27 @@ async fn do_discover_orgs(state: &mut SetupState) {
 fn handle_confirm(state: &mut SetupState, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
-            // Save workspace config
+            // Save workspace config and advance to Complete screen
             match save_workspace(state) {
                 Ok(()) => {
-                    state.next_step(); // Triggers Completed + should_quit
+                    state.next_step();
                 }
                 Err(e) => {
                     state.error_message = Some(e.to_string());
                 }
             }
+        }
+        KeyCode::Esc => {
+            state.prev_step();
+        }
+        _ => {}
+    }
+}
+
+fn handle_complete(state: &mut SetupState, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('s') => {
+            state.next_step(); // Triggers Completed + should_quit
         }
         KeyCode::Esc => {
             state.prev_step();

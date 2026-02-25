@@ -723,14 +723,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
-    // Line 1: sync timestamp (center) + [s] Sync (right)
-    let action_cols = Layout::horizontal([
-        Constraint::Percentage(33),
-        Constraint::Percentage(34),
-        Constraint::Percentage(33),
-    ])
-    .split(rows[0]);
-
+    // Line 1: sync timestamp (centered full-width) + [s] Sync (right overlay)
     if let Some(ref ws) = app.active_workspace {
         if let Some(ref ts) = ws.last_synced {
             let folder_name = std::path::Path::new(&ws.base_path)
@@ -749,7 +742,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(" with GitHub ", dim),
                 Span::styled(formatted, dim),
             ]);
-            frame.render_widget(Paragraph::new(vec![sync_line]).centered(), action_cols[1]);
+            frame.render_widget(Paragraph::new(vec![sync_line]).centered(), rows[0]);
         }
     }
 
@@ -758,10 +751,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" Sync", dim),
         Span::raw(" "),
     ]);
-    frame.render_widget(
-        Paragraph::new(vec![actions_right]).right_aligned(),
-        action_cols[2],
-    );
+    frame.render_widget(Paragraph::new(vec![actions_right]).right_aligned(), rows[0]);
 
     // Line 2: Navigation — left-aligned (Quit, Back) and right-aligned (Left, Right, Select)
     let nav_cols =

@@ -271,11 +271,13 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         ]));
     }
 
-    let content = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray)),
-    );
+    let content = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .scroll((app.workspace_detail_scroll, 0));
     frame.render_widget(content, area);
 }
 

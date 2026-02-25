@@ -1,7 +1,7 @@
 //! Sync progress screen — real-time metrics during sync, enriched summary after.
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph},
@@ -62,7 +62,7 @@ fn render_running_layout(app: &App, frame: &mut Frame, phase: f64) {
     render_running_log(app, frame, chunks[7]);
 
     let hint = match &app.operation_state {
-        OperationState::Running { .. } => "j/k: Scroll log  Ctrl+C: Quit",
+        OperationState::Running { .. } => "\u{2191}/\u{2193}: Scroll log  Ctrl+C: Quit",
         _ => "Ctrl+C: Quit",
     };
     status_bar::render(frame, chunks[8], hint);
@@ -618,6 +618,12 @@ fn render_performance_line(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_filterable_log(app: &App, frame: &mut Frame, area: Rect) {
+    // Changelog mode has its own renderer
+    if app.log_filter == LogFilter::Changelog {
+        render_changelog(app, frame, area);
+        return;
+    }
+
     let entries: Vec<&crate::tui::app::SyncLogEntry> = match app.log_filter {
         LogFilter::All => app.sync_log_entries.iter().collect(),
         LogFilter::Updated => app
@@ -769,6 +775,118 @@ fn render_filterable_log(app: &App, frame: &mut Frame, area: Rect) {
             .border_style(Style::default().fg(Color::DarkGray)),
     );
     frame.render_widget(log, area);
+}
+
+// ── Aggregate changelog ─────────────────────────────────────────────────────
+
+const REPO_COLORS: [Color; 4] = [Color::Yellow, Color::Cyan, Color::Green, Color::Magenta];
+
+fn render_changelog(app: &App, frame: &mut Frame, area: Rect) {
+    let updated_repos: Vec<&crate::tui::app::SyncLogEntry> = app
+        .sync_log_entries
+        .iter()
+        .filter(|e| e.had_updates)
+        .collect();
+
+    // Loading state
+    if app.changelog_loaded < app.changelog_total && app.changelog_total > 0 {
+        let loading = format!(
+            "Fetching commits from {} updated repositories... {}/{}",
+            app.changelog_total, app.changelog_loaded, app.changelog_total
+        );
+        let block = Block::default()
+            .title(" Log [Changelog] ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new(loading)
+            .alignment(Alignment::Center)
+            .block(block);
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    // Empty state
+    if updated_repos.is_empty() {
+        let block = Block::default()
+            .title(" Log [Changelog] ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let paragraph = Paragraph::new("No updated repositories")
+            .alignment(Alignment::Center)
+            .block(block);
+        frame.render_widget(paragraph, area);
+        return;
+    }
+
+    // Build grouped timeline items
+    let mut items: Vec<ListItem> = Vec::new();
+    let total_commits: usize = app.changelog_commits.values().map(|v| v.len()).sum();
+
+    for (i, entry) in updated_repos.iter().enumerate() {
+        let color = REPO_COLORS[i % REPO_COLORS.len()];
+        let commits = app.changelog_commits.get(&entry.repo_name);
+        let count = commits.map(|c| c.len()).unwrap_or(0);
+
+        // Repo header: ● repo/name ··················· N commits
+        let header_right = format!("{} commits ", count);
+        let used: u16 = 6 + entry.repo_name.len() as u16 + header_right.len() as u16;
+        let padding = area.width.saturating_sub(used + 2) as usize;
+        let dots = "·".repeat(padding);
+
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(
+                "  ● ",
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                entry.repo_name.as_str(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" {} ", dots), Style::default().fg(Color::DarkGray)),
+            Span::styled(header_right, Style::default().fg(Color::DarkGray)),
+        ])));
+
+        // Commit lines with │ connector
+        if let Some(commits) = commits {
+            for (j, commit) in commits.iter().enumerate() {
+                let connector = if j < commits.len() - 1 { "│" } else { " " };
+                items.push(ListItem::new(Line::from(vec![
+                    Span::styled(format!("  {connector}  "), Style::default().fg(color)),
+                    Span::styled(commit.as_str(), Style::default().fg(Color::DarkGray)),
+                ])));
+            }
+        }
+
+        // Blank separator between repos (except last)
+        if i < updated_repos.len() - 1 {
+            items.push(ListItem::new(Line::from("")));
+        }
+    }
+
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total_lines = items.len();
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = app.changelog_scroll.min(max_scroll);
+
+    let title = format!(
+        " Log [Changelog] ({} commits across {} repos) ",
+        total_commits,
+        updated_repos.len()
+    );
+
+    let items: Vec<ListItem> = items
+        .into_iter()
+        .skip(scroll)
+        .take(visible_height)
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
+    frame.render_widget(list, area);
 }
 
 // ── Sync history overlay ────────────────────────────────────────────────────
