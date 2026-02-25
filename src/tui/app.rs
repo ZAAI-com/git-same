@@ -14,7 +14,6 @@ pub enum Screen {
     SetupWizard,
     WorkspaceSelector,
     Dashboard,
-    OrgBrowser,
     Progress,
     Settings,
 }
@@ -129,9 +128,6 @@ pub struct App {
     pub log_lines: Vec<String>,
 
     // -- Selection state --
-    /// Selected org index in org browser.
-    pub org_index: usize,
-
     /// Selected repo index in current view.
     pub repo_index: usize,
 
@@ -185,6 +181,9 @@ pub struct App {
 
     /// Whether the config TOML section is expanded in workspace detail.
     pub settings_config_expanded: bool,
+
+    /// Tick counter for driving animations on the Progress screen.
+    pub tick_count: u64,
 }
 
 impl App {
@@ -228,7 +227,6 @@ impl App {
             local_repos: Vec::new(),
             operation_state: OperationState::Idle,
             log_lines: Vec::new(),
-            org_index: 0,
             repo_index: 0,
             scroll_offset: 0,
             filter_text: String::new(),
@@ -254,6 +252,7 @@ impl App {
             dashboard_table_state: TableState::default().with_selected(0),
             settings_index: 0,
             settings_config_expanded: false,
+            tick_count: 0,
         }
     }
 

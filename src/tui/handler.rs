@@ -14,6 +14,15 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
         AppEvent::Terminal(key) => handle_key(app, key, backend_tx).await,
         AppEvent::Backend(msg) => handle_backend_message(app, msg),
         AppEvent::Tick => {
+            // Increment animation tick counter on Progress screen during active ops
+            if app.screen == Screen::Progress
+                && matches!(
+                    &app.operation_state,
+                    OperationState::Discovering { .. } | OperationState::Running { .. }
+                )
+            {
+                app.tick_count = app.tick_count.wrapping_add(1);
+            }
             // Drive setup wizard org discovery on tick
             if app.screen == Screen::SetupWizard {
                 if let Some(ref mut setup) = app.setup_state {
@@ -58,7 +67,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 && !app.status_loading
                 && app
                     .last_status_scan
-                    .map_or(true, |t| t.elapsed().as_secs() >= refresh_interval)
+                    .is_none_or(|t| t.elapsed().as_secs() >= refresh_interval)
             {
                 app.status_loading = true;
                 super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
@@ -141,7 +150,6 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
             handle_workspace_selector_key(app, key, backend_tx).await;
         }
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
-        Screen::OrgBrowser => handle_org_browser_key(app, key),
         Screen::Progress => handle_progress_key(app, key),
         Screen::Settings => handle_settings_key(app, key),
     }
@@ -328,9 +336,6 @@ async fn handle_dashboard_key(
             app.status_loading = true;
             start_operation(app, Operation::Status, backend_tx);
         }
-        KeyCode::Char('g') => {
-            app.navigate_to(Screen::OrgBrowser);
-        }
         // Tab shortcuts
         KeyCode::Char('o') => {
             app.stat_index = 0;
@@ -396,7 +401,8 @@ async fn handle_dashboard_key(
             let count = dashboard_tab_item_count(app);
             if count > 0 {
                 let current = app.dashboard_table_state.selected().unwrap_or(0);
-                app.dashboard_table_state.select(Some(current.saturating_sub(1)));
+                app.dashboard_table_state
+                    .select(Some(current.saturating_sub(1)));
             }
         }
         KeyCode::Enter => {
@@ -464,42 +470,6 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_org_browser_key(app: &mut App, key: KeyEvent) {
-    match key.code {
-        // Shift+J/K for org navigation
-        KeyCode::Char('J') => {
-            if !app.orgs.is_empty() {
-                app.org_index = (app.org_index + 1) % app.orgs.len();
-                app.repo_index = 0;
-            }
-        }
-        KeyCode::Char('K') => {
-            if !app.orgs.is_empty() {
-                app.org_index = (app.org_index + app.orgs.len() - 1) % app.orgs.len();
-                app.repo_index = 0;
-            }
-        }
-        // j/k for repo navigation within selected org
-        KeyCode::Char('j') | KeyCode::Down => {
-            let repo_count = current_org_repo_count(app);
-            if repo_count > 0 {
-                app.repo_index = (app.repo_index + 1) % repo_count;
-            }
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            let repo_count = current_org_repo_count(app);
-            if repo_count > 0 {
-                app.repo_index = (app.repo_index + repo_count - 1) % repo_count;
-            }
-        }
-        KeyCode::Char('/') => {
-            app.filter_active = true;
-            app.filter_text.clear();
-        }
-        _ => {}
-    }
-}
-
 fn handle_progress_key(app: &mut App, key: KeyEvent) {
     match key.code {
         // Scroll log
@@ -521,6 +491,7 @@ fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSe
         return;
     }
 
+    app.tick_count = 0;
     app.operation_state = OperationState::Discovering {
         message: format!("Starting {}...", operation),
     };
@@ -532,14 +503,6 @@ fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSe
     }
 
     super::backend::spawn_operation(operation, app, backend_tx.clone());
-}
-
-fn current_org_repo_count(app: &App) -> usize {
-    app.orgs
-        .get(app.org_index)
-        .and_then(|org| app.repos_by_org.get(org))
-        .map(|repos| repos.len())
-        .unwrap_or(0)
 }
 
 fn dashboard_tab_item_count(app: &App) -> usize {
@@ -595,7 +558,11 @@ fn dashboard_selected_repo_path(app: &App) -> Option<std::path::PathBuf> {
             .collect(),
         3 => app.local_repos.iter().filter(|r| r.behind > 0).collect(),
         4 => app.local_repos.iter().filter(|r| r.ahead > 0).collect(),
-        5 => app.local_repos.iter().filter(|r| r.is_uncommitted).collect(),
+        5 => app
+            .local_repos
+            .iter()
+            .filter(|r| r.is_uncommitted)
+            .collect(),
         _ => return None,
     };
     repos.get(selected).map(|r| r.path.clone())

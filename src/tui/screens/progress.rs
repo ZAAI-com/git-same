@@ -11,8 +11,11 @@ use ratatui::{
 use crate::tui::app::{App, OperationState};
 use crate::tui::widgets::status_bar;
 
+use super::dashboard::render_animated_banner;
+
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
+        Constraint::Length(6), // Animated banner
         Constraint::Length(3), // Title
         Constraint::Length(3), // Progress bar
         Constraint::Length(3), // Counters
@@ -21,17 +24,27 @@ pub fn render(app: &App, frame: &mut Frame) {
     ])
     .split(frame.area());
 
-    render_title(app, frame, chunks[0]);
-    render_progress_bar(app, frame, chunks[1]);
-    render_counters(app, frame, chunks[2]);
-    render_log(app, frame, chunks[3]);
+    // Animate during active ops, static otherwise
+    // One full cycle every ~5 seconds (50 ticks at 100ms tick rate)
+    let phase = match &app.operation_state {
+        OperationState::Discovering { .. } | OperationState::Running { .. } => {
+            (app.tick_count as f64 / 50.0).fract()
+        }
+        _ => 0.0,
+    };
+
+    render_animated_banner(frame, chunks[0], phase);
+    render_title(app, frame, chunks[1]);
+    render_progress_bar(app, frame, chunks[2]);
+    render_counters(app, frame, chunks[3]);
+    render_log(app, frame, chunks[4]);
 
     let hint = match &app.operation_state {
         OperationState::Finished { .. } => "Esc: Back  qq: Quit",
         OperationState::Running { .. } => "j/k: Scroll log  Ctrl+C: Quit",
         _ => "Ctrl+C: Quit",
     };
-    status_bar::render(frame, chunks[4], hint);
+    status_bar::render(frame, chunks[5], hint);
 }
 
 fn render_title(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {

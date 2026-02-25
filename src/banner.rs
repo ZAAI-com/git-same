@@ -29,5 +29,5 @@ pub fn print_banner() {
     } else {
         0
     };
-    println!("{}{}\n", " ".repeat(pad), style(subtitle).dim());
+    println!("{}{}\n", " ".repeat(pad + 1), style(subtitle).dim());
 }

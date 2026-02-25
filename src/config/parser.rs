@@ -198,7 +198,9 @@ impl Config {
 
         // Validate refresh_interval
         if !(5..=3600).contains(&self.refresh_interval) {
-            return Err(AppError::config("refresh_interval must be between 5 and 3600 seconds"));
+            return Err(AppError::config(
+                "refresh_interval must be between 5 and 3600 seconds",
+            ));
         }
 
         // Validate providers

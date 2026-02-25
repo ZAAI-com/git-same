@@ -42,24 +42,23 @@ pub(crate) fn format_timestamp(raw: &str) -> String {
 pub fn render(app: &mut App, frame: &mut Frame) {
     let chunks = Layout::vertical([
         Constraint::Length(6), // Banner
-        Constraint::Length(1), // Tagline + version
-        Constraint::Length(1), // Requirements status
-        Constraint::Length(1), // Workspace info line 1
-        Constraint::Length(1), // Workspace info line 2
+        Constraint::Length(1), // Tagline
+        Constraint::Length(1), // Requirements
+        Constraint::Length(1), // Workspace
         Constraint::Length(4), // Stats
         Constraint::Min(1),    // Spacer
-        Constraint::Length(2), // Bottom actions (2 lines)
+        Constraint::Length(2), // Bottom actions
     ])
     .split(frame.area());
 
     render_banner(frame, chunks[0]);
     render_tagline(frame, chunks[1]);
     render_config_reqs(app, frame, chunks[2]);
-    render_workspace_info(app, frame, chunks[3], chunks[4]);
-    let stat_cols = render_stats(app, frame, chunks[5]);
-    render_tab_content(app, frame, chunks[6]);
-    render_tab_connector(frame, &stat_cols, chunks[6], app.stat_index);
-    render_bottom_actions(app, frame, chunks[7]);
+    render_workspace_info(app, frame, chunks[3]);
+    let stat_cols = render_stats(app, frame, chunks[4]);
+    render_tab_content(app, frame, chunks[5]);
+    render_tab_connector(frame, &stat_cols, chunks[5], app.stat_index);
+    render_bottom_actions(app, frame, chunks[6]);
 }
 
 pub(crate) fn render_banner(frame: &mut Frame, area: Rect) {
@@ -108,7 +107,7 @@ pub(crate) fn render_banner(frame: &mut Frame, area: Rect) {
     line5_spans.push(Span::styled(
         version_display,
         Style::default()
-            .fg(Color::White)
+            .fg(Color::Black)
             .bg(Color::Rgb(vr, vg, vb))
             .add_modifier(Modifier::BOLD),
     ));
@@ -150,7 +149,7 @@ fn gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)]) -> Line<'a> {
     Line::from(spans)
 }
 
-fn interpolate_stops(stops: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
+pub(crate) fn interpolate_stops(stops: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
     let t = t.clamp(0.0, 1.0);
     let segments = stops.len() - 1;
     let scaled = t * segments as f64;
@@ -166,6 +165,98 @@ fn interpolate_stops(stops: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
     )
 }
 
+/// Render a line of text with an animated gradient.
+/// `phase` shifts the color mapping cyclically (0.0 = no shift, 1.0 = full cycle).
+fn animated_gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)], phase: f64) -> Line<'a> {
+    let chars: Vec<&str> = text.split_inclusive(|_: char| true).collect();
+    let len = chars.len().max(1);
+    let spans: Vec<Span<'a>> = chars
+        .into_iter()
+        .enumerate()
+        .map(|(i, ch)| {
+            let base_t = i as f64 / (len - 1).max(1) as f64;
+            let t = (base_t - phase).rem_euclid(1.0);
+            let (r, g, b) = interpolate_stops(stops, t);
+            Span::styled(
+                ch.to_string(),
+                Style::default()
+                    .fg(Color::Rgb(r, g, b))
+                    .add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect();
+    Line::from(spans)
+}
+
+/// Render the GIT-SAME banner with animated gradient colors.
+/// `phase` in [0.0, 1.0) shifts the gradient cyclically.
+pub(crate) fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
+    let lines = [
+        " ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗",
+        "██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝",
+        "██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗  ",
+        "██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝  ",
+    ];
+    let line5_prefix = "╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║█";
+    let line5_suffix = "╗";
+    let last_line = " ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝";
+    let version = env!("CARGO_PKG_VERSION");
+    let version_display = format!("{:^6}", version);
+
+    let stops: [(u8, u8, u8); 4] = [
+        (59, 130, 246), // Blue
+        (6, 182, 212),  // Cyan
+        (34, 197, 94),  // Green
+        (59, 130, 246), // Blue (close the loop)
+    ];
+
+    let mut banner_lines: Vec<Line> = Vec::new();
+    for text in &lines {
+        banner_lines.push(animated_gradient_line(text, &stops, phase));
+    }
+
+    // Line 5: animated gradient prefix + inverted version + animated gradient suffix
+    let full_len =
+        line5_prefix.chars().count() + version_display.len() + line5_suffix.chars().count();
+    let mut line5_spans: Vec<Span> = Vec::new();
+    for (i, ch) in line5_prefix.split_inclusive(|_: char| true).enumerate() {
+        let base_t = i as f64 / (full_len - 1).max(1) as f64;
+        let t = (base_t - phase).rem_euclid(1.0);
+        let (r, g, b) = interpolate_stops(&stops, t);
+        line5_spans.push(Span::styled(
+            ch.to_string(),
+            Style::default()
+                .fg(Color::Rgb(r, g, b))
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    let ver_pos = line5_prefix.chars().count();
+    let ver_t = (ver_pos as f64 / (full_len - 1).max(1) as f64 - phase).rem_euclid(1.0);
+    let (vr, vg, vb) = interpolate_stops(&stops, ver_t);
+    line5_spans.push(Span::styled(
+        version_display,
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(vr, vg, vb))
+            .add_modifier(Modifier::BOLD),
+    ));
+    let suffix_pos = ver_pos + 6;
+    let t = (suffix_pos as f64 / (full_len - 1).max(1) as f64 - phase).rem_euclid(1.0);
+    let (r, g, b) = interpolate_stops(&stops, t);
+    line5_spans.push(Span::styled(
+        line5_suffix.to_string(),
+        Style::default()
+            .fg(Color::Rgb(r, g, b))
+            .add_modifier(Modifier::BOLD),
+    ));
+    banner_lines.push(Line::from(line5_spans));
+
+    banner_lines.push(animated_gradient_line(last_line, &stops, phase));
+
+    let banner = Paragraph::new(banner_lines).centered();
+    frame.render_widget(banner, area);
+}
+
 fn render_tagline(frame: &mut Frame, area: Rect) {
     let description = env!("CARGO_PKG_DESCRIPTION");
 
@@ -179,83 +270,90 @@ fn render_tagline(frame: &mut Frame, area: Rect) {
     frame.render_widget(p, area);
 }
 
+fn render_info_line(frame: &mut Frame, area: Rect, left: Vec<Span>, right: Vec<Span>) {
+    let cols = Layout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Percentage(50),
+    ])
+    .split(area);
+    frame.render_widget(Paragraph::new(Line::from(left)).right_aligned(), cols[0]);
+    frame.render_widget(Paragraph::new(Line::from(right)), cols[1]);
+}
+
 fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
+
     let key_style = Style::default()
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
-    let loading_style = Style::default().fg(Color::Yellow);
+    let left = vec![
+        Span::styled("[e]", key_style),
+        Span::styled(" Settings    ", dim),
+    ];
 
-    let mut spans: Vec<Span> = Vec::new();
-
-    if app.checks_loading || app.check_results.is_empty() {
-        spans.push(Span::styled("Checking requirements...", loading_style));
+    let right = if app.checks_loading || app.check_results.is_empty() {
+        vec![Span::styled(
+            " Checking...",
+            Style::default().fg(Color::Yellow),
+        )]
     } else {
         let all_passed = app.check_results.iter().all(|c| c.passed);
         if all_passed {
-            spans.push(Span::styled(
-                "Requirements ✓",
-                Style::default().fg(Color::Green),
-            ));
-            spans.push(Span::styled("   ", dim));
-            spans.push(Span::styled("[e]", key_style));
-            spans.push(Span::styled(" Settings", dim));
+            vec![
+                Span::styled(" [✓]", Style::default().fg(Color::Green)),
+                Span::styled(" Requirements Satisfied", dim),
+            ]
         } else {
-            spans.push(Span::styled(
-                "Requirements ✗",
-                Style::default().fg(Color::Red),
-            ));
-            spans.push(Span::styled("   ", dim));
-            spans.push(Span::styled("[i]", key_style));
-            spans.push(Span::styled(" Init", dim));
+            vec![
+                Span::styled(" [✗]", Style::default().fg(Color::Red)),
+                Span::styled(" Requirements Not Met", dim),
+            ]
         }
-    }
+    };
 
-    let p = Paragraph::new(vec![Line::from(spans)]).centered();
-    frame.render_widget(p, area);
+    render_info_line(frame, area, left, right);
 }
 
-fn render_workspace_info(app: &App, frame: &mut Frame, line1: Rect, line2: Rect) {
+fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
     let cyan = Style::default().fg(Color::Cyan);
     match &app.active_workspace {
         Some(ws) => {
-            let last = ws
-                .last_synced
-                .as_deref()
-                .map(format_timestamp)
-                .unwrap_or_else(|| "never".to_string());
-            let provider = ws.provider.kind.display_name();
-
             let folder_name = std::path::Path::new(&ws.base_path)
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&ws.base_path);
+                .unwrap_or(&ws.base_path)
+                .to_string();
 
-            // Line 1: Workspace path + change hint
-            let top = Line::from(vec![
-                Span::styled("Workspace Path ", dim),
-                Span::styled(&ws.base_path, cyan),
-                Span::styled("  [w] Change Workspace", dim),
-            ]);
-
-            // Line 2: Synced sentence
-            let synced_text = match &ws.last_synced {
-                Some(_) => format!("Synced {} with {} {}", folder_name, provider, last),
-                None => format!("{} with {} — never synced", folder_name, provider),
-            };
-            let bottom = Line::from(vec![Span::styled(synced_text, dim)]);
-
-            frame.render_widget(Paragraph::new(vec![top]).centered(), line1);
-            frame.render_widget(Paragraph::new(vec![bottom]).centered(), line2);
+            render_info_line(
+                frame,
+                area,
+                vec![
+                    Span::styled(
+                        "[w]",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Workspace   ", dim),
+                ],
+                vec![
+                    Span::styled(" [✓]", Style::default().fg(Color::Green)),
+                    Span::styled(" Folder ", dim),
+                    Span::styled(
+                        folder_name,
+                        cyan.add_modifier(Modifier::ITALIC | Modifier::BOLD),
+                    ),
+                ],
+            );
         }
         None => {
-            let p = Paragraph::new(vec![Line::from(Span::styled(
+            let p = Paragraph::new(Line::from(Span::styled(
                 "No workspace selected",
                 Style::default().fg(Color::Yellow),
-            ))])
+            )))
             .centered();
-            frame.render_widget(p, line1);
+            frame.render_widget(p, area);
         }
     }
 }
@@ -811,12 +909,6 @@ fn render_bottom_actions(_app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("   "),
         Span::styled("[/]", key_style),
         Span::styled(" Search", dim),
-        Span::raw("   "),
-        Span::styled("[g]", key_style),
-        Span::styled(" Orgs", dim),
-        Span::raw("   "),
-        Span::styled("[e]", key_style),
-        Span::styled(" Settings", dim),
     ]);
 
     // Line 2: Navigation — left-aligned (Quit, Back) and right-aligned (Left, Right, Select)
@@ -830,9 +922,6 @@ fn render_bottom_actions(_app: &App, frame: &mut Frame, area: Rect) {
         Span::raw("   "),
         Span::styled("[Esc]", key_style),
         Span::styled(" Back", dim),
-        Span::raw("   "),
-        Span::styled("[w]", key_style),
-        Span::styled(" Workspace", dim),
     ];
 
     let right_spans = vec![
