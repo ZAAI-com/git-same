@@ -8,6 +8,7 @@ use super::app::{
     SyncLogStatus,
 };
 use super::event::{AppEvent, BackendMessage};
+use crate::cache::SyncHistoryManager;
 use crate::config::{Config, WorkspaceManager};
 use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
 
@@ -168,7 +169,7 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
             handle_workspace_selector_key(app, key, backend_tx).await;
         }
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
-        Screen::Progress => handle_progress_key(app, key),
+        Screen::Progress => handle_progress_key(app, key, backend_tx),
         Screen::Settings => handle_settings_key(app, key),
     }
 }
@@ -267,6 +268,9 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
             app.workspaces = WorkspaceManager::list().unwrap_or_default();
             if let Some(ws) = app.workspaces.first().cloned() {
                 app.base_path = Some(ws.expanded_base_path());
+                app.sync_history = SyncHistoryManager::for_workspace(&ws.name)
+                    .and_then(|m| m.load())
+                    .unwrap_or_default();
                 app.active_workspace = Some(ws);
             }
             app.setup_state = None;
@@ -488,7 +492,7 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-fn handle_progress_key(app: &mut App, key: KeyEvent) {
+fn handle_progress_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
     let is_finished = matches!(app.operation_state, OperationState::Finished { .. });
 
     match key.code {
@@ -510,26 +514,56 @@ fn handle_progress_key(app: &mut App, key: KeyEvent) {
                 app.scroll_offset = app.scroll_offset.saturating_sub(1);
             }
         }
+        // Expand/collapse commit deep dive
+        KeyCode::Enter if is_finished => {
+            // Extract data we need before mutating app
+            let selected = filtered_log_entries(app)
+                .get(app.sync_log_index)
+                .map(|e| (e.repo_name.clone(), e.path.clone()));
+
+            if let Some((repo_name, path)) = selected {
+                if app.expanded_repo.as_deref() == Some(&repo_name) {
+                    // Toggle off: collapse
+                    app.expanded_repo = None;
+                    app.repo_commits.clear();
+                } else if let Some(path) = path {
+                    // Expand: fetch commits
+                    app.expanded_repo = Some(repo_name.clone());
+                    app.repo_commits.clear();
+                    super::backend::spawn_commit_fetch(path, repo_name, backend_tx.clone());
+                }
+            }
+        }
         // Post-sync log filters
         KeyCode::Char('a') if is_finished => {
             app.log_filter = LogFilter::All;
             app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
         }
         KeyCode::Char('u') if is_finished => {
             app.log_filter = LogFilter::Updated;
             app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
         }
         KeyCode::Char('f') if is_finished => {
             app.log_filter = LogFilter::Failed;
             app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
         }
         KeyCode::Char('x') if is_finished => {
             app.log_filter = LogFilter::Skipped;
             app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
         }
         KeyCode::Char('c') if is_finished => {
             app.log_filter = LogFilter::Changelog;
             app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
         }
         // Sync history overlay toggle
         KeyCode::Char('h') if is_finished => {
@@ -564,6 +598,55 @@ fn filtered_log_count(app: &App) -> usize {
             .filter(|e| e.had_updates)
             .count(),
     }
+}
+
+/// Returns filtered log entries matching the current filter.
+fn filtered_log_entries(app: &App) -> Vec<&SyncLogEntry> {
+    match app.log_filter {
+        LogFilter::All => app.sync_log_entries.iter().collect(),
+        LogFilter::Updated => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates || e.is_clone)
+            .collect(),
+        LogFilter::Failed => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Failed)
+            .collect(),
+        LogFilter::Skipped => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Skipped)
+            .collect(),
+        LogFilter::Changelog => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates)
+            .collect(),
+    }
+}
+
+/// Compute the filesystem path for a repo from its full name (e.g. "org/repo").
+/// Mirrors `DiscoveryOrchestrator::compute_path()` logic using workspace config.
+fn compute_repo_path(app: &App, repo_name: &str) -> Option<std::path::PathBuf> {
+    let ws = app.active_workspace.as_ref()?;
+    let base_path = ws.expanded_base_path();
+    let structure = ws
+        .structure
+        .clone()
+        .unwrap_or_else(|| app.config.structure.clone());
+    let parts: Vec<&str> = repo_name.splitn(2, '/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let (org, repo) = (parts[0], parts[1]);
+    let provider_name = ws.provider.kind.to_string().to_lowercase();
+    let path_str = structure
+        .replace("{provider}", &provider_name)
+        .replace("{org}", org)
+        .replace("{repo}", repo);
+    Some(base_path.join(path_str))
 }
 
 fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
@@ -798,7 +881,7 @@ fn handle_backend_message(
                 had_updates,
                 is_clone,
                 new_commits,
-                path: None, // Will be populated later if needed for deep dive
+                path: compute_repo_path(app, &repo_name),
             });
 
             // Build legacy log line with enriched prefixes
@@ -875,9 +958,16 @@ fn handle_backend_message(
                     cloned: cl,
                     total_new_commits: tnc,
                 });
-                // Cap history at 10
-                if app.sync_history.len() > 10 {
+                // Cap in-memory history
+                if app.sync_history.len() > 50 {
                     app.sync_history.remove(0);
+                }
+
+                // Persist history to disk
+                if let Some(ref ws) = app.active_workspace {
+                    if let Ok(manager) = SyncHistoryManager::for_workspace(&ws.name) {
+                        let _ = manager.save(&app.sync_history);
+                    }
                 }
 
                 // Auto-trigger status scan so dashboard is fresh
@@ -921,8 +1011,10 @@ fn handle_backend_message(
             app.last_status_scan = Some(std::time::Instant::now());
         }
         BackendMessage::RepoCommitLog { repo_name, commits } => {
-            app.expanded_repo = Some(repo_name);
-            app.repo_commits = commits;
+            // Only update if the user is still viewing this repo
+            if app.expanded_repo.as_deref() == Some(&repo_name) {
+                app.repo_commits = commits;
+            }
         }
         BackendMessage::InitConfigCreated(path) => {
             app.config_created = true;

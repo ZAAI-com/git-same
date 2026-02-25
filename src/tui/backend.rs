@@ -210,6 +210,27 @@ impl SyncProgress for TuiSyncProgress {
 
 // -- Spawn functions --
 
+/// Spawn an async task to fetch recent commits for a repo (post-sync deep dive).
+pub fn spawn_commit_fetch(
+    repo_path: std::path::PathBuf,
+    repo_name: String,
+    tx: UnboundedSender<AppEvent>,
+) {
+    tokio::spawn(async move {
+        let commits = tokio::task::spawn_blocking(move || {
+            let git = ShellGit::new();
+            git.recent_commits(&repo_path, 30).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
+
+        let _ = tx.send(AppEvent::Backend(BackendMessage::RepoCommitLog {
+            repo_name,
+            commits,
+        }));
+    });
+}
+
 /// Spawn a backend operation as a Tokio task.
 pub fn spawn_operation(operation: Operation, app: &App, tx: UnboundedSender<AppEvent>) {
     let config = app.config.clone();

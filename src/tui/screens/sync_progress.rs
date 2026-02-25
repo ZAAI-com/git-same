@@ -106,7 +106,7 @@ fn render_finished_layout(app: &App, frame: &mut Frame, phase: f64) {
     status_bar::render(
         frame,
         chunks[6],
-        "Esc: Back  qq: Quit  a:All u:Upd f:Err x:Skip h:History",
+        "Esc: Back  qq: Quit  Enter: Commits  a:All u:Upd f:Err x:Skip h:History",
     );
 }
 
@@ -650,67 +650,104 @@ fn render_filterable_log(app: &App, frame: &mut Frame, area: Rect) {
         0
     };
 
-    let items: Vec<ListItem> = entries
+    let mut items: Vec<ListItem> = Vec::new();
+    let is_expanded = app.expanded_repo.is_some();
+
+    for (i, entry) in entries
         .iter()
         .skip(scroll_start)
         .take(visible_height)
         .enumerate()
-        .map(|(i, entry)| {
-            let (prefix, color) = match entry.status {
-                SyncLogStatus::Updated => ("[**]", Color::Yellow),
-                SyncLogStatus::Cloned => ("[++]", Color::Cyan),
-                SyncLogStatus::Success => ("[ok]", Color::Green),
-                SyncLogStatus::Failed => ("[!!]", Color::Red),
-                SyncLogStatus::Skipped => ("[--]", Color::DarkGray),
-            };
+    {
+        let (prefix, color) = match entry.status {
+            SyncLogStatus::Updated => ("[**]", Color::Yellow),
+            SyncLogStatus::Cloned => ("[++]", Color::Cyan),
+            SyncLogStatus::Success => ("[ok]", Color::Green),
+            SyncLogStatus::Failed => ("[!!]", Color::Red),
+            SyncLogStatus::Skipped => ("[--]", Color::DarkGray),
+        };
 
-            let is_selected = i + scroll_start == app.sync_log_index;
-            let style = if is_selected {
-                Style::default().fg(color).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(color)
-            };
+        let is_selected = i + scroll_start == app.sync_log_index;
+        let this_expanded = is_expanded && app.expanded_repo.as_deref() == Some(&entry.repo_name);
+        let style = if is_selected {
+            Style::default().fg(color).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(color)
+        };
 
-            let mut spans = vec![
-                Span::styled(if is_selected { " > " } else { "   " }, style),
-                Span::styled(prefix, style),
-                Span::raw(" "),
-                Span::styled(&entry.repo_name, style),
-            ];
+        let indicator = if this_expanded {
+            " v "
+        } else if is_selected {
+            " > "
+        } else {
+            "   "
+        };
 
-            // Add detail based on status
-            match entry.status {
-                SyncLogStatus::Updated | SyncLogStatus::Cloned => {
-                    spans.push(Span::styled(
-                        format!(" - {}", entry.message),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                    if let Some(n) = entry.new_commits {
-                        if n > 0 {
-                            spans.push(Span::styled(
-                                format!(" ({} new commits)", n),
-                                Style::default().fg(Color::DarkGray),
-                            ));
-                        }
+        let mut spans = vec![
+            Span::styled(indicator, style),
+            Span::styled(prefix, style),
+            Span::raw(" "),
+            Span::styled(&entry.repo_name, style),
+        ];
+
+        // Add detail based on status
+        match entry.status {
+            SyncLogStatus::Updated | SyncLogStatus::Cloned => {
+                spans.push(Span::styled(
+                    format!(" - {}", entry.message),
+                    Style::default().fg(Color::DarkGray),
+                ));
+                if let Some(n) = entry.new_commits {
+                    if n > 0 {
+                        spans.push(Span::styled(
+                            format!(" ({} new commits)", n),
+                            Style::default().fg(Color::DarkGray),
+                        ));
                     }
                 }
-                SyncLogStatus::Failed | SyncLogStatus::Skipped => {
-                    spans.push(Span::styled(
-                        format!(" - {}", entry.message),
-                        Style::default().fg(Color::DarkGray),
-                    ));
+            }
+            _ => {
+                spans.push(Span::styled(
+                    format!(" - {}", entry.message),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+        }
+
+        items.push(ListItem::new(Line::from(spans)));
+
+        // Render expanded commits inline below this entry
+        if this_expanded {
+            if app.repo_commits.is_empty() {
+                items.push(ListItem::new(Line::from(vec![
+                    Span::raw("      "),
+                    Span::styled(
+                        "Loading...",
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ])));
+            } else {
+                let max_commits = visible_height.saturating_sub(items.len()).max(3);
+                for commit in app.repo_commits.iter().take(max_commits) {
+                    items.push(ListItem::new(Line::from(vec![
+                        Span::raw("      "),
+                        Span::styled(commit, Style::default().fg(Color::DarkGray)),
+                    ])));
                 }
-                SyncLogStatus::Success => {
-                    spans.push(Span::styled(
-                        format!(" - {}", entry.message),
-                        Style::default().fg(Color::DarkGray),
-                    ));
+                if app.repo_commits.len() > max_commits {
+                    items.push(ListItem::new(Line::from(vec![
+                        Span::raw("      "),
+                        Span::styled(
+                            format!("... and {} more", app.repo_commits.len() - max_commits),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ])));
                 }
             }
-
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
+        }
+    }
 
     let filter_label = match app.log_filter {
         LogFilter::All => "All",

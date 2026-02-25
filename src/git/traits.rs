@@ -143,6 +143,13 @@ pub trait GitOperations: Send + Sync {
     /// * `repo_path` - Path to the local repository
     /// * `remote` - Remote name (default: "origin")
     fn remote_url(&self, repo_path: &Path, remote: &str) -> Result<String, GitError>;
+
+    /// Gets recent commits as one-line summaries.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    /// * `limit` - Maximum number of commits to return
+    fn recent_commits(&self, repo_path: &Path, limit: usize) -> Result<Vec<String>, GitError>;
 }
 
 /// A mock implementation of GitOperations for testing.
@@ -369,6 +376,14 @@ pub mod mock {
 
         fn remote_url(&self, _repo_path: &Path, _remote: &str) -> Result<String, GitError> {
             Ok("git@github.com:example/repo.git".to_string())
+        }
+
+        fn recent_commits(
+            &self,
+            _repo_path: &Path,
+            _limit: usize,
+        ) -> Result<Vec<String>, GitError> {
+            Ok(Vec::new())
         }
     }
 }

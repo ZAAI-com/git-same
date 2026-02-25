@@ -91,7 +91,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
 
     let key_style = Style::default()
-        .fg(Color::Black)
+        .fg(Color::Rgb(59, 130, 246))
         .add_modifier(Modifier::BOLD);
     let left = vec![
         Span::styled("[e]", key_style),
@@ -132,7 +132,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
 fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
     let key_style = Style::default()
-        .fg(Color::Black)
+        .fg(Color::Rgb(59, 130, 246))
         .add_modifier(Modifier::BOLD);
     match &app.active_workspace {
         Some(ws) => {
@@ -155,7 +155,7 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
                     Span::styled(
                         folder_name,
                         Style::default()
-                            .fg(Color::Rgb(59, 130, 246))
+                            .fg(Color::Rgb(34, 197, 94))
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
@@ -296,7 +296,7 @@ fn render_stat_box(
             Span::styled(
                 format!("[{}]", key),
                 Style::default()
-                    .fg(Color::Black)
+                    .fg(Color::Rgb(59, 130, 246))
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
@@ -728,7 +728,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 
     let dim = Style::default().fg(Color::DarkGray);
     let key_style = Style::default()
-        .fg(Color::Black)
+        .fg(Color::Rgb(59, 130, 246))
         .add_modifier(Modifier::BOLD);
 
     // Line 1: sync timestamp (center) + [s] Sync (right)
@@ -751,7 +751,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(
                     folder_name.to_string(),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(Color::Rgb(34, 197, 94))
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" with GitHub ", dim),

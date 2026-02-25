@@ -19,11 +19,12 @@ const LINE5_SUFFIX: &str = "╗";
 /// Line 6.
 const LAST_LINE: &str = " ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝";
 
-/// Gradient color stops: Blue → Cyan → Green.
-const GRADIENT_STOPS: [(u8, u8, u8); 3] = [
+/// Gradient color stops: Blue → Cyan → Green → Purple.
+const GRADIENT_STOPS: [(u8, u8, u8); 4] = [
     (59, 130, 246), // Blue
     (6, 182, 212),  // Cyan
     (34, 197, 94),  // Green
+    (147, 51, 234), // Purple
 ];
 
 /// Prints the gisa ASCII art banner to stdout (CLI mode).
@@ -109,8 +110,23 @@ fn gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)]) -> Line<'a> {
     Line::from(spans)
 }
 
-/// Apply an animated gradient to a line of text.
-/// `phase` shifts the color mapping cyclically (0.0 = no shift, 1.0 = full cycle).
+/// Compute the color for a character at normalized position `base_t`
+/// during a left-to-right sweep animation at the given `phase`.
+/// Returns the first stop color when the character is outside the wave.
+#[cfg(feature = "tui")]
+fn sweep_color(stops: &[(u8, u8, u8)], base_t: f64, phase: f64) -> (u8, u8, u8) {
+    let wave_start = 2.0 * phase - 1.0;
+    let wave_t = base_t - wave_start;
+    if !(0.0..1.0).contains(&wave_t) {
+        stops[0]
+    } else {
+        interpolate_stops(stops, wave_t)
+    }
+}
+
+/// Apply an animated gradient sweep to a line of text (left-to-right wave).
+/// `phase` in [0.0, 1.0] drives the sweep: 0.0 and 1.0 = all first-stop color,
+/// 0.5 = full gradient visible.
 #[cfg(feature = "tui")]
 fn animated_gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)], phase: f64) -> Line<'a> {
     let chars: Vec<&str> = text.split_inclusive(|_: char| true).collect();
@@ -120,8 +136,7 @@ fn animated_gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)], phase: f64)
         .enumerate()
         .map(|(i, ch)| {
             let base_t = i as f64 / (len - 1).max(1) as f64;
-            let t = (base_t - phase).rem_euclid(1.0);
-            let (r, g, b) = interpolate_stops(stops, t);
+            let (r, g, b) = sweep_color(stops, base_t, phase);
             Span::styled(
                 ch.to_string(),
                 Style::default()
@@ -133,7 +148,7 @@ fn animated_gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)], phase: f64)
     Line::from(spans)
 }
 
-/// Render the GIT-SAME banner with a static Blue → Cyan → Green gradient.
+/// Render the GIT-SAME banner with a static Blue → Cyan → Green → Purple gradient.
 #[cfg(feature = "tui")]
 pub fn render_banner(frame: &mut Frame, area: Rect) {
     let version = env!("CARGO_PKG_VERSION");
@@ -186,34 +201,27 @@ pub fn render_banner(frame: &mut Frame, area: Rect) {
     frame.render_widget(banner, area);
 }
 
-/// Render the GIT-SAME banner with animated gradient colors (left-to-right wave).
-/// `phase` in [0.0, 1.0) shifts the gradient cyclically.
+/// Render the GIT-SAME banner with animated gradient sweep (left-to-right wave).
+/// `phase` in [0.0, 1.0] drives the sweep: 0.0 and 1.0 = all first-stop color,
+/// 0.5 = full gradient visible.
 #[cfg(feature = "tui")]
 pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
     let version = env!("CARGO_PKG_VERSION");
     let version_display = format!("{:^6}", version);
-
-    // Close the loop for seamless cycling
-    let stops: [(u8, u8, u8); 4] = [
-        GRADIENT_STOPS[0], // Blue
-        GRADIENT_STOPS[1], // Cyan
-        GRADIENT_STOPS[2], // Green
-        GRADIENT_STOPS[0], // Blue (close the loop)
-    ];
+    let stops: &[(u8, u8, u8)] = &GRADIENT_STOPS;
 
     let mut banner_lines: Vec<Line> = Vec::new();
     for text in &LINES {
-        banner_lines.push(animated_gradient_line(text, &stops, phase));
+        banner_lines.push(animated_gradient_line(text, stops, phase));
     }
 
-    // Line 5: animated gradient prefix + inverted version + animated gradient suffix
+    // Line 5: sweep prefix + inverted version badge + sweep suffix
     let full_len =
         LINE5_PREFIX.chars().count() + version_display.len() + LINE5_SUFFIX.chars().count();
     let mut line5_spans: Vec<Span> = Vec::new();
     for (i, ch) in LINE5_PREFIX.split_inclusive(|_: char| true).enumerate() {
         let base_t = i as f64 / (full_len - 1).max(1) as f64;
-        let t = (base_t - phase).rem_euclid(1.0);
-        let (r, g, b) = interpolate_stops(&stops, t);
+        let (r, g, b) = sweep_color(stops, base_t, phase);
         line5_spans.push(Span::styled(
             ch.to_string(),
             Style::default()
@@ -222,8 +230,8 @@ pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
         ));
     }
     let ver_pos = LINE5_PREFIX.chars().count();
-    let ver_t = (ver_pos as f64 / (full_len - 1).max(1) as f64 - phase).rem_euclid(1.0);
-    let (vr, vg, vb) = interpolate_stops(&stops, ver_t);
+    let ver_base_t = ver_pos as f64 / (full_len - 1).max(1) as f64;
+    let (vr, vg, vb) = sweep_color(stops, ver_base_t, phase);
     line5_spans.push(Span::styled(
         version_display,
         Style::default()
@@ -232,8 +240,8 @@ pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
             .add_modifier(Modifier::BOLD),
     ));
     let suffix_pos = ver_pos + 6;
-    let t = (suffix_pos as f64 / (full_len - 1).max(1) as f64 - phase).rem_euclid(1.0);
-    let (r, g, b) = interpolate_stops(&stops, t);
+    let suffix_base_t = suffix_pos as f64 / (full_len - 1).max(1) as f64;
+    let (r, g, b) = sweep_color(stops, suffix_base_t, phase);
     line5_spans.push(Span::styled(
         LINE5_SUFFIX.to_string(),
         Style::default()
@@ -242,7 +250,7 @@ pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
     ));
     banner_lines.push(Line::from(line5_spans));
 
-    banner_lines.push(animated_gradient_line(LAST_LINE, &stops, phase));
+    banner_lines.push(animated_gradient_line(LAST_LINE, stops, phase));
 
     let banner = Paragraph::new(banner_lines).centered();
     frame.render_widget(banner, area);

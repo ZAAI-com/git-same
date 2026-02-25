@@ -335,6 +335,15 @@ impl GitOperations for ShellGit {
     fn remote_url(&self, repo_path: &Path, remote: &str) -> Result<String, GitError> {
         self.run_git_output(&["remote", "get-url", remote], Some(repo_path))
     }
+
+    fn recent_commits(&self, repo_path: &Path, limit: usize) -> Result<Vec<String>, GitError> {
+        let limit_arg = format!("-{}", limit);
+        let output = self.run_git_output(&["log", "--oneline", &limit_arg], Some(repo_path))?;
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(output.lines().map(|l| l.to_string()).collect())
+    }
 }
 
 #[cfg(test)]

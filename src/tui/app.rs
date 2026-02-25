@@ -4,6 +4,7 @@ use crate::config::{Config, WorkspaceConfig};
 use crate::setup::state::{self, SetupState};
 use crate::types::{OpSummary, OwnedRepo};
 use ratatui::widgets::TableState;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -119,7 +120,7 @@ pub enum LogFilter {
 }
 
 /// A summary entry for sync history.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncHistoryEntry {
     pub timestamp: String,
     pub duration_secs: f64,
@@ -308,6 +309,15 @@ impl App {
             }
         };
 
+        let sync_history = active_workspace
+            .as_ref()
+            .and_then(|ws| {
+                crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+                    .and_then(|m| m.load())
+                    .ok()
+            })
+            .unwrap_or_default();
+
         Self {
             should_quit: false,
             quit_pending: false,
@@ -352,7 +362,7 @@ impl App {
             tick_count: 0,
             sync_log_entries: Vec::new(),
             log_filter: LogFilter::All,
-            sync_history: Vec::new(),
+            sync_history,
             show_sync_history: false,
             expanded_repo: None,
             repo_commits: Vec::new(),
@@ -364,6 +374,10 @@ impl App {
     pub fn select_workspace(&mut self, index: usize) {
         if let Some(ws) = self.workspaces.get(index).cloned() {
             self.base_path = Some(ws.expanded_base_path());
+            // Load sync history for this workspace
+            self.sync_history = crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+                .and_then(|m| m.load())
+                .unwrap_or_default();
             self.active_workspace = Some(ws);
             // Reset discovered data when switching workspace
             self.repos_by_org.clear();
