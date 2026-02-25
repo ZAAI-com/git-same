@@ -12,6 +12,12 @@ use crate::cache::SyncHistoryManager;
 use crate::config::{Config, WorkspaceManager};
 use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
 
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(test)]
+static OPEN_WORKSPACE_FOLDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+
 /// Handle an incoming event, updating app state and optionally spawning backend work.
 pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &UnboundedSender<AppEvent>) {
     match event {
@@ -309,12 +315,12 @@ async fn handle_workspace_key(
             app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_sub(1);
         }
         // Tab/arrows navigate the sidebar
-        KeyCode::Down | KeyCode::Tab if total_entries > 0 => {
+        KeyCode::Down | KeyCode::Right | KeyCode::Tab if total_entries > 0 => {
             app.workspace_index = (app.workspace_index + 1) % total_entries;
             app.settings_config_expanded = false;
             app.workspace_detail_scroll = 0;
         }
-        KeyCode::Up if total_entries > 0 => {
+        KeyCode::Up | KeyCode::Left if total_entries > 0 => {
             app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
             app.settings_config_expanded = false;
             app.workspace_detail_scroll = 0;
@@ -355,15 +361,20 @@ async fn handle_workspace_key(
             app.navigate_to(Screen::SetupWizard);
         }
         KeyCode::Char('d') if app.workspace_index < num_ws => {
-            // Toggle default workspace
+            // Set default workspace
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
                 let ws_name = ws.name.clone();
-                let is_already_default = app.config.default_workspace.as_deref() == Some(&ws_name);
-                let new_default = if is_already_default {
-                    None
-                } else {
-                    Some(ws_name)
+                let new_default_name = match next_default_workspace_name(
+                    app.config.default_workspace.as_deref(),
+                    &ws_name,
+                ) {
+                    Some(name) => name,
+                    None => {
+                        return;
+                    }
                 };
+
+                let new_default = Some(new_default_name);
                 let tx = backend_tx.clone();
                 let default_clone = new_default.clone();
                 tokio::spawn(async move {
@@ -382,15 +393,41 @@ async fn handle_workspace_key(
                 });
             }
         }
-        KeyCode::Char('o') if app.workspace_index < num_ws => {
+        KeyCode::Char('f') if app.workspace_index < num_ws => {
             // Open workspace folder
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
                 let path = ws.expanded_base_path();
-                let _ = std::process::Command::new("open").arg(&path).spawn();
+                open_workspace_folder(&path);
             }
         }
         _ => {}
     }
+}
+
+fn next_default_workspace_name(
+    current_default: Option<&str>,
+    selected_workspace: &str,
+) -> Option<String> {
+    if current_default == Some(selected_workspace) {
+        None
+    } else {
+        Some(selected_workspace.to_string())
+    }
+}
+
+#[cfg(not(test))]
+fn open_workspace_folder(path: &std::path::Path) {
+    let _ = std::process::Command::new("open").arg(path).spawn();
+}
+
+#[cfg(test)]
+fn open_workspace_folder(_path: &std::path::Path) {
+    OPEN_WORKSPACE_FOLDER_CALLS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn take_open_workspace_folder_call_count() -> usize {
+    OPEN_WORKSPACE_FOLDER_CALLS.swap(0, Ordering::SeqCst)
 }
 
 async fn handle_dashboard_key(
@@ -692,6 +729,93 @@ fn compute_repo_path(app: &App, repo_name: &str) -> Option<std::path::PathBuf> {
         .replace("{org}", org)
         .replace("{repo}", repo);
     Some(base_path.join(path_str))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tokio::sync::mpsc::error::TryRecvError;
+
+    use crate::config::{Config, WorkspaceConfig};
+
+    fn build_workspace_app(default_workspace: Option<&str>) -> App {
+        let mut config = Config::default();
+        config.default_workspace = default_workspace.map(ToString::to_string);
+
+        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+        let mut app = App::new(config, vec![ws.clone()]);
+        app.screen = Screen::Workspace;
+        app.workspace_index = 0;
+        app.active_workspace = Some(ws);
+        app
+    }
+
+    #[tokio::test]
+    async fn workspace_key_f_opens_folder_for_selected_workspace() {
+        let mut app = build_workspace_app(None);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = take_open_workspace_folder_call_count();
+
+        handle_workspace_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(take_open_workspace_folder_call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn workspace_key_o_is_noop() {
+        let mut app = build_workspace_app(None);
+        let before_index = app.workspace_index;
+        let before_scroll = app.workspace_detail_scroll;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = take_open_workspace_folder_call_count();
+
+        handle_workspace_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.workspace_index, before_index);
+        assert_eq!(app.workspace_detail_scroll, before_scroll);
+        assert_eq!(take_open_workspace_folder_call_count(), 0);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn workspace_key_d_does_not_clear_when_already_default() {
+        let mut app = build_workspace_app(Some("test-ws"));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_workspace_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.config.default_workspace.as_deref(), Some("test-ws"));
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[test]
+    fn next_default_workspace_name_is_set_only() {
+        assert_eq!(
+            next_default_workspace_name(Some("current"), "next"),
+            Some("next".to_string())
+        );
+        assert_eq!(next_default_workspace_name(Some("same"), "same"), None);
+        assert_eq!(
+            next_default_workspace_name(None, "selected"),
+            Some("selected".to_string())
+        );
+    }
 }
 
 fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {

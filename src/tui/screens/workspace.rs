@@ -3,6 +3,7 @@
 //! Left sidebar lists all workspaces plus a "Create Workspace" entry.
 //! Right panel shows detail for the selected workspace or a create prompt.
 
+use chrono::{DateTime, Utc};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -14,7 +15,6 @@ use ratatui::{
 use crate::banner::render_banner;
 use crate::config::{WorkspaceConfig, WorkspaceManager};
 use crate::tui::app::App;
-use crate::tui::screens::dashboard::format_timestamp;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
@@ -184,12 +184,6 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         ws.username.clone()
     };
 
-    let orgs = if ws.orgs.is_empty() {
-        "all".to_string()
-    } else {
-        ws.orgs.join(", ")
-    };
-
     let sync_mode = ws
         .sync_mode
         .as_ref()
@@ -201,11 +195,8 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         .map(|c| c.to_string())
         .unwrap_or_else(|| format!("{} (global)", app.config.concurrency));
 
-    let last_synced = ws
-        .last_synced
-        .as_deref()
-        .map(format_timestamp)
-        .unwrap_or_else(|| "never".to_string());
+    let (last_synced_relative, last_synced_absolute) =
+        format_last_synced(ws.last_synced.as_deref());
 
     let default_label = if is_default { "Yes" } else { "No" };
     let active_label = if is_active { "Yes" } else { "No" };
@@ -224,26 +215,88 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         Line::from(""),
     ];
 
-    let fields: Vec<(&str, String)> = vec![
-        ("Path", ws.base_path.clone()),
-        ("Provider", ws.provider.kind.display_name().to_string()),
-        ("Active", active_label.to_string()),
-        ("Default", default_label.to_string()),
-        ("Full path", full_path),
-        ("Config file", config_file),
-        ("Cache file", cache_file),
-        ("Username", username),
-        ("Organizations", orgs),
-        ("Sync mode", sync_mode),
-        ("Concurrency", concurrency),
-        ("Last synced", last_synced),
-    ];
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Active"), dim),
+        Span::styled(active_label.to_string(), val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Default"), dim),
+        Span::styled(default_label.to_string(), val_style),
+        Span::styled(
+            if is_default {
+                " (current)"
+            } else {
+                "  [d] Set default"
+            },
+            dim,
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Provider"), dim),
+        Span::styled(ws.provider.kind.display_name().to_string(), val_style),
+    ]));
 
-    for (label, value) in &fields {
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("  Paths", section_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Path"), dim),
+        Span::styled(ws.base_path.clone(), val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Full path"), dim),
+        Span::styled(full_path, val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Config file"), dim),
+        Span::styled(config_file, val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Cache file"), dim),
+        Span::styled(cache_file, val_style),
+    ]));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("  Sync", section_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Sync mode"), dim),
+        Span::styled(sync_mode, val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Concurrency"), dim),
+        Span::styled(concurrency, val_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Last synced"), dim),
+        Span::styled(last_synced_relative, val_style),
+    ]));
+    if let Some(absolute) = last_synced_absolute {
         lines.push(Line::from(vec![
-            Span::styled(format!("    {:<14}", label), dim),
-            Span::styled(value.as_str(), val_style),
+            Span::styled(format!("    {:<14}", ""), dim),
+            Span::styled(absolute, val_style),
         ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled("  Account", section_style)));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(format!("    {:<14}", "Username"), dim),
+        Span::styled(username, val_style),
+    ]));
+    let org_lines = wrap_comma_separated_values(&ws.orgs, field_value_width(area, 14));
+    if let Some((first, rest)) = org_lines.split_first() {
+        lines.push(Line::from(vec![
+            Span::styled(format!("    {:<14}", "Organizations"), dim),
+            Span::styled(first.as_str(), val_style),
+        ]));
+        for line in rest {
+            lines.push(Line::from(vec![
+                Span::styled(format!("    {:<14}", ""), dim),
+                Span::styled(line.as_str(), val_style),
+            ]));
+        }
     }
 
     // Config content section (collapsible)
@@ -279,6 +332,68 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         )
         .scroll((app.workspace_detail_scroll, 0));
     frame.render_widget(content, area);
+}
+
+fn format_last_synced(raw: Option<&str>) -> (String, Option<String>) {
+    let Some(raw) = raw else {
+        return ("never".to_string(), None);
+    };
+
+    match DateTime::parse_from_rfc3339(raw) {
+        Ok(dt) => {
+            let absolute = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+            let duration = Utc::now().signed_duration_since(dt);
+            let relative = if duration.num_days() > 30 {
+                format!("about {}mo ago", duration.num_days() / 30)
+            } else if duration.num_days() > 0 {
+                format!("about {}d ago", duration.num_days())
+            } else if duration.num_hours() > 0 {
+                format!("about {}h ago", duration.num_hours())
+            } else if duration.num_minutes() > 0 {
+                format!("about {} min ago", duration.num_minutes())
+            } else {
+                "just now".to_string()
+            };
+            (relative, Some(absolute))
+        }
+        Err(_) => (raw.to_string(), None),
+    }
+}
+
+fn field_value_width(area: Rect, label_width: usize) -> usize {
+    let content_width = area.width.saturating_sub(2) as usize;
+    let prefix_width = 4 + label_width;
+    content_width.saturating_sub(prefix_width).max(16)
+}
+
+fn wrap_comma_separated_values(values: &[String], max_width: usize) -> Vec<String> {
+    if values.is_empty() {
+        return vec!["all".to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    for value in values {
+        if current.is_empty() {
+            current.push_str(value);
+            continue;
+        }
+
+        if current.len() + 2 + value.len() <= max_width {
+            current.push_str(", ");
+            current.push_str(value);
+        } else {
+            lines.push(current);
+            current = value.clone();
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
 }
 
 fn render_create_workspace_detail(frame: &mut Frame, area: Rect) {
@@ -342,10 +457,9 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
             Span::styled(" Switch / Config", dim),
             Span::raw("   "),
             Span::styled("[d]", key_style),
-            Span::styled(" Default", dim),
+            Span::styled(" Set default", dim),
             Span::raw("   "),
-            Span::styled("[o]", key_style),
-            Span::styled(" Open folder", dim),
+            Span::styled("[Open folder (f)]", key_style),
             Span::raw("   "),
             Span::styled("[n]", key_style),
             Span::styled(" New", dim),
@@ -373,16 +487,39 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" Back", dim),
     ];
 
-    let right_spans = vec![
-        Span::styled("[\u{2191}]", key_style),
-        Span::raw(" "),
-        Span::styled("[\u{2193}]", key_style),
-        Span::styled(" Move", dim),
-        Span::raw("   "),
-        Span::styled("[Enter]", key_style),
-        Span::styled(" Select", dim),
-        Span::raw(" "),
-    ];
+    let right_spans = if app.workspace_index < app.workspaces.len() && app.settings_config_expanded
+    {
+        vec![
+            Span::styled("[\u{2191}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2193}]", key_style),
+            Span::styled(" Scroll", dim),
+            Span::raw("   "),
+            Span::styled("[\u{2190}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2192}]", key_style),
+            Span::styled(" Move", dim),
+            Span::raw("   "),
+            Span::styled("[Enter]", key_style),
+            Span::styled(" Collapse", dim),
+            Span::raw(" "),
+        ]
+    } else {
+        vec![
+            Span::styled("[\u{2190}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2191}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2193}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2192}]", key_style),
+            Span::styled(" Move", dim),
+            Span::raw("   "),
+            Span::styled("[Enter]", key_style),
+            Span::styled(" Select", dim),
+            Span::raw(" "),
+        ]
+    };
 
     frame.render_widget(actions, rows[0]);
     frame.render_widget(Paragraph::new(vec![Line::from(left_spans)]), nav_cols[0]);
@@ -390,4 +527,29 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Paragraph::new(vec![Line::from(right_spans)]).right_aligned(),
         nav_cols[1],
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrap_comma_separated_values_wraps_and_preserves_order() {
+        let values = vec![
+            "CommitBook".to_string(),
+            "GenAI-Wednesday".to_string(),
+            "M-com".to_string(),
+            "Manuel-Forks".to_string(),
+        ];
+
+        let lines = wrap_comma_separated_values(&values, 20);
+        assert!(lines.len() > 1);
+        assert_eq!(lines.join(", "), values.join(", "));
+    }
+
+    #[test]
+    fn wrap_comma_separated_values_empty_means_all() {
+        let lines = wrap_comma_separated_values(&[], 20);
+        assert_eq!(lines, vec!["all".to_string()]);
+    }
 }
