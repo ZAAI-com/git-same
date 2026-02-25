@@ -11,9 +11,9 @@ use ratatui::{
     Frame,
 };
 
+use crate::banner::render_banner;
 use crate::config::WorkspaceManager;
 use crate::tui::app::App;
-use crate::banner::render_banner;
 use crate::tui::screens::dashboard::format_timestamp;
 
 pub fn render(app: &App, frame: &mut Frame) {

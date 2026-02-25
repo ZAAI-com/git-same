@@ -3,7 +3,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::app::{App, CheckEntry, Operation, OperationState, Screen};
+use super::app::{
+    App, CheckEntry, LogFilter, Operation, OperationState, Screen, SyncHistoryEntry, SyncLogEntry,
+    SyncLogStatus,
+};
 use super::event::{AppEvent, BackendMessage};
 use crate::config::{Config, WorkspaceManager};
 use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
@@ -12,7 +15,7 @@ use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
 pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &UnboundedSender<AppEvent>) {
     match event {
         AppEvent::Terminal(key) => handle_key(app, key, backend_tx).await,
-        AppEvent::Backend(msg) => handle_backend_message(app, msg),
+        AppEvent::Backend(msg) => handle_backend_message(app, msg, backend_tx),
         AppEvent::Tick => {
             // Increment animation tick counter on Progress screen during active ops
             if app.screen == Screen::Progress
@@ -22,6 +25,21 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 )
             {
                 app.tick_count = app.tick_count.wrapping_add(1);
+
+                // Sample throughput every 10 ticks (1 second at 100ms tick rate)
+                if app.tick_count.is_multiple_of(10) {
+                    if let OperationState::Running {
+                        completed,
+                        ref mut throughput_samples,
+                        ref mut last_sample_completed,
+                        ..
+                    } = app.operation_state
+                    {
+                        let delta = completed.saturating_sub(*last_sample_completed) as u64;
+                        throughput_samples.push(delta);
+                        *last_sample_completed = completed;
+                    }
+                }
             }
             // Drive setup wizard org discovery on tick
             if app.screen == Screen::SetupWizard {
@@ -471,17 +489,80 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
 }
 
 fn handle_progress_key(app: &mut App, key: KeyEvent) {
+    let is_finished = matches!(app.operation_state, OperationState::Finished { .. });
+
     match key.code {
         // Scroll log
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
+            if is_finished {
+                let count = filtered_log_count(app);
+                if count > 0 && app.sync_log_index < count.saturating_sub(1) {
+                    app.sync_log_index += 1;
+                }
+            } else if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
                 app.scroll_offset += 1;
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            if is_finished {
+                app.sync_log_index = app.sync_log_index.saturating_sub(1);
+            } else {
+                app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            }
+        }
+        // Post-sync log filters
+        KeyCode::Char('a') if is_finished => {
+            app.log_filter = LogFilter::All;
+            app.sync_log_index = 0;
+        }
+        KeyCode::Char('u') if is_finished => {
+            app.log_filter = LogFilter::Updated;
+            app.sync_log_index = 0;
+        }
+        KeyCode::Char('f') if is_finished => {
+            app.log_filter = LogFilter::Failed;
+            app.sync_log_index = 0;
+        }
+        KeyCode::Char('x') if is_finished => {
+            app.log_filter = LogFilter::Skipped;
+            app.sync_log_index = 0;
+        }
+        KeyCode::Char('c') if is_finished => {
+            app.log_filter = LogFilter::Changelog;
+            app.sync_log_index = 0;
+        }
+        // Sync history overlay toggle
+        KeyCode::Char('h') if is_finished => {
+            app.show_sync_history = !app.show_sync_history;
         }
         _ => {}
+    }
+}
+
+/// Count of log entries matching the current filter.
+fn filtered_log_count(app: &App) -> usize {
+    match app.log_filter {
+        LogFilter::All => app.sync_log_entries.len(),
+        LogFilter::Updated => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates || e.is_clone)
+            .count(),
+        LogFilter::Failed => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Failed)
+            .count(),
+        LogFilter::Skipped => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Skipped)
+            .count(),
+        LogFilter::Changelog => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates)
+            .count(),
     }
 }
 
@@ -568,7 +649,11 @@ fn dashboard_selected_repo_path(app: &App) -> Option<std::path::PathBuf> {
     repos.get(selected).map(|r| r.path.clone())
 }
 
-fn handle_backend_message(app: &mut App, msg: BackendMessage) {
+fn handle_backend_message(
+    app: &mut App,
+    msg: BackendMessage,
+    backend_tx: &UnboundedSender<AppEvent>,
+) {
     match msg {
         BackendMessage::OrgsDiscovered(count) => {
             app.operation_state = OperationState::Discovering {
@@ -604,8 +689,19 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
             app.operation_state = OperationState::Idle;
             app.error_message = Some(msg);
         }
-        BackendMessage::OperationStarted { operation, total } => {
+        BackendMessage::OperationStarted {
+            operation,
+            total,
+            to_clone,
+            to_sync,
+        } => {
             app.log_lines.clear();
+            app.sync_log_entries.clear();
+            app.log_filter = LogFilter::All;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+            app.show_sync_history = false;
             app.operation_state = OperationState::Running {
                 operation,
                 total,
@@ -613,62 +709,197 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
                 failed: 0,
                 skipped: 0,
                 current_repo: String::new(),
+                with_updates: 0,
+                cloned: 0,
+                synced: 0,
+                to_clone,
+                to_sync,
+                total_new_commits: 0,
+                started_at: std::time::Instant::now(),
+                active_repos: Vec::new(),
+                throughput_samples: Vec::new(),
+                last_sample_completed: 0,
             };
+        }
+        BackendMessage::RepoStarted { repo_name } => {
+            if let OperationState::Running {
+                ref mut active_repos,
+                ..
+            } = app.operation_state
+            {
+                active_repos.push(repo_name);
+            }
         }
         BackendMessage::RepoProgress {
             repo_name,
             success,
             skipped,
             message,
+            had_updates,
+            is_clone,
+            new_commits,
+            skip_reason: _,
         } => {
             if let OperationState::Running {
                 ref mut completed,
                 ref mut failed,
                 skipped: ref mut skip_count,
                 ref mut current_repo,
+                ref mut with_updates,
+                ref mut cloned,
+                ref mut synced,
+                ref mut total_new_commits,
+                ref mut active_repos,
                 ..
             } = app.operation_state
             {
                 *completed += 1;
                 *current_repo = repo_name.clone();
+
+                // Remove from active workers
+                active_repos.retain(|r| r != &repo_name);
+
                 if skipped {
                     *skip_count += 1;
                 } else if !success {
                     *failed += 1;
+                } else {
+                    if is_clone {
+                        *cloned += 1;
+                    } else {
+                        *synced += 1;
+                    }
+                    if had_updates {
+                        *with_updates += 1;
+                        if let Some(n) = new_commits {
+                            *total_new_commits += n;
+                        }
+                    }
                 }
             }
-            let prefix = if !success {
-                "[!!]"
+
+            // Build structured log entry
+            let log_status = if !success {
+                SyncLogStatus::Failed
             } else if skipped {
-                "[--]"
+                SyncLogStatus::Skipped
+            } else if is_clone {
+                SyncLogStatus::Cloned
+            } else if had_updates {
+                SyncLogStatus::Updated
             } else {
-                "[ok]"
+                SyncLogStatus::Success
             };
-            app.log_lines
-                .push(format!("{} {} - {}", prefix, repo_name, message));
+
+            app.sync_log_entries.push(SyncLogEntry {
+                repo_name: repo_name.clone(),
+                status: log_status,
+                message: message.clone(),
+                had_updates,
+                is_clone,
+                new_commits,
+                path: None, // Will be populated later if needed for deep dive
+            });
+
+            // Build legacy log line with enriched prefixes
+            let prefix = match log_status {
+                SyncLogStatus::Failed => "[!!]",
+                SyncLogStatus::Skipped => "[--]",
+                SyncLogStatus::Cloned => "[++]",
+                SyncLogStatus::Updated => "[**]",
+                SyncLogStatus::Success => "[ok]",
+            };
+
+            let commit_info = if had_updates {
+                if let Some(n) = new_commits {
+                    if n > 0 {
+                        format!(" ({} new commits)", n)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
+            app.log_lines.push(format!(
+                "{} {} - {}{}",
+                prefix, repo_name, message, commit_info
+            ));
             // Auto-scroll to bottom
             app.scroll_offset = app.log_lines.len().saturating_sub(1);
         }
         BackendMessage::OperationComplete(summary) => {
-            let op = match &app.operation_state {
-                OperationState::Running { operation, .. } => *operation,
-                _ => Operation::Sync,
+            // Extract accumulated metrics from Running state before transitioning
+            let (op, wu, cl, sy, tnc, dur) = match &app.operation_state {
+                OperationState::Running {
+                    operation,
+                    with_updates,
+                    cloned,
+                    synced,
+                    total_new_commits,
+                    started_at,
+                    ..
+                } => (
+                    *operation,
+                    *with_updates,
+                    *cloned,
+                    *synced,
+                    *total_new_commits,
+                    started_at.elapsed().as_secs_f64(),
+                ),
+                _ => (Operation::Sync, 0, 0, 0, 0, 0.0),
             };
+
             // Update last_synced after a successful sync
             if op == Operation::Sync {
                 let now = chrono::Utc::now().to_rfc3339();
                 if let Some(ref mut ws) = app.active_workspace {
                     ws.last_synced = Some(now.clone());
                     let _ = WorkspaceManager::save(ws);
-                    // Keep workspaces list in sync
                     if let Some(entry) = app.workspaces.iter_mut().find(|w| w.name == ws.name) {
-                        entry.last_synced = Some(now);
+                        entry.last_synced = Some(now.clone());
                     }
                 }
+
+                // Save to sync history
+                app.sync_history.push(SyncHistoryEntry {
+                    timestamp: now,
+                    duration_secs: dur,
+                    success: summary.success,
+                    failed: summary.failed,
+                    skipped: summary.skipped,
+                    with_updates: wu,
+                    cloned: cl,
+                    total_new_commits: tnc,
+                });
+                // Cap history at 10
+                if app.sync_history.len() > 10 {
+                    app.sync_history.remove(0);
+                }
+
+                // Auto-trigger status scan so dashboard is fresh
+                super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
             }
+
+            // Default to Updated filter if there were updates, else All
+            app.log_filter = if wu > 0 || cl > 0 {
+                LogFilter::Updated
+            } else {
+                LogFilter::All
+            };
+            app.sync_log_index = 0;
+
             app.operation_state = OperationState::Finished {
                 operation: op,
                 summary,
+                with_updates: wu,
+                cloned: cl,
+                synced: sy,
+                total_new_commits: tnc,
+                duration_secs: dur,
             };
         }
         BackendMessage::OperationError(msg) => {
@@ -677,9 +908,21 @@ fn handle_backend_message(app: &mut App, msg: BackendMessage) {
         }
         BackendMessage::StatusResults(entries) => {
             app.local_repos = entries;
-            app.operation_state = OperationState::Idle;
+            if matches!(
+                app.operation_state,
+                OperationState::Running {
+                    operation: Operation::Status,
+                    ..
+                }
+            ) {
+                app.operation_state = OperationState::Idle;
+            }
             app.status_loading = false;
             app.last_status_scan = Some(std::time::Instant::now());
+        }
+        BackendMessage::RepoCommitLog { repo_name, commits } => {
+            app.expanded_repo = Some(repo_name);
+            app.repo_commits = commits;
         }
         BackendMessage::InitConfigCreated(path) => {
             app.config_created = true;

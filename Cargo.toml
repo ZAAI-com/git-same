@@ -1,6 +1,6 @@
 [package]
 name = "git-same"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["Git-Same Contributors"]
 description = "Mirror GitHub structure /orgs/repos/ to local file system."

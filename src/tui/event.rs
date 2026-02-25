@@ -34,14 +34,34 @@ pub enum BackendMessage {
     DiscoveryComplete(Vec<OwnedRepo>),
     /// Discovery failed.
     DiscoveryError(String),
-    /// Operation phase started with N total repos.
-    OperationStarted { operation: Operation, total: usize },
+    /// Operation phase started with total and per-phase breakdown.
+    OperationStarted {
+        operation: Operation,
+        total: usize,
+        to_clone: usize,
+        to_sync: usize,
+    },
+    /// A repo started processing (for live worker slots).
+    RepoStarted { repo_name: String },
     /// Operation progress: one repo processed.
     RepoProgress {
         repo_name: String,
         success: bool,
         skipped: bool,
         message: String,
+        /// Whether this repo had new commits.
+        had_updates: bool,
+        /// Whether this was a clone (not a sync).
+        is_clone: bool,
+        /// Number of new commits fetched (if known).
+        new_commits: Option<u32>,
+        /// Structured skip reason (if skipped).
+        skip_reason: Option<String>,
+    },
+    /// Commit log for a specific repo (post-sync deep dive).
+    RepoCommitLog {
+        repo_name: String,
+        commits: Vec<String>,
     },
     /// Operation complete.
     OperationComplete(OpSummary),

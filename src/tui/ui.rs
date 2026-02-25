@@ -15,7 +15,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         }
         Screen::WorkspaceSelector => screens::workspace_selector::render(app, frame),
         Screen::Dashboard => screens::dashboard::render(app, frame),
-        Screen::Progress => screens::progress::render(app, frame),
+        Screen::Progress => screens::sync_progress::render(app, frame),
         Screen::Settings => screens::settings::render(app, frame),
     }
 }

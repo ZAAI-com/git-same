@@ -57,7 +57,12 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_config_reqs(app, frame, chunks[2]);
     render_workspace_info(app, frame, chunks[3]);
     let stat_cols = render_stats(app, frame, chunks[4]);
-    render_tab_content(app, frame, chunks[5]);
+    let table_area = Rect {
+        y: chunks[5].y + 1,
+        height: chunks[5].height.saturating_sub(1),
+        ..chunks[5]
+    };
+    render_tab_content(app, frame, table_area);
     render_tab_connector(frame, &stat_cols, chunks[5], app.stat_index);
     render_bottom_actions(app, frame, chunks[6]);
 }
@@ -76,11 +81,8 @@ fn render_tagline(frame: &mut Frame, area: Rect) {
 }
 
 fn render_info_line(frame: &mut Frame, area: Rect, left: Vec<Span>, right: Vec<Span>) {
-    let cols = Layout::horizontal([
-        Constraint::Percentage(50),
-        Constraint::Percentage(50),
-    ])
-    .split(area);
+    let cols =
+        Layout::horizontal([Constraint::Percentage(46), Constraint::Percentage(54)]).split(area);
     frame.render_widget(Paragraph::new(Line::from(left)).right_aligned(), cols[0]);
     frame.render_widget(Paragraph::new(Line::from(right)), cols[1]);
 }
@@ -89,7 +91,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
 
     let key_style = Style::default()
-        .fg(Color::Cyan)
+        .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     let left = vec![
         Span::styled("[e]", key_style),
@@ -129,9 +131,8 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
-    let cyan = Style::default().fg(Color::Cyan);
     let key_style = Style::default()
-        .fg(Color::Cyan)
+        .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
     match &app.active_workspace {
         Some(ws) => {
@@ -145,12 +146,7 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
                 frame,
                 area,
                 vec![
-                    Span::styled(
-                        "[w]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled("[w]", key_style),
                     Span::styled(" Workspace   ", dim),
                 ],
                 vec![
@@ -158,7 +154,9 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
                     Span::styled(" Folder ", dim),
                     Span::styled(
                         folder_name,
-                        cyan.add_modifier(Modifier::ITALIC | Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Rgb(59, 130, 246))
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
                     Span::styled("[/]", key_style),
@@ -209,6 +207,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[0],
         &total_owners.to_string(),
+        "o",
         "Owners",
         Color::Cyan,
         selected == 0,
@@ -217,6 +216,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[1],
         &total_repos.to_string(),
+        "r",
         "Repositories",
         Color::Cyan,
         selected == 1,
@@ -225,6 +225,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[2],
         &clean.to_string(),
+        "c",
         "Clean",
         Color::Green,
         selected == 2,
@@ -233,6 +234,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[3],
         &behind.to_string(),
+        "b",
         "Behind",
         Color::Blue,
         selected == 3,
@@ -241,6 +243,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[4],
         &ahead.to_string(),
+        "a",
         "Ahead",
         Color::Blue,
         selected == 4,
@@ -249,6 +252,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         frame,
         cols[5],
         &uncommitted.to_string(),
+        "u",
         "Uncommitted",
         Color::Yellow,
         selected == 5,
@@ -261,6 +265,7 @@ fn render_stat_box(
     frame: &mut Frame,
     area: Rect,
     value: &str,
+    key: &str,
     label: &str,
     color: Color,
     selected: bool,
@@ -287,7 +292,16 @@ fn render_stat_box(
             value,
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(label, Style::default().fg(Color::DarkGray))),
+        Line::from(vec![
+            Span::styled(
+                format!("[{}]", key),
+                Style::default()
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(label, Style::default().fg(Color::DarkGray)),
+        ]),
     ])
     .centered()
     .block(block);
@@ -418,7 +432,7 @@ fn render_owners_tab(
                 }
             };
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 name.to_string(),
                 total.to_string(),
                 fmt(behind),
@@ -464,7 +478,7 @@ fn render_repos_tab(
         .map(|(i, entry)| {
             let branch = entry.branch.as_deref().unwrap_or("-");
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 entry.full_name.clone(),
                 branch.to_string(),
                 fmt_flag(entry.is_uncommitted),
@@ -503,7 +517,7 @@ fn render_clean_tab(
         .map(|(i, entry)| {
             let branch = entry.branch.as_deref().unwrap_or("-");
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 entry.full_name.clone(),
                 branch.to_string(),
             ])
@@ -536,7 +550,7 @@ fn render_behind_tab(
         .map(|(i, entry)| {
             let branch = entry.branch.as_deref().unwrap_or("-");
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 entry.full_name.clone(),
                 branch.to_string(),
                 fmt_count_minus(entry.behind),
@@ -570,7 +584,7 @@ fn render_ahead_tab(
         .map(|(i, entry)| {
             let branch = entry.branch.as_deref().unwrap_or("-");
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 entry.full_name.clone(),
                 branch.to_string(),
                 fmt_count_plus(entry.ahead),
@@ -617,7 +631,7 @@ fn render_uncommitted_tab(
                 }
             };
             Row::new(vec![
-                (i + 1).to_string(),
+                format!("{:>4}", i + 1),
                 entry.full_name.clone(),
                 branch.to_string(),
                 fmt_n(entry.staged_count),
@@ -705,24 +719,57 @@ fn render_table_block(
     frame.render_stateful_widget(table, area, table_state);
 }
 
-fn render_bottom_actions(_app: &App, frame: &mut Frame, area: Rect) {
+fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
     let rows = Layout::vertical([
-        Constraint::Length(1), // Actions
+        Constraint::Length(1), // Actions + sync info
         Constraint::Length(1), // Navigation
     ])
     .split(area);
 
     let dim = Style::default().fg(Color::DarkGray);
     let key_style = Style::default()
-        .fg(Color::Cyan)
+        .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
 
-    // Line 1: Actions
-    let actions = Line::from(vec![
-        Span::raw(" "),
+    // Line 1: sync timestamp (center) + [s] Sync (right)
+    let action_cols = Layout::horizontal([
+        Constraint::Percentage(33),
+        Constraint::Percentage(34),
+        Constraint::Percentage(33),
+    ])
+    .split(rows[0]);
+
+    if let Some(ref ws) = app.active_workspace {
+        if let Some(ref ts) = ws.last_synced {
+            let folder_name = std::path::Path::new(&ws.base_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&ws.base_path);
+            let formatted = format_timestamp(ts);
+            let sync_line = Line::from(vec![
+                Span::styled("Synced ", dim),
+                Span::styled(
+                    folder_name.to_string(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" with GitHub ", dim),
+                Span::styled(formatted, dim),
+            ]);
+            frame.render_widget(Paragraph::new(vec![sync_line]).centered(), action_cols[1]);
+        }
+    }
+
+    let actions_right = Line::from(vec![
         Span::styled("[s]", key_style),
         Span::styled(" Sync", dim),
+        Span::raw(" "),
     ]);
+    frame.render_widget(
+        Paragraph::new(vec![actions_right]).right_aligned(),
+        action_cols[2],
+    );
 
     // Line 2: Navigation — left-aligned (Quit, Back) and right-aligned (Left, Right, Select)
     let nav_cols =
@@ -752,11 +799,9 @@ fn render_bottom_actions(_app: &App, frame: &mut Frame, area: Rect) {
         Span::raw(" "),
     ];
 
-    let actions_p = Paragraph::new(vec![actions]).centered();
     let nav_left = Paragraph::new(vec![Line::from(left_spans)]);
     let nav_right = Paragraph::new(vec![Line::from(right_spans)]).right_aligned();
 
-    frame.render_widget(actions_p, rows[0]);
     frame.render_widget(nav_left, nav_cols[0]);
     frame.render_widget(nav_right, nav_cols[1]);
 }

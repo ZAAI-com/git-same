@@ -62,7 +62,11 @@ struct TuiCloneProgress {
 }
 
 impl CloneProgress for TuiCloneProgress {
-    fn on_start(&self, _repo: &OwnedRepo, _index: usize, _total: usize) {}
+    fn on_start(&self, repo: &OwnedRepo, _index: usize, _total: usize) {
+        let _ = self.tx.send(AppEvent::Backend(BackendMessage::RepoStarted {
+            repo_name: repo.full_name().to_string(),
+        }));
+    }
 
     fn on_complete(&self, repo: &OwnedRepo, _index: usize, _total: usize) {
         let _ = self
@@ -72,6 +76,10 @@ impl CloneProgress for TuiCloneProgress {
                 success: true,
                 skipped: false,
                 message: "cloned".to_string(),
+                had_updates: true,
+                is_clone: true,
+                new_commits: None,
+                skip_reason: None,
             }));
     }
 
@@ -83,6 +91,10 @@ impl CloneProgress for TuiCloneProgress {
                 success: false,
                 skipped: false,
                 message: error.to_string(),
+                had_updates: false,
+                is_clone: true,
+                new_commits: None,
+                skip_reason: None,
             }));
     }
 
@@ -94,6 +106,10 @@ impl CloneProgress for TuiCloneProgress {
                 success: true,
                 skipped: true,
                 message: format!("skipped: {}", reason),
+                had_updates: false,
+                is_clone: true,
+                new_commits: None,
+                skip_reason: Some(reason.to_string()),
             }));
     }
 }
@@ -103,7 +119,11 @@ struct TuiSyncProgress {
 }
 
 impl SyncProgress for TuiSyncProgress {
-    fn on_start(&self, _repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {}
+    fn on_start(&self, repo: &OwnedRepo, _path: &Path, _index: usize, _total: usize) {
+        let _ = self.tx.send(AppEvent::Backend(BackendMessage::RepoStarted {
+            repo_name: repo.full_name().to_string(),
+        }));
+    }
 
     fn on_fetch_complete(
         &self,
@@ -124,6 +144,10 @@ impl SyncProgress for TuiSyncProgress {
                 success: true,
                 skipped: false,
                 message: status.to_string(),
+                had_updates: result.updated,
+                is_clone: false,
+                new_commits: result.new_commits,
+                skip_reason: None,
             }));
     }
 
@@ -146,6 +170,10 @@ impl SyncProgress for TuiSyncProgress {
                 success: result.success,
                 skipped: false,
                 message: status.to_string(),
+                had_updates: result.success,
+                is_clone: false,
+                new_commits: None,
+                skip_reason: None,
             }));
     }
 
@@ -157,6 +185,10 @@ impl SyncProgress for TuiSyncProgress {
                 success: false,
                 skipped: false,
                 message: error.to_string(),
+                had_updates: false,
+                is_clone: false,
+                new_commits: None,
+                skip_reason: None,
             }));
     }
 
@@ -168,6 +200,10 @@ impl SyncProgress for TuiSyncProgress {
                 success: true,
                 skipped: true,
                 message: format!("skipped: {}", reason),
+                had_updates: false,
+                is_clone: false,
+                new_commits: None,
+                skip_reason: Some(reason.to_string()),
             }));
     }
 }
@@ -300,10 +336,14 @@ async fn run_sync_operation(
     let (to_sync, _skipped) = orchestrator.plan_sync(&base_path, repos, &provider_name, &git, true);
 
     // Send OperationStarted so the UI transitions to Running state
-    let total = plan.to_clone.len() + to_sync.len();
+    let clone_count = plan.to_clone.len();
+    let sync_count = to_sync.len();
+    let total = clone_count + sync_count;
     let _ = tx.send(AppEvent::Backend(BackendMessage::OperationStarted {
         operation: Operation::Sync,
         total,
+        to_clone: clone_count,
+        to_sync: sync_count,
     }));
 
     let concurrency = workspace.concurrency.unwrap_or(config.concurrency);

@@ -6,6 +6,7 @@ use crate::types::{OpSummary, OwnedRepo};
 use ratatui::widgets::TableState;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,11 +49,86 @@ pub enum OperationState {
         failed: usize,
         skipped: usize,
         current_repo: String,
+        /// Repos that had new commits (updated or cloned).
+        with_updates: usize,
+        /// New repos cloned so far.
+        cloned: usize,
+        /// Existing repos synced so far.
+        synced: usize,
+        /// Planned clone count (for phase indicator).
+        to_clone: usize,
+        /// Planned sync count (for phase indicator).
+        to_sync: usize,
+        /// Aggregate new commits fetched.
+        total_new_commits: u32,
+        /// When the operation started (for elapsed/ETA).
+        started_at: Instant,
+        /// Repos currently being processed (for worker slots).
+        active_repos: Vec<String>,
+        /// Throughput samples (repos completed per second window).
+        throughput_samples: Vec<u64>,
+        /// Completed count at last throughput sample.
+        last_sample_completed: usize,
     },
     Finished {
         operation: Operation,
         summary: OpSummary,
+        /// Repos that had new commits.
+        with_updates: usize,
+        /// New repos cloned.
+        cloned: usize,
+        /// Existing repos synced.
+        synced: usize,
+        /// Aggregate new commits fetched.
+        total_new_commits: u32,
+        /// Wall-clock duration in seconds.
+        duration_secs: f64,
     },
+}
+
+/// A structured log entry from a sync operation.
+#[derive(Debug, Clone)]
+pub struct SyncLogEntry {
+    pub repo_name: String,
+    pub status: SyncLogStatus,
+    pub message: String,
+    pub had_updates: bool,
+    pub is_clone: bool,
+    pub new_commits: Option<u32>,
+    pub path: Option<PathBuf>,
+}
+
+/// Status classification for a sync log entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncLogStatus {
+    Success,
+    Updated,
+    Cloned,
+    Failed,
+    Skipped,
+}
+
+/// Filter for post-sync log view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFilter {
+    All,
+    Updated,
+    Failed,
+    Skipped,
+    Changelog,
+}
+
+/// A summary entry for sync history.
+#[derive(Debug, Clone)]
+pub struct SyncHistoryEntry {
+    pub timestamp: String,
+    pub duration_secs: f64,
+    pub success: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    pub with_updates: usize,
+    pub cloned: usize,
+    pub total_new_commits: u32,
 }
 
 /// A local repo with its computed status.
@@ -184,6 +260,27 @@ pub struct App {
 
     /// Tick counter for driving animations on the Progress screen.
     pub tick_count: u64,
+
+    /// Structured sync log entries (enriched data).
+    pub sync_log_entries: Vec<SyncLogEntry>,
+
+    /// Active log filter for post-sync view.
+    pub log_filter: LogFilter,
+
+    /// Sync history (last N summaries for comparison).
+    pub sync_history: Vec<SyncHistoryEntry>,
+
+    /// Whether sync history overlay is visible.
+    pub show_sync_history: bool,
+
+    /// Expanded repo in post-sync view (for commit deep dive).
+    pub expanded_repo: Option<String>,
+
+    /// Commit log for expanded repo.
+    pub repo_commits: Vec<String>,
+
+    /// Selected index in the post-sync filterable log.
+    pub sync_log_index: usize,
 }
 
 impl App {
@@ -253,6 +350,13 @@ impl App {
             settings_index: 0,
             settings_config_expanded: false,
             tick_count: 0,
+            sync_log_entries: Vec::new(),
+            log_filter: LogFilter::All,
+            sync_history: Vec::new(),
+            show_sync_history: false,
+            expanded_repo: None,
+            repo_commits: Vec::new(),
+            sync_log_index: 0,
         }
     }
 
