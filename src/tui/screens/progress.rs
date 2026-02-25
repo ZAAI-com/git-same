@@ -11,7 +11,7 @@ use ratatui::{
 use crate::tui::app::{App, OperationState};
 use crate::tui::widgets::status_bar;
 
-use super::dashboard::render_animated_banner;
+use crate::banner::render_animated_banner;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
