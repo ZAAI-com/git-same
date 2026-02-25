@@ -153,8 +153,8 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         if app.screen == Screen::InitCheck {
             return;
         }
-        // WorkspaceSelector: only go back if navigated to (has screen stack)
-        if app.screen == Screen::WorkspaceSelector && app.screen_stack.is_empty() {
+        // Workspace screen: only go back if navigated to (has screen stack)
+        if app.screen == Screen::Workspace && app.screen_stack.is_empty() {
             return;
         }
         app.go_back();
@@ -165,8 +165,8 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     match app.screen {
         Screen::InitCheck => handle_init_check_key(app, key, backend_tx).await,
         Screen::SetupWizard => unreachable!(), // handled above
-        Screen::WorkspaceSelector => {
-            handle_workspace_selector_key(app, key, backend_tx).await;
+        Screen::Workspace => {
+            handle_workspace_key(app, key, backend_tx).await;
         }
         Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
         Screen::Progress => handle_progress_key(app, key, backend_tx),
@@ -285,29 +285,58 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
     }
 }
 
-async fn handle_workspace_selector_key(
+async fn handle_workspace_key(
     app: &mut App,
     key: KeyEvent,
     backend_tx: &UnboundedSender<AppEvent>,
 ) {
     let num_ws = app.workspaces.len();
+    let total_entries = num_ws + 1; // workspaces + "Create Workspace"
 
     match key.code {
+        KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab if total_entries > 0 => {
+            app.workspace_index = (app.workspace_index + 1) % total_entries;
+            app.settings_config_expanded = false;
+        }
+        KeyCode::Char('k') | KeyCode::Up if total_entries > 0 => {
+            app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
+            app.settings_config_expanded = false;
+        }
+        KeyCode::Enter => {
+            if app.workspace_index < num_ws {
+                // On a workspace entry
+                let is_active = app
+                    .active_workspace
+                    .as_ref()
+                    .map(|aw| aw.name == app.workspaces[app.workspace_index].name)
+                    .unwrap_or(false);
+                if is_active {
+                    // Toggle config expansion
+                    app.settings_config_expanded = !app.settings_config_expanded;
+                } else {
+                    // Switch active workspace and go to dashboard
+                    app.select_workspace(app.workspace_index);
+                    app.screen = Screen::Dashboard;
+                    app.screen_stack.clear();
+                }
+            } else {
+                // "Create Workspace" entry
+                let default_path = std::env::current_dir()
+                    .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                    .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+                app.setup_state = Some(SetupState::new(&default_path));
+                app.navigate_to(Screen::SetupWizard);
+            }
+        }
         KeyCode::Char('n') => {
-            // Launch setup wizard to create a new workspace
+            // Shortcut to create workspace
             let default_path = std::env::current_dir()
                 .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
                 .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
             app.setup_state = Some(SetupState::new(&default_path));
             app.navigate_to(Screen::SetupWizard);
         }
-        KeyCode::Char('j') | KeyCode::Down if num_ws > 0 => {
-            app.workspace_index = (app.workspace_index + 1) % num_ws;
-        }
-        KeyCode::Char('k') | KeyCode::Up if num_ws > 0 => {
-            app.workspace_index = (app.workspace_index + num_ws - 1) % num_ws;
-        }
-        KeyCode::Char('d') if num_ws > 0 => {
+        KeyCode::Char('d') if app.workspace_index < num_ws => {
             // Toggle default workspace
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
                 let ws_name = ws.name.clone();
@@ -335,10 +364,12 @@ async fn handle_workspace_selector_key(
                 });
             }
         }
-        KeyCode::Enter if num_ws > 0 => {
-            app.select_workspace(app.workspace_index);
-            app.screen = Screen::Dashboard;
-            app.screen_stack.clear();
+        KeyCode::Char('o') if app.workspace_index < num_ws => {
+            // Open workspace folder
+            if let Some(ws) = app.workspaces.get(app.workspace_index) {
+                let path = ws.expanded_base_path();
+                let _ = std::process::Command::new("open").arg(&path).spawn();
+            }
         }
         _ => {}
     }
@@ -387,7 +418,7 @@ async fn handle_dashboard_key(
             app.navigate_to(Screen::Settings);
         }
         KeyCode::Char('w') => {
-            app.navigate_to(Screen::WorkspaceSelector);
+            app.navigate_to(Screen::Workspace);
         }
         KeyCode::Char('i') => {
             app.navigate_to(Screen::InitCheck);
@@ -438,25 +469,13 @@ async fn handle_dashboard_key(
 }
 
 fn handle_settings_key(app: &mut App, key: KeyEvent) {
-    let num_items = 2 + app.workspaces.len(); // Requirements, Options, + workspaces
+    let num_items = 2; // Requirements, Options
     match key.code {
-        KeyCode::Tab => {
-            if num_items > 0 {
-                app.settings_index = (app.settings_index + 1) % num_items;
-                app.settings_config_expanded = false;
-            }
-        }
-        KeyCode::Down => {
-            if num_items > 0 && app.settings_index < num_items - 1 {
-                app.settings_index += 1;
-                app.settings_config_expanded = false;
-            }
+        KeyCode::Tab | KeyCode::Down => {
+            app.settings_index = (app.settings_index + 1) % num_items;
         }
         KeyCode::Up => {
-            if app.settings_index > 0 {
-                app.settings_index -= 1;
-                app.settings_config_expanded = false;
-            }
+            app.settings_index = (app.settings_index + num_items - 1) % num_items;
         }
         KeyCode::Char('c') => {
             // Open config directory in Finder / file manager
@@ -471,22 +490,6 @@ fn handle_settings_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Char('m') => {
             app.sync_pull = !app.sync_pull;
-        }
-        KeyCode::Enter => {
-            // Toggle config expansion for workspace detail
-            if app.settings_index >= 2 {
-                app.settings_config_expanded = !app.settings_config_expanded;
-            }
-        }
-        KeyCode::Char('o') => {
-            // Open selected workspace folder
-            if app.settings_index >= 2 {
-                let ws_idx = app.settings_index - 2;
-                if let Some(ws) = app.workspaces.get(ws_idx) {
-                    let path = ws.expanded_base_path();
-                    let _ = std::process::Command::new("open").arg(&path).spawn();
-                }
-            }
         }
         _ => {}
     }

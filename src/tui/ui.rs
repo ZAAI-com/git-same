@@ -13,7 +13,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
                 crate::setup::ui::render(setup, frame);
             }
         }
-        Screen::WorkspaceSelector => screens::workspace_selector::render(app, frame),
+        Screen::Workspace => screens::workspace::render(app, frame),
         Screen::Dashboard => screens::dashboard::render(app, frame),
         Screen::Progress => screens::sync_progress::render(app, frame),
         Screen::Settings => screens::settings::render(app, frame),

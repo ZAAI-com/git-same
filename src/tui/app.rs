@@ -14,7 +14,7 @@ use std::time::Instant;
 pub enum Screen {
     InitCheck,
     SetupWizard,
-    WorkspaceSelector,
+    Workspace,
     Dashboard,
     Progress,
     Settings,
@@ -301,10 +301,10 @@ impl App {
                         let bp = Some(ws.expanded_base_path());
                         (Screen::Dashboard, Some(ws.clone()), bp)
                     } else {
-                        (Screen::WorkspaceSelector, None, None)
+                        (Screen::Workspace, None, None)
                     }
                 } else {
-                    (Screen::WorkspaceSelector, None, None)
+                    (Screen::Workspace, None, None)
                 }
             }
         };
@@ -432,7 +432,7 @@ mod tests {
         let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
         let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
         let app = App::new(Config::default(), vec![ws1, ws2]);
-        assert_eq!(app.screen, Screen::WorkspaceSelector);
+        assert_eq!(app.screen, Screen::Workspace);
         assert!(app.active_workspace.is_none());
     }
 
@@ -454,7 +454,7 @@ mod tests {
         let mut config = Config::default();
         config.default_workspace = Some("nonexistent".to_string());
         let app = App::new(config, vec![ws1, ws2]);
-        assert_eq!(app.screen, Screen::WorkspaceSelector);
+        assert_eq!(app.screen, Screen::Workspace);
         assert!(app.active_workspace.is_none());
     }
 }

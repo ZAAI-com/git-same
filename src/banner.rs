@@ -19,11 +19,19 @@ const LINE5_SUFFIX: &str = "╗";
 /// Line 6.
 const LAST_LINE: &str = " ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝";
 
-/// Gradient color stops: Blue → Cyan → Green → Purple.
-const GRADIENT_STOPS: [(u8, u8, u8); 4] = [
+/// Static gradient color stops: Blue → Cyan → Green.
+const GRADIENT_STOPS: [(u8, u8, u8); 3] = [
     (59, 130, 246), // Blue
     (6, 182, 212),  // Cyan
     (34, 197, 94),  // Green
+];
+
+/// Animated gradient color stops: Blue → Cyan → Green → Indigo → Purple.
+const ANIMATED_GRADIENT_STOPS: [(u8, u8, u8); 5] = [
+    (59, 130, 246), // Blue
+    (6, 182, 212),  // Cyan
+    (34, 197, 94),  // Green
+    (99, 102, 241), // Indigo
     (147, 51, 234), // Purple
 ];
 
@@ -148,7 +156,7 @@ fn animated_gradient_line<'a>(text: &'a str, stops: &[(u8, u8, u8)], phase: f64)
     Line::from(spans)
 }
 
-/// Render the GIT-SAME banner with a static Blue → Cyan → Green → Purple gradient.
+/// Render the GIT-SAME banner with a static Blue → Cyan → Green gradient.
 #[cfg(feature = "tui")]
 pub fn render_banner(frame: &mut Frame, area: Rect) {
     let version = env!("CARGO_PKG_VERSION");
@@ -208,7 +216,7 @@ pub fn render_banner(frame: &mut Frame, area: Rect) {
 pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
     let version = env!("CARGO_PKG_VERSION");
     let version_display = format!("{:^6}", version);
-    let stops: &[(u8, u8, u8)] = &GRADIENT_STOPS;
+    let stops: &[(u8, u8, u8)] = &ANIMATED_GRADIENT_STOPS;
 
     let mut banner_lines: Vec<Line> = Vec::new();
     for text in &LINES {

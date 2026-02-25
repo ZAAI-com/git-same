@@ -136,7 +136,7 @@ fn render_nothing_changed_layout(app: &App, frame: &mut Frame, phase: f64) {
             Line::from(Span::styled(
                 "Everything up to date",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::Rgb(21, 128, 61))
                     .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
@@ -164,7 +164,7 @@ fn render_title(app: &App, frame: &mut Frame, area: Rect) {
     };
 
     let style = match &app.operation_state {
-        OperationState::Finished { .. } => Style::default().fg(Color::Green),
+        OperationState::Finished { .. } => Style::default().fg(Color::Rgb(21, 128, 61)),
         OperationState::Running { .. } => Style::default().fg(Color::Cyan),
         _ => Style::default().fg(Color::Yellow),
     };
@@ -252,8 +252,11 @@ fn render_enriched_counters(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
-        Span::styled("Current: ", Style::default().fg(Color::Green)),
-        Span::styled(up_to_date.to_string(), Style::default().fg(Color::Green)),
+        Span::styled("Current: ", Style::default().fg(Color::Rgb(21, 128, 61))),
+        Span::styled(
+            up_to_date.to_string(),
+            Style::default().fg(Color::Rgb(21, 128, 61)),
+        ),
         Span::raw("  "),
         Span::styled("Cloned: ", Style::default().fg(Color::Cyan)),
         Span::styled(cloned.to_string(), Style::default().fg(Color::Cyan)),
@@ -407,7 +410,7 @@ fn render_phase_indicator(app: &App, frame: &mut Frame, area: Rect) {
             let filled = (sync_pct * bar_width as f64).round() as usize;
             spans.push(Span::styled(
                 "\u{2588}".repeat(filled),
-                Style::default().fg(Color::Green),
+                Style::default().fg(Color::Rgb(21, 128, 61)),
             ));
             spans.push(Span::styled(
                 "\u{2591}".repeat(bar_width.saturating_sub(filled)),
@@ -415,7 +418,7 @@ fn render_phase_indicator(app: &App, frame: &mut Frame, area: Rect) {
             ));
             spans.push(Span::styled(
                 format!(" Sync {}/{}", synced, to_sync),
-                Style::default().fg(Color::Green),
+                Style::default().fg(Color::Rgb(21, 128, 61)),
             ));
         }
 
@@ -463,7 +466,7 @@ fn render_running_log(app: &App, frame: &mut Frame, area: Rect) {
             } else if line.starts_with("[++]") {
                 Style::default().fg(Color::Cyan)
             } else if line.starts_with("[ok]") {
-                Style::default().fg(Color::Green)
+                Style::default().fg(Color::Rgb(21, 128, 61))
             } else if line.starts_with("[!!]") {
                 Style::default().fg(Color::Red)
             } else if line.starts_with("[--]") {
@@ -530,7 +533,7 @@ fn render_summary_boxes(app: &App, frame: &mut Frame, area: Rect) {
                 cols[1],
                 &current_count.to_string(),
                 "Current",
-                Color::Green,
+                Color::Rgb(21, 128, 61),
             );
         }
 
@@ -662,7 +665,7 @@ fn render_filterable_log(app: &App, frame: &mut Frame, area: Rect) {
         let (prefix, color) = match entry.status {
             SyncLogStatus::Updated => ("[**]", Color::Yellow),
             SyncLogStatus::Cloned => ("[++]", Color::Cyan),
-            SyncLogStatus::Success => ("[ok]", Color::Green),
+            SyncLogStatus::Success => ("[ok]", Color::Rgb(21, 128, 61)),
             SyncLogStatus::Failed => ("[!!]", Color::Red),
             SyncLogStatus::Skipped => ("[--]", Color::DarkGray),
         };

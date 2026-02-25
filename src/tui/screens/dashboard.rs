@@ -91,7 +91,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
 
     let key_style = Style::default()
-        .fg(Color::Rgb(59, 130, 246))
+        .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
     let left = vec![
         Span::styled("[e]", key_style),
@@ -109,7 +109,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
         let all_passed = app.check_results.iter().all(|c| c.passed);
         if all_passed {
             vec![
-                Span::styled(" [✓]", Style::default().fg(Color::Green)),
+                Span::styled(" [✓]", Style::default().fg(Color::Rgb(21, 128, 61))),
                 Span::styled(" Requirements Satisfied", dim),
                 Span::raw("  "),
                 Span::styled("[t]", key_style),
@@ -132,7 +132,7 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
 fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
     let dim = Style::default().fg(Color::DarkGray);
     let key_style = Style::default()
-        .fg(Color::Rgb(59, 130, 246))
+        .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
     match &app.active_workspace {
         Some(ws) => {
@@ -150,17 +150,17 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
                     Span::styled(" Workspace   ", dim),
                 ],
                 vec![
-                    Span::styled(" [✓]", Style::default().fg(Color::Green)),
+                    Span::styled(" [✓]", Style::default().fg(Color::Rgb(21, 128, 61))),
                     Span::styled(" Folder ", dim),
                     Span::styled(
                         folder_name,
                         Style::default()
-                            .fg(Color::Rgb(34, 197, 94))
+                            .fg(Color::Rgb(21, 128, 61))
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("  "),
                     Span::styled("[/]", key_style),
-                    Span::styled(" Search", dim),
+                    Span::styled(" Search Repositories", dim),
                 ],
             );
         }
@@ -209,7 +209,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &total_owners.to_string(),
         "o",
         "Owners",
-        Color::Cyan,
+        Color::Rgb(21, 128, 61),
         selected == 0,
     );
     render_stat_box(
@@ -218,7 +218,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &total_repos.to_string(),
         "r",
         "Repositories",
-        Color::Cyan,
+        Color::Rgb(21, 128, 61),
         selected == 1,
     );
     render_stat_box(
@@ -227,7 +227,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &clean.to_string(),
         "c",
         "Clean",
-        Color::Green,
+        Color::Rgb(21, 128, 61),
         selected == 2,
     );
     render_stat_box(
@@ -236,7 +236,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &behind.to_string(),
         "b",
         "Behind",
-        Color::Blue,
+        Color::Rgb(21, 128, 61),
         selected == 3,
     );
     render_stat_box(
@@ -245,7 +245,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &ahead.to_string(),
         "a",
         "Ahead",
-        Color::Blue,
+        Color::Rgb(21, 128, 61),
         selected == 4,
     );
     render_stat_box(
@@ -254,7 +254,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
         &uncommitted.to_string(),
         "u",
         "Uncommitted",
-        Color::Yellow,
+        Color::Rgb(21, 128, 61),
         selected == 5,
     );
 
@@ -296,7 +296,7 @@ fn render_stat_box(
             Span::styled(
                 format!("[{}]", key),
                 Style::default()
-                    .fg(Color::Rgb(59, 130, 246))
+                    .fg(Color::Rgb(37, 99, 235))
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
@@ -308,16 +308,8 @@ fn render_stat_box(
     frame.render_widget(content, area);
 }
 
-fn tab_color(stat_index: usize) -> Color {
-    match stat_index {
-        0 => Color::Cyan,
-        1 => Color::Cyan,
-        2 => Color::Green,
-        3 => Color::Blue,
-        4 => Color::Blue,
-        5 => Color::Yellow,
-        _ => Color::DarkGray,
-    }
+fn tab_color(_stat_index: usize) -> Color {
+    Color::Rgb(21, 128, 61)
 }
 
 fn render_tab_connector(
@@ -703,7 +695,7 @@ fn render_table_block(
     )
     .style(
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::Rgb(21, 128, 61))
             .add_modifier(Modifier::BOLD),
     )
     .bottom_margin(1);
@@ -712,7 +704,7 @@ fn render_table_block(
         .header(header)
         .row_highlight_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Rgb(21, 128, 61))
                 .add_modifier(Modifier::BOLD),
         )
         .block(block);
@@ -728,7 +720,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 
     let dim = Style::default().fg(Color::DarkGray);
     let key_style = Style::default()
-        .fg(Color::Rgb(59, 130, 246))
+        .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
     // Line 1: sync timestamp (center) + [s] Sync (right)
@@ -751,7 +743,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                 Span::styled(
                     folder_name.to_string(),
                     Style::default()
-                        .fg(Color::Rgb(34, 197, 94))
+                        .fg(Color::Rgb(21, 128, 61))
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" with GitHub ", dim),

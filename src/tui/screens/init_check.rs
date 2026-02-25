@@ -64,7 +64,7 @@ pub fn render(app: &App, frame: &mut Frame) {
             .iter()
             .map(|check| {
                 let (icon, color) = if check.passed {
-                    ("  pass ", Color::Green)
+                    ("  pass ", Color::Rgb(21, 128, 61))
                 } else if check.critical {
                     ("  FAIL ", Color::Red)
                 } else {
@@ -98,7 +98,10 @@ pub fn render(app: &App, frame: &mut Frame) {
             .as_deref()
             .unwrap_or("~/.config/git-same/config.toml");
         vec![Line::from(vec![
-            Span::styled("  Config created at ", Style::default().fg(Color::Green)),
+            Span::styled(
+                "  Config created at ",
+                Style::default().fg(Color::Rgb(21, 128, 61)),
+            ),
             Span::styled(path, Style::default().fg(Color::Cyan)),
             Span::styled(
                 "  — Press 's' to set up a workspace.",
