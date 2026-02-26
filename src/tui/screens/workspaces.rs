@@ -151,10 +151,26 @@ fn next_default_workspace_name(
     }
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_os = "macos"))]
 fn open_workspace_folder(path: &std::path::Path) {
     let _ = std::process::Command::new("open").arg(path).spawn();
 }
+
+#[cfg(all(not(test), target_os = "linux"))]
+fn open_workspace_folder(path: &std::path::Path) {
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn open_workspace_folder(path: &std::path::Path) {
+    let _ = std::process::Command::new("explorer").arg(path).spawn();
+}
+
+#[cfg(all(
+    not(test),
+    not(any(target_os = "macos", target_os = "linux", target_os = "windows"))
+))]
+fn open_workspace_folder(_path: &std::path::Path) {}
 
 #[cfg(test)]
 fn open_workspace_folder(_path: &std::path::Path) {

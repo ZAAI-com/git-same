@@ -312,6 +312,13 @@ prefer_ssh = true
                         let insert_pos = pos + nl + 1;
                         result.insert_str(insert_pos, &format!("{}\n", new_line));
                     }
+                } else {
+                    // Fallback: insert near the top (after first blank line)
+                    if let Some(pos) = result.find("\n\n") {
+                        result.insert_str(pos + 1, &format!("\n{}\n", new_line));
+                    } else {
+                        result = format!("{}\n{}\n", new_line, result);
+                    }
                 }
             }
             // Ensure trailing newline
@@ -591,6 +598,30 @@ auth = "gh-cli"
         assert!(!content.contains("ws1"));
         let config = Config::parse(&content).unwrap();
         assert_eq!(config.default_workspace, Some("ws2".to_string()));
+    }
+
+    #[test]
+    fn test_save_default_workspace_to_replace_without_sync_mode() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        let content = r#"
+structure = "{org}/{repo}"
+concurrency = 8
+default_workspace = "ws-old"
+
+[[providers]]
+kind = "github"
+auth = "gh-cli"
+"#;
+        std::fs::write(&path, content).unwrap();
+
+        Config::save_default_workspace_to(&path, Some("ws-new")).unwrap();
+
+        let updated = std::fs::read_to_string(&path).unwrap();
+        assert!(updated.contains("default_workspace = \"ws-new\""));
+        assert!(!updated.contains("ws-old"));
+        let config = Config::parse(&updated).unwrap();
+        assert_eq!(config.default_workspace.as_deref(), Some("ws-new"));
     }
 
     #[test]
