@@ -12,8 +12,8 @@ pub fn run(args: &WorkspaceArgs, config: &Config, output: &Output) -> Result<()>
         WorkspaceCommand::Default(default_args) => {
             if default_args.clear {
                 clear_default(output)
-            } else if let Some(ref name) = default_args.name {
-                set_default(name, output)
+            } else if let Some(ref path) = default_args.name {
+                set_default(path, output)
             } else {
                 show_default(config, output)
             }
@@ -29,10 +29,11 @@ fn list(config: &Config, output: &Output) -> Result<()> {
         return Ok(());
     }
 
-    let default_name = config.default_workspace.as_deref().unwrap_or("");
+    let default_path = config.default_workspace.as_deref().unwrap_or("");
 
     for ws in &workspaces {
-        let marker = if ws.name == default_name { "*" } else { " " };
+        let ws_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+        let marker = if ws_path == default_path { "*" } else { " " };
         let last_synced = ws.last_synced.as_deref().unwrap_or("never");
         let org_info = if ws.orgs.is_empty() {
             "all orgs".to_string()
@@ -43,12 +44,14 @@ fn list(config: &Config, output: &Output) -> Result<()> {
 
         output.plain(&format!(
             "  {} {}  ({}, {}, last synced: {})",
-            marker, ws.base_path, provider_label, org_info, last_synced
+            marker, ws_path, provider_label, org_info, last_synced
         ));
     }
 
-    if !default_name.is_empty() {
-        if let Ok(default_ws) = WorkspaceManager::load(default_name) {
+    if !default_path.is_empty() {
+        let expanded = shellexpand::tilde(default_path);
+        let root = std::path::Path::new(expanded.as_ref());
+        if let Ok(default_ws) = WorkspaceManager::load(root) {
             output.plain("");
             output.info(&format!("Default: {}", default_ws.display_label()));
         }
@@ -59,11 +62,13 @@ fn list(config: &Config, output: &Output) -> Result<()> {
 
 fn show_default(config: &Config, output: &Output) -> Result<()> {
     match &config.default_workspace {
-        Some(name) => {
-            if let Ok(ws) = WorkspaceManager::load(name) {
+        Some(path_str) => {
+            let expanded = shellexpand::tilde(path_str);
+            let root = std::path::Path::new(expanded.as_ref());
+            if let Ok(ws) = WorkspaceManager::load(root) {
                 output.info(&format!("Default workspace: {}", ws.display_label()));
             } else {
-                output.info(&format!("Default workspace: {} (not found)", name));
+                output.info(&format!("Default workspace: {} (not found)", path_str));
             }
         }
         None => output.info("No default workspace set. Use 'gisa workspace default <path>'."),
@@ -71,14 +76,13 @@ fn show_default(config: &Config, output: &Output) -> Result<()> {
     Ok(())
 }
 
-fn set_default(name_or_path: &str, output: &Output) -> Result<()> {
-    // Try name first (backward compat), then path
-    let ws = match WorkspaceManager::load(name_or_path) {
-        Ok(ws) => ws,
-        Err(_) => WorkspaceManager::load_by_path(name_or_path)?,
-    };
+fn set_default(path_str: &str, output: &Output) -> Result<()> {
+    let expanded = shellexpand::tilde(path_str);
+    let root = std::path::Path::new(expanded.as_ref());
+    let ws = WorkspaceManager::load(root)?;
 
-    Config::save_default_workspace(Some(&ws.name))?;
+    let tilde_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+    Config::save_default_workspace(Some(&tilde_path))?;
     output.success(&format!(
         "Default workspace set to '{}'",
         ws.display_label()

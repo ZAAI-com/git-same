@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::unbounded_channel;
 
 fn build_app() -> App {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     app.screen = Screen::Sync;
     app.screen_stack = vec![Screen::Dashboard];

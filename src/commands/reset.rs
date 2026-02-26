@@ -16,16 +16,15 @@ enum ResetScope {
     Everything,
     ConfigOnly,
     AllWorkspaces,
-    Workspace(String),
+    Workspace(PathBuf),
 }
 
 /// Rich detail about a single workspace for display.
 struct WorkspaceDetail {
-    name: String,
-    base_path: String,
+    root_path: PathBuf,
     orgs: Vec<String>,
     last_synced: Option<String>,
-    dir: PathBuf,
+    dot_dir: PathBuf,
     cache_size: Option<u64>,
 }
 
@@ -103,8 +102,8 @@ fn discover_targets() -> Result<ResetTarget> {
 
 /// Build rich detail for a workspace.
 fn build_workspace_detail(ws: &WorkspaceConfig) -> Result<WorkspaceDetail> {
-    let dir = WorkspaceManager::workspace_dir(&ws.name)?;
-    let cache_file = WorkspaceManager::cache_path(&ws.name)?;
+    let dot_dir = WorkspaceManager::dot_dir(&ws.root_path);
+    let cache_file = WorkspaceManager::cache_path(&ws.root_path);
 
     let cache_size = if cache_file.exists() {
         std::fs::metadata(&cache_file).map(|m| m.len()).ok()
@@ -113,11 +112,10 @@ fn build_workspace_detail(ws: &WorkspaceConfig) -> Result<WorkspaceDetail> {
     };
 
     Ok(WorkspaceDetail {
-        name: ws.name.clone(),
-        base_path: ws.base_path.clone(),
+        root_path: ws.root_path.clone(),
         orgs: ws.orgs.clone(),
         last_synced: ws.last_synced.clone(),
-        dir,
+        dot_dir,
         cache_size,
     })
 }
@@ -145,8 +143,8 @@ fn display_detailed_targets(scope: &ResetScope, target: &ResetTarget, output: &O
                 display_workspace_detail(ws, output);
             }
         }
-        ResetScope::Workspace(name) => {
-            if let Some(ws) = target.workspaces.iter().find(|w| w.name == *name) {
+        ResetScope::Workspace(path) => {
+            if let Some(ws) = target.workspaces.iter().find(|w| w.root_path == *path) {
                 display_workspace_detail(ws, output);
             }
         }
@@ -155,7 +153,8 @@ fn display_detailed_targets(scope: &ResetScope, target: &ResetTarget, output: &O
 
 /// Display detail for a single workspace.
 fn display_workspace_detail(ws: &WorkspaceDetail, output: &Output) {
-    output.info(&format!("  Workspace at {}:", ws.base_path));
+    let path_display = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+    output.info(&format!("  Workspace at {}:", path_display));
 
     if ws.orgs.is_empty() {
         output.info("    Orgs:        (all)");
@@ -178,7 +177,7 @@ fn display_workspace_detail(ws: &WorkspaceDetail, output: &Output) {
         output.info(&format!("    Cache:       {}", format_bytes(size)));
     }
 
-    output.info(&format!("    Directory:   {}", ws.dir.display()));
+    output.info(&format!("    Config dir:  {}", ws.dot_dir.display()));
 }
 
 /// Execute the reset based on scope.
@@ -205,11 +204,11 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
                 had_errors |= !remove_workspace_dir(ws, output);
             }
         }
-        ResetScope::Workspace(name) => {
-            if let Some(ws) = target.workspaces.iter().find(|w| w.name == *name) {
+        ResetScope::Workspace(path) => {
+            if let Some(ws) = target.workspaces.iter().find(|w| w.root_path == *path) {
                 had_errors |= !remove_workspace_dir(ws, output);
             } else {
-                output.warn(&format!("Workspace '{}' not found.", name));
+                output.warn(&format!("Workspace '{}' not found.", path.display()));
                 had_errors = true;
             }
         }
@@ -230,8 +229,11 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
             ResetScope::AllWorkspaces => {
                 output.success("All workspaces removed.");
             }
-            ResetScope::Workspace(name) => {
-                output.success(&format!("Workspace '{}' removed.", name));
+            ResetScope::Workspace(path) => {
+                output.success(&format!(
+                    "Workspace '{}' removed.",
+                    path.display()
+                ));
             }
         }
         Ok(())
@@ -239,15 +241,18 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
 }
 
 fn remove_workspace_dir(ws: &WorkspaceDetail, output: &Output) -> bool {
-    match std::fs::remove_dir_all(&ws.dir) {
+    let path_display = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+    match std::fs::remove_dir_all(&ws.dot_dir) {
         Ok(()) => {
-            output.success(&format!("Removed workspace at {}", ws.base_path));
+            // Also unregister from global config
+            let _ = Config::remove_from_registry(&path_display);
+            output.success(&format!("Removed workspace config at {}", path_display));
             true
         }
         Err(e) => {
             output.warn(&format!(
-                "Failed to remove workspace at {}: {}",
-                ws.base_path, e
+                "Failed to remove workspace config at {}: {}",
+                path_display, e
             ));
             false
         }
@@ -303,7 +308,10 @@ fn prompt_scope(target: &ResetTarget) -> Result<ResetScope> {
     }
 
     if target.has_workspaces() {
-        options.push(("A specific workspace", ResetScope::Workspace(String::new())));
+        options.push((
+            "A specific workspace",
+            ResetScope::Workspace(PathBuf::new()),
+        ));
     }
 
     // If only one option, skip the menu
@@ -332,6 +340,7 @@ fn prompt_scope(target: &ResetTarget) -> Result<ResetScope> {
 fn prompt_workspace(workspaces: &[WorkspaceDetail]) -> Result<ResetScope> {
     eprintln!("\nSelect a workspace to delete:");
     for (i, ws) in workspaces.iter().enumerate() {
+        let path_display = crate::config::workspace::tilde_collapse_path(&ws.root_path);
         let orgs = if ws.orgs.is_empty() {
             "all orgs".to_string()
         } else {
@@ -342,11 +351,13 @@ fn prompt_workspace(workspaces: &[WorkspaceDetail]) -> Result<ResetScope> {
             .as_deref()
             .map(humanize_timestamp)
             .unwrap_or_else(|| "never synced".to_string());
-        eprintln!("  {}. {}  ({}, {})", i + 1, ws.base_path, orgs, synced);
+        eprintln!("  {}. {}  ({}, {})", i + 1, path_display, orgs, synced);
     }
 
     let choice = prompt_number("> ", workspaces.len())?;
-    Ok(ResetScope::Workspace(workspaces[choice - 1].name.clone()))
+    Ok(ResetScope::Workspace(
+        workspaces[choice - 1].root_path.clone(),
+    ))
 }
 
 /// Read a number from stdin (1-based, within max).

@@ -6,12 +6,8 @@
 //! # Example Configuration
 //!
 //! ```toml
-//! base_path = "~/github"
+//! structure = "{org}/{repo}"
 //! concurrency = 4
-//!
-//! [[providers]]
-//! kind = "github"
-//! auth = "gh-cli"
 //! ```
 
 mod parser;
@@ -22,7 +18,6 @@ pub mod workspace_policy;
 pub mod workspace_store;
 
 pub use parser::{Config, ConfigCloneOptions, FilterOptions, SyncMode};
-pub use provider_config::{AuthMethod, ProviderEntry};
 pub use workspace::{WorkspaceConfig, WorkspaceProvider};
 pub use workspace_manager::WorkspaceManager;
 pub use workspace_policy::WorkspacePolicy;

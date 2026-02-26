@@ -26,7 +26,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
 
     // Resolve workspace and ensure base path exists (offer to fix if user moved it)
     let mut workspace = WorkspaceManager::resolve(args.workspace.as_deref(), config)?;
-    super::ensure_base_path(&mut workspace, output)?;
+    super::ensure_base_path(&workspace, output)?;
 
     output.info("Discovering repositories...");
     let discovery_progress = DiscoveryProgressBar::new(verbosity);

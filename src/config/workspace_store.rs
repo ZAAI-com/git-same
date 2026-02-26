@@ -1,224 +1,187 @@
-//! Workspace persistence (storage concern only).
+//! Workspace persistence — stores workspace config inside the sync folder.
+//!
+//! Each workspace has a `.git-same/` directory inside its root that contains:
+//! - `config.toml`       — workspace configuration
+//! - `cache.json`        — discovery cache
+//! - `sync-history.json` — sync history
 
-use super::workspace::WorkspaceConfig;
+use super::parser::Config;
+use super::workspace::{tilde_collapse_path, WorkspaceConfig};
 use crate::errors::AppError;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
+
+/// Name of the hidden workspace metadata directory.
+pub const DOT_DIR: &str = ".git-same";
+/// Config file name inside the `.git-same/` directory.
+pub const CONFIG_FILE: &str = "config.toml";
+/// Cache file name inside the `.git-same/` directory.
+pub const CACHE_FILE: &str = "cache.json";
+/// Sync history file name inside the `.git-same/` directory.
+pub const SYNC_HISTORY_FILE: &str = "sync-history.json";
 
 /// Filesystem-backed workspace store.
 pub struct WorkspaceStore;
 
 impl WorkspaceStore {
-    /// Returns the config directory: `~/.config/git-same/`.
-    pub fn config_dir() -> Result<PathBuf, AppError> {
-        let config_path = crate::config::Config::default_path()?;
-        config_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .ok_or_else(|| AppError::config("Cannot determine config directory"))
+    /// Returns the `.git-same/` directory for a workspace root.
+    pub fn dot_dir(root: &Path) -> PathBuf {
+        root.join(DOT_DIR)
     }
 
-    /// List all workspace configs.
-    pub fn list() -> Result<Vec<WorkspaceConfig>, AppError> {
-        let dir = Self::config_dir()?;
-        if !dir.exists() {
-            return Ok(Vec::new());
+    /// Returns the config file path for a workspace root.
+    pub fn config_path(root: &Path) -> PathBuf {
+        Self::dot_dir(root).join(CONFIG_FILE)
+    }
+
+    /// Returns the cache file path for a workspace root.
+    pub fn cache_path(root: &Path) -> PathBuf {
+        Self::dot_dir(root).join(CACHE_FILE)
+    }
+
+    /// Returns the sync history file path for a workspace root.
+    pub fn sync_history_path(root: &Path) -> PathBuf {
+        Self::dot_dir(root).join(SYNC_HISTORY_FILE)
+    }
+
+    /// Load a workspace config from the given root directory.
+    ///
+    /// Reads `<root>/.git-same/config.toml` and sets `root_path` from the directory.
+    pub fn load(root: &Path) -> Result<WorkspaceConfig, AppError> {
+        let expanded = expand_path(root);
+        let config_path = Self::config_path(&expanded);
+        if !config_path.exists() {
+            return Err(AppError::config(format!(
+                "No workspace config found at '{}'",
+                config_path.display()
+            )));
         }
+        Self::load_from_path(&config_path)
+    }
 
+    /// Save a workspace config to `<root>/.git-same/config.toml`.
+    ///
+    /// Creates the `.git-same/` directory if necessary and registers the workspace
+    /// in the global config registry.
+    pub fn save(workspace: &WorkspaceConfig) -> Result<(), AppError> {
+        let dot_dir = Self::dot_dir(&workspace.root_path);
+        std::fs::create_dir_all(&dot_dir).map_err(|e| {
+            AppError::config(format!(
+                "Failed to create workspace directory '{}': {}",
+                dot_dir.display(),
+                e
+            ))
+        })?;
+
+        let config_path = dot_dir.join(CONFIG_FILE);
+        let content = workspace.to_toml()?;
+        std::fs::write(&config_path, content).map_err(|e| {
+            AppError::config(format!(
+                "Failed to write workspace config at '{}': {}",
+                config_path.display(),
+                e
+            ))
+        })?;
+
+        // Register in global config
+        let tilde_path = tilde_collapse_path(&workspace.root_path);
+        let _ = Config::add_to_registry(&tilde_path);
+
+        Ok(())
+    }
+
+    /// List all registered workspace configs.
+    ///
+    /// Reads the global `workspaces` registry and loads each entry.
+    /// Stale entries (where the config file no longer exists) are silently skipped.
+    pub fn list() -> Result<Vec<WorkspaceConfig>, AppError> {
+        let global = Config::load()?;
         let mut workspaces = Vec::new();
-        let entries = std::fs::read_dir(&dir)
-            .map_err(|e| AppError::config(format!("Failed to read config directory: {}", e)))?;
 
-        for entry in entries {
-            let entry = entry
-                .map_err(|e| AppError::config(format!("Failed to read directory entry: {}", e)))?;
-            let path = entry.path();
-            if path.is_dir() {
-                let config_file = path.join("workspace-config.toml");
-                if config_file.exists() {
-                    match Self::load_from_path(&config_file) {
-                        Ok(ws) => workspaces.push(ws),
-                        Err(e) => {
-                            tracing::warn!(
-                                path = %config_file.display(),
-                                error = %e,
-                                "Skipping invalid workspace config"
-                            );
-                        }
-                    }
+        for path_str in &global.workspaces {
+            let expanded = shellexpand::tilde(path_str);
+            let root = Path::new(expanded.as_ref());
+            let config_path = Self::config_path(root);
+            if !config_path.exists() {
+                tracing::debug!(
+                    path = %path_str,
+                    "Skipping stale workspace registry entry"
+                );
+                continue;
+            }
+            match Self::load_from_path(&config_path) {
+                Ok(ws) => workspaces.push(ws),
+                Err(e) => {
+                    tracing::warn!(
+                        path = %config_path.display(),
+                        error = %e,
+                        "Skipping invalid workspace config"
+                    );
                 }
             }
         }
 
-        workspaces.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(workspaces)
     }
 
-    /// Load a specific workspace by name.
-    pub fn load(name: &str) -> Result<WorkspaceConfig, AppError> {
-        let path = Self::config_path(name)?;
-        if !path.exists() {
+    /// Delete a workspace by removing its `.git-same/` directory.
+    ///
+    /// Also removes the workspace from the global registry.
+    pub fn delete(root: &Path) -> Result<(), AppError> {
+        let dot_dir = Self::dot_dir(root);
+        if !dot_dir.exists() {
             return Err(AppError::config(format!(
-                "Workspace '{}' not found at {}",
-                name,
-                path.display()
+                "No workspace config found at '{}'",
+                dot_dir.display()
             )));
         }
-        Self::load_from_path(&path)
-    }
-
-    /// Save a workspace config (create or update).
-    pub fn save(workspace: &WorkspaceConfig) -> Result<(), AppError> {
-        let path = Self::config_path(&workspace.name)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::config(format!("Failed to create workspace directory: {}", e))
-            })?;
-        }
-        let content = workspace.to_toml()?;
-        std::fs::write(&path, content).map_err(|e| {
+        std::fs::remove_dir_all(&dot_dir).map_err(|e| {
             AppError::config(format!(
-                "Failed to write workspace config at {}: {}",
-                path.display(),
+                "Failed to remove workspace at '{}': {}",
+                dot_dir.display(),
                 e
             ))
         })?;
-        Ok(())
-    }
 
-    /// Delete a workspace by name (removes the entire workspace directory).
-    pub fn delete(name: &str) -> Result<(), AppError> {
-        let dir = Self::workspace_dir(name)?;
-        if !dir.exists() {
-            return Err(AppError::config(format!("Workspace '{}' not found", name)));
-        }
-        std::fs::remove_dir_all(&dir).map_err(|e| {
-            AppError::config(format!("Failed to delete workspace '{}': {}", name, e))
-        })?;
-        Ok(())
-    }
-
-    /// Find a workspace whose base_path matches the given directory.
-    pub fn find_by_path(path: &Path) -> Result<Option<WorkspaceConfig>, AppError> {
-        let workspaces = Self::list()?;
-        let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-
-        for ws in workspaces {
-            let ws_path = ws.expanded_base_path();
-            let ws_canonical = std::fs::canonicalize(&ws_path).unwrap_or_else(|_| ws_path.clone());
-            if ws_canonical == canonical {
-                return Ok(Some(ws));
-            }
-        }
-        Ok(None)
-    }
-
-    /// Load a workspace by its base_path string.
-    pub fn load_by_path(path_str: &str) -> Result<WorkspaceConfig, AppError> {
-        let workspaces = Self::list()?;
-
-        // Exact string match on base_path
-        for ws in &workspaces {
-            if ws.base_path == path_str {
-                return Ok(ws.clone());
-            }
-        }
-
-        // Canonical path comparison
-        let expanded = shellexpand::tilde(path_str);
-        let target = Path::new(expanded.as_ref());
-        let target_canonical =
-            std::fs::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
-
-        for ws in workspaces {
-            let ws_expanded = ws.expanded_base_path();
-            let ws_canonical = std::fs::canonicalize(&ws_expanded).unwrap_or(ws_expanded);
-            if ws_canonical == target_canonical {
-                return Ok(ws);
-            }
-        }
-
-        Err(AppError::config(format!(
-            "No workspace configured for path '{}'",
-            path_str
-        )))
-    }
-
-    /// Returns the directory path for a workspace: `~/.config/git-same/<name>/`.
-    pub fn workspace_dir(name: &str) -> Result<PathBuf, AppError> {
-        Self::validate_workspace_name(name)?;
-        Ok(Self::config_dir()?.join(name))
-    }
-
-    /// Returns the cache file path for a workspace: `~/.config/git-same/<name>/workspace-cache.json`.
-    pub fn cache_path(name: &str) -> Result<PathBuf, AppError> {
-        Ok(Self::workspace_dir(name)?.join("workspace-cache.json"))
-    }
-
-    /// Returns the file path for a workspace config.
-    fn config_path(name: &str) -> Result<PathBuf, AppError> {
-        Ok(Self::workspace_dir(name)?.join("workspace-config.toml"))
-    }
-
-    /// Validate workspace names to prevent path traversal.
-    fn validate_workspace_name(name: &str) -> Result<(), AppError> {
-        if name.trim().is_empty() {
-            return Err(AppError::config("Workspace name cannot be empty"));
-        }
-
-        let path = Path::new(name);
-        if path.is_absolute()
-            || path.components().any(|c| {
-                matches!(
-                    c,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            })
-        {
-            return Err(AppError::config(format!(
-                "Invalid workspace name '{}'",
-                name
-            )));
-        }
-
-        if name.contains('/') || name.contains('\\') {
-            return Err(AppError::config(format!(
-                "Invalid workspace name '{}'",
-                name
-            )));
-        }
-
-        if !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        {
-            return Err(AppError::config(
-                "Workspace name may only contain letters, numbers, '-', '_' and '.'",
-            ));
-        }
+        // Unregister from global config
+        let tilde_path = tilde_collapse_path(root);
+        let _ = Config::remove_from_registry(&tilde_path);
 
         Ok(())
     }
 
-    /// Load a workspace config from a specific file path.
-    fn load_from_path(path: &Path) -> Result<WorkspaceConfig, AppError> {
-        let content = std::fs::read_to_string(path).map_err(|e| {
+    /// Load a workspace config from a specific `.git-same/config.toml` path.
+    ///
+    /// Sets `root_path` from the parent of the `.git-same/` directory.
+    pub fn load_from_path(config_path: &Path) -> Result<WorkspaceConfig, AppError> {
+        let content = std::fs::read_to_string(config_path).map_err(|e| {
             AppError::config(format!(
-                "Failed to read workspace config at {}: {}",
-                path.display(),
+                "Failed to read workspace config at '{}': {}",
+                config_path.display(),
                 e
             ))
         })?;
         let mut ws = WorkspaceConfig::from_toml(&content)?;
 
-        // Derive name from the parent folder
-        if let Some(parent) = path.parent() {
-            if let Some(folder_name) = parent.file_name().and_then(|n| n.to_str()) {
-                ws.name = folder_name.to_string();
+        // Derive root_path: parent of `.git-same/` directory
+        // config_path = <root>/.git-same/config.toml
+        // parent = <root>/.git-same/
+        // parent.parent = <root>/
+        if let Some(dot_dir) = config_path.parent() {
+            if let Some(root) = dot_dir.parent() {
+                ws.root_path = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
             }
         }
 
         Ok(ws)
     }
+}
+
+/// Expand a path: resolve `~` and make absolute.
+fn expand_path(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    let expanded = shellexpand::tilde(&s);
+    let p = Path::new(expanded.as_ref());
+    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
 }
 
 #[cfg(test)]

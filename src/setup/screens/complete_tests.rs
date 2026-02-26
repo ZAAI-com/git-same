@@ -28,7 +28,6 @@ fn render_output(state: &SetupState) -> String {
 #[test]
 fn render_complete_first_setup_shows_workspace_created() {
     let mut state = SetupState::with_first_setup("~/Git-Same/GitHub", true);
-    state.workspace_name = "first-workspace".to_string();
     state.base_path = "~/Git-Same/GitHub".to_string();
     state.orgs = vec![OrgEntry {
         name: "acme".to_string(),
@@ -38,7 +37,6 @@ fn render_complete_first_setup_shows_workspace_created() {
 
     let output = render_output(&state);
     assert!(output.contains("Workspace Created!"));
-    assert!(output.contains("first-workspace"));
     assert!(output.contains("1 organization"));
     assert!(output.contains("12 repos"));
 }
@@ -46,11 +44,9 @@ fn render_complete_first_setup_shows_workspace_created() {
 #[test]
 fn render_complete_additional_setup_shows_workspace_added() {
     let mut state = SetupState::with_first_setup("~/Git-Same/GitHub", false);
-    state.workspace_name = "second-workspace".to_string();
     state.base_path = "~/Git-Same/GitHub".to_string();
 
     let output = render_output(&state);
     assert!(output.contains("Workspace Added!"));
-    assert!(output.contains("second-workspace"));
     assert!(output.contains("Press Enter to continue"));
 }

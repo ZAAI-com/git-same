@@ -26,7 +26,7 @@ fn build_workspace_app(default_workspace: Option<&str>) -> App {
     let mut config = Config::default();
     config.default_workspace = default_workspace.map(ToString::to_string);
 
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(config, vec![ws.clone()]);
     app.screen = Screen::Workspaces;
     app.workspace_index = 0;
@@ -80,8 +80,8 @@ async fn workspace_key_c_toggles_config_expansion() {
 async fn workspace_left_right_controls_panel_focus_and_list_movement() {
     let mut config = Config::default();
     config.default_workspace = None;
-    let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
-    let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
+    let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws1"));
+    let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws2"));
     let mut app = App::new(config, vec![ws1.clone(), ws2]);
     app.screen = Screen::Workspaces;
     app.workspace_index = 0;
@@ -162,7 +162,8 @@ async fn workspace_enter_selects_workspace_even_if_active() {
 
 #[tokio::test]
 async fn workspace_key_d_does_not_clear_when_already_default() {
-    let mut app = build_workspace_app(Some("test-ws"));
+    // The tilde_collapse_path of /tmp/test-ws should be "/tmp/test-ws" (no ~ replacement)
+    let mut app = build_workspace_app(Some("/tmp/test-ws"));
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     handle_key(
@@ -172,19 +173,9 @@ async fn workspace_key_d_does_not_clear_when_already_default() {
     )
     .await;
 
-    assert_eq!(app.config.default_workspace.as_deref(), Some("test-ws"));
+    assert_eq!(
+        app.config.default_workspace.as_deref(),
+        Some("/tmp/test-ws")
+    );
     assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
-}
-
-#[test]
-fn next_default_workspace_name_is_set_only() {
-    assert_eq!(
-        next_default_workspace_name(Some("current"), "next"),
-        Some("next".to_string())
-    );
-    assert_eq!(next_default_workspace_name(Some("same"), "same"), None);
-    assert_eq!(
-        next_default_workspace_name(None, "selected"),
-        Some("selected".to_string())
-    );
 }

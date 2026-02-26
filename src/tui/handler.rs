@@ -68,10 +68,9 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     {
                         if let Some(token) = setup.auth_token.clone() {
                             setup.org_discovery_in_progress = true;
-                            let provider_entry =
-                                setup.build_workspace_provider().to_provider_entry();
+                            let ws_provider = setup.build_workspace_provider();
                             super::backend::spawn_setup_org_discovery(
-                                provider_entry,
+                                ws_provider,
                                 token,
                                 backend_tx.clone(),
                             );
@@ -218,7 +217,7 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
                     app.workspaces = workspaces;
                     if let Some(ws) = app.workspaces.first().cloned() {
                         app.base_path = Some(ws.expanded_base_path());
-                        app.sync_history = SyncHistoryManager::for_workspace(&ws.name)
+                        app.sync_history = SyncHistoryManager::for_workspace(&ws.root_path)
                             .and_then(|m| m.load())
                             .unwrap_or_default();
                         app.active_workspace = Some(ws);
@@ -498,7 +497,7 @@ fn handle_backend_message(
                 if let Some(ref mut ws) = app.active_workspace {
                     ws.last_synced = Some(now.clone());
                     let _ = WorkspaceManager::save(ws);
-                    if let Some(entry) = app.workspaces.iter_mut().find(|w| w.name == ws.name) {
+                    if let Some(entry) = app.workspaces.iter_mut().find(|w| w.root_path == ws.root_path) {
                         entry.last_synced = Some(now.clone());
                     }
                 }
@@ -521,7 +520,7 @@ fn handle_backend_message(
 
                 // Persist history to disk
                 if let Some(ref ws) = app.active_workspace {
-                    if let Ok(manager) = SyncHistoryManager::for_workspace(&ws.name) {
+                    if let Ok(manager) = SyncHistoryManager::for_workspace(&ws.root_path) {
                         let _ = manager.save(&app.sync_history);
                     }
                 }

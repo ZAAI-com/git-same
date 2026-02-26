@@ -55,6 +55,9 @@ pub enum Command {
 
     /// Reset gisa — remove all config, workspaces, and cache
     Reset(ResetArgs),
+
+    /// Scan a directory tree for unregistered workspaces (.git-same/ folders)
+    Scan(ScanArgs),
 }
 
 /// Arguments for the init command
@@ -162,6 +165,21 @@ pub struct ResetArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub force: bool,
+}
+
+/// Arguments for the scan command
+#[derive(Args, Debug)]
+pub struct ScanArgs {
+    /// Root directory to scan (default: current directory)
+    pub path: Option<PathBuf>,
+
+    /// Maximum directory depth to search (default: 5)
+    #[arg(short, long, default_value = "5")]
+    pub depth: usize,
+
+    /// Register discovered workspaces automatically
+    #[arg(long)]
+    pub register: bool,
 }
 
 impl Cli {

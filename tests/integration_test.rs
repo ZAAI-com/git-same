@@ -202,7 +202,6 @@ fn test_init_creates_config() {
 
     // Verify content is valid TOML
     let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
-    assert!(content.contains("base_path"));
     assert!(content.contains("concurrency"));
 }
 
@@ -238,8 +237,8 @@ fn test_init_force_overwrites() {
     // Verify content was overwritten
     let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
     assert!(
-        content.contains("base_path"),
-        "Config should contain base_path"
+        content.contains("concurrency"),
+        "Config should contain concurrency setting"
     );
 }
 
@@ -272,7 +271,9 @@ fn test_status_nonexistent_workspace() {
     assert!(
         stderr.contains("not found")
             || stderr.contains("No workspaces")
-            || stderr.contains("No workspace configured"),
+            || stderr.contains("No workspace configured")
+            || stderr.contains("No workspace config found")
+            || stderr.contains("Configuration error"),
         "Expected workspace not found error, got: {}",
         stderr
     );

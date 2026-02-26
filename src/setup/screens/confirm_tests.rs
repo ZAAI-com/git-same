@@ -29,7 +29,7 @@ fn render_output(state: &SetupState) -> String {
 fn render_confirm_shows_workspace_summary() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
     state.username = Some("octocat".to_string());
-    state.workspace_name = "personal-workspace".to_string();
+    state.base_path = "~/Git-Same/GitHub".to_string();
     state.orgs = vec![
         OrgEntry {
             name: "acme".to_string(),
@@ -46,14 +46,13 @@ fn render_confirm_shows_workspace_summary() {
     let output = render_output(&state);
     assert!(output.contains("Review Workspace Configuration"));
     assert!(output.contains("@octocat"));
-    assert!(output.contains("personal-workspace"));
     assert!(output.contains("acme, tools"));
 }
 
 #[test]
 fn render_confirm_shows_inline_error_when_present() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
-    state.workspace_name = "broken".to_string();
+    state.base_path = "~/Git-Same/GitHub".to_string();
     state.error_message = Some("Unable to write config".to_string());
 
     let output = render_output(&state);

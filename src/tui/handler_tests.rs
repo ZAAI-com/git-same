@@ -7,7 +7,7 @@ use tokio::sync::mpsc::unbounded_channel;
 
 #[tokio::test]
 async fn q_quits_immediately() {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     let (tx, _rx) = unbounded_channel();
 
@@ -23,7 +23,7 @@ async fn q_quits_immediately() {
 
 #[tokio::test]
 async fn setup_cancel_returns_to_previous_screen_when_present() {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     app.screen = Screen::WorkspaceSetup;
     app.screen_stack = vec![Screen::SystemCheck, Screen::Workspaces];
@@ -38,7 +38,7 @@ async fn setup_cancel_returns_to_previous_screen_when_present() {
 
 #[tokio::test]
 async fn setup_cancel_without_history_falls_back_to_system_check() {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     app.screen = Screen::WorkspaceSetup;
     app.screen_stack.clear();
@@ -53,7 +53,7 @@ async fn setup_cancel_without_history_falls_back_to_system_check() {
 
 #[tokio::test]
 async fn setup_right_moves_to_next_step() {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     app.screen = Screen::WorkspaceSetup;
     app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
@@ -68,7 +68,7 @@ async fn setup_right_moves_to_next_step() {
 
 #[tokio::test]
 async fn setup_org_discovery_backend_message_populates_state() {
-    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(Config::default(), vec![ws]);
     let (tx, _rx) = unbounded_channel();
     app.screen = Screen::WorkspaceSetup;

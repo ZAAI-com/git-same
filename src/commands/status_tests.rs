@@ -21,7 +21,8 @@ async fn test_status_no_workspaces() {
     let err = result.expect_err("nonexistent workspace should return an error");
     assert!(
         err.to_string().contains("not found")
-            || err.to_string().contains("No workspace configured for path"),
+            || err.to_string().contains("No workspace config found")
+            || err.to_string().contains("Configuration error"),
         "unexpected error: {}",
         err
     );

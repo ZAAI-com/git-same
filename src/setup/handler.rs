@@ -194,8 +194,8 @@ async fn handle_auth(state: &mut SetupState, key: KeyEvent) {
 }
 
 async fn do_authenticate(state: &mut SetupState) {
-    let provider_entry = state.build_workspace_provider().to_provider_entry();
-    match get_auth_for_provider(&provider_entry) {
+    let ws_provider = state.build_workspace_provider();
+    match get_auth_for_provider(&ws_provider) {
         Ok(auth) => {
             let username = auth.username.or_else(|| gh_cli::get_username().ok());
             state.username = username;
@@ -623,8 +623,8 @@ async fn do_discover_orgs(state: &mut SetupState) {
         return;
     };
 
-    let provider_entry = state.build_workspace_provider().to_provider_entry();
-    match discover_org_entries(provider_entry, token.clone()).await {
+    let ws_provider = state.build_workspace_provider();
+    match discover_org_entries(ws_provider, token.clone()).await {
         Ok(org_entries) => {
             state.orgs = org_entries;
             state.org_index = 0;
@@ -640,10 +640,10 @@ async fn do_discover_orgs(state: &mut SetupState) {
 }
 
 pub(crate) async fn discover_org_entries(
-    provider_entry: crate::config::ProviderEntry,
+    ws_provider: crate::config::WorkspaceProvider,
     token: String,
 ) -> Result<Vec<OrgEntry>, String> {
-    match create_provider(&provider_entry, &token) {
+    match create_provider(&ws_provider, &token) {
         Ok(provider) => match provider.get_organizations().await {
             Ok(orgs) => {
                 let mut org_entries: Vec<OrgEntry> = Vec::new();
@@ -701,7 +701,18 @@ fn handle_complete(state: &mut SetupState, key: KeyEvent) {
 }
 
 fn save_workspace(state: &SetupState) -> Result<(), crate::errors::AppError> {
-    let mut ws = WorkspaceConfig::new(&state.workspace_name, &state.base_path);
+    let expanded = shellexpand::tilde(&state.base_path);
+    let root = std::path::Path::new(expanded.as_ref());
+    std::fs::create_dir_all(root).map_err(|e| {
+        crate::errors::AppError::config(format!(
+            "Failed to create workspace directory '{}': {}",
+            root.display(),
+            e
+        ))
+    })?;
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+
+    let mut ws = WorkspaceConfig::new_from_root(&root);
     ws.provider = state.build_workspace_provider();
     ws.username = state.username.clone().unwrap_or_default();
     ws.orgs = state.selected_orgs();

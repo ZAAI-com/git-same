@@ -1,13 +1,14 @@
 //! Workspace configuration.
 //!
 //! Each workspace represents a sync target folder with its own provider,
-//! selected organizations, and repository filters. Each workspace is a
-//! subdirectory of `~/.config/git-same/<name>/` containing `workspace-config.toml`.
+//! selected organizations, and repository filters. Workspace config lives
+//! inside the sync folder itself at `<root>/.git-same/config.toml`, making
+//! workspaces portable and self-describing.
 
-use super::provider_config::AuthMethod;
 use super::{ConfigCloneOptions, FilterOptions, SyncMode};
 use crate::types::ProviderKind;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 /// Provider configuration scoped to a single workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,10 +16,6 @@ pub struct WorkspaceProvider {
     /// The type of provider (github, gitlab, etc.)
     #[serde(default)]
     pub kind: ProviderKind,
-
-    /// How to authenticate
-    #[serde(default)]
-    pub auth: AuthMethod,
 
     /// API base URL (required for GitHub Enterprise)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -37,7 +34,6 @@ impl Default for WorkspaceProvider {
     fn default() -> Self {
         Self {
             kind: ProviderKind::GitHub,
-            auth: AuthMethod::GhCli,
             api_url: None,
             prefer_ssh: true,
         }
@@ -45,31 +41,30 @@ impl Default for WorkspaceProvider {
 }
 
 impl WorkspaceProvider {
-    /// Convert to a `ProviderEntry` for use with existing provider/auth infrastructure.
-    pub fn to_provider_entry(&self) -> super::ProviderEntry {
-        super::ProviderEntry {
-            kind: self.kind,
-            name: Some(self.kind.display_name().to_string()),
-            api_url: self.api_url.clone(),
-            auth: self.auth.clone(),
-            prefer_ssh: self.prefer_ssh,
-            base_path: None,
-            enabled: true,
-        }
+    /// Returns the effective API URL for this provider.
+    pub fn effective_api_url(&self) -> String {
+        self.api_url
+            .clone()
+            .unwrap_or_else(|| self.kind.default_api_url().to_string())
+    }
+
+    /// Returns the display name for this provider.
+    pub fn display_name(&self) -> &str {
+        self.kind.display_name()
     }
 }
 
 /// Configuration for a single workspace (sync target folder).
+///
+/// Stored at `<root>/.git-same/config.toml`. The `root_path` field is not
+/// serialized — it is populated at load time from the `.git-same/` parent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
-    /// Workspace name, derived from the config folder name at load time.
+    /// Absolute path to the workspace root (parent of `.git-same/`).
     ///
-    /// Not stored in `workspace-config.toml` — the folder name is the source of truth.
-    #[serde(skip_serializing, default)]
-    pub name: String,
-
-    /// Absolute path to the folder where repos are cloned.
-    pub base_path: String,
+    /// Not stored in config.toml — derived from the file's location at load time.
+    #[serde(skip)]
+    pub root_path: PathBuf,
 
     /// Provider configuration for this workspace.
     pub provider: WorkspaceProvider,
@@ -121,11 +116,10 @@ pub struct WorkspaceConfig {
 }
 
 impl WorkspaceConfig {
-    /// Create a new workspace config with minimal required fields.
-    pub fn new(name: impl Into<String>, base_path: impl Into<String>) -> Self {
+    /// Create a new workspace config for the given root directory.
+    pub fn new_from_root(root: &Path) -> Self {
         Self {
-            name: name.into(),
-            base_path: base_path.into(),
+            root_path: root.to_path_buf(),
             provider: WorkspaceProvider::default(),
             username: String::new(),
             orgs: Vec::new(),
@@ -141,18 +135,15 @@ impl WorkspaceConfig {
         }
     }
 
-    /// Expand ~ in base_path to the actual home directory.
-    pub fn expanded_base_path(&self) -> std::path::PathBuf {
-        let expanded = shellexpand::tilde(&self.base_path);
-        std::path::PathBuf::from(expanded.as_ref())
+    /// Returns the workspace root path (equivalent of old `expanded_base_path()`).
+    pub fn expanded_base_path(&self) -> PathBuf {
+        self.root_path.clone()
     }
 
     /// Returns a user-friendly label: `"~/repos (GitHub)"`.
-    ///
-    /// This is the primary user-facing workspace identity. The internal `name`
-    /// field is a filesystem key and should never be shown to users.
     pub fn display_label(&self) -> String {
-        format!("{} ({})", self.base_path, self.provider.kind.display_name())
+        let path_str = tilde_collapse_path(&self.root_path);
+        format!("{} ({})", path_str, self.provider.kind.display_name())
     }
 
     /// Returns a short display summary for selectors.
@@ -179,6 +170,17 @@ impl WorkspaceConfig {
             crate::errors::AppError::config(format!("Failed to parse workspace config: {}", e))
         })
     }
+}
+
+/// Collapse the home directory prefix to `~` for display.
+pub fn tilde_collapse_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if let Ok(home) = std::env::var("HOME") {
+        if s.starts_with(&home) {
+            return format!("~{}", &s[home.len()..]);
+        }
+    }
+    s.to_string()
 }
 
 #[cfg(test)]

@@ -8,7 +8,7 @@ fn prelude_reexports_core_types() {
     assert_eq!(options.depth, 1);
     assert_eq!(options.branch.as_deref(), Some("main"));
 
-    let provider = ProviderEntry::github();
+    let provider = WorkspaceProvider::default();
     assert_eq!(provider.kind, ProviderKind::GitHub);
 
     let repo = Repo::test("rocket", "acme");

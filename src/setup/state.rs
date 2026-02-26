@@ -105,10 +105,6 @@ pub struct SetupState {
     pub path_browse_error: Option<String>,
     pub path_browse_info: Option<String>,
 
-    // Step 5: Confirm
-    pub workspace_name: String,
-    pub name_editing: bool,
-
     // General
     pub error_message: Option<String>,
 
@@ -222,8 +218,6 @@ impl SetupState {
             org_loading: false,
             org_discovery_in_progress: false,
             org_error: None,
-            workspace_name: String::new(),
-            name_editing: false,
             error_message: None,
             tick_count: 0,
             is_first_setup,
@@ -310,15 +304,7 @@ impl SetupState {
                 self.populate_path_suggestions();
                 SetupStep::SelectPath
             }
-            SetupStep::SelectPath => {
-                // Derive workspace name from base_path + provider
-                let path = std::path::Path::new(&self.base_path);
-                let base =
-                    crate::config::WorkspaceManager::name_from_path(path, self.selected_provider());
-                self.workspace_name =
-                    crate::config::WorkspaceManager::unique_name(&base).unwrap_or(base);
-                SetupStep::Confirm
-            }
+            SetupStep::SelectPath => SetupStep::Confirm,
             SetupStep::Confirm => SetupStep::Complete,
             SetupStep::Complete => {
                 self.outcome = Some(SetupOutcome::Completed);

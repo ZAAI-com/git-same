@@ -55,11 +55,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     let lines = vec![
         Line::raw(""),
-        Line::from(Span::styled(
-            format!("  {}", state.workspace_name),
-            value_style,
-        )),
-        Line::from(Span::styled(format!("  {}", state.base_path), dim)),
+        Line::from(Span::styled(format!("  {}", state.base_path), value_style)),
         Line::from(Span::styled(
             format!(
                 "  {} organization{}  \u{00b7}  {} repos",

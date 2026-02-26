@@ -319,8 +319,10 @@ impl App {
             }
             _ => {
                 // Check for default workspace
-                if let Some(ref default_name) = config.default_workspace {
-                    if let Some(ws) = workspaces.iter().find(|w| w.name == *default_name) {
+                if let Some(ref default_path) = config.default_workspace {
+                    let expanded = shellexpand::tilde(default_path.as_str());
+                    let default_root = std::path::PathBuf::from(expanded.as_ref());
+                    if let Some(ws) = workspaces.iter().find(|w| w.root_path == default_root) {
                         let bp = Some(ws.expanded_base_path());
                         (Screen::Dashboard, Some(ws.clone()), bp)
                     } else {
@@ -335,7 +337,7 @@ impl App {
         let sync_history = active_workspace
             .as_ref()
             .and_then(|ws| {
-                crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+                crate::cache::SyncHistoryManager::for_workspace(&ws.root_path)
                     .and_then(|m| m.load())
                     .ok()
             })
@@ -403,7 +405,7 @@ impl App {
         if let Some(ws) = self.workspaces.get(index).cloned() {
             self.base_path = Some(ws.expanded_base_path());
             // Load sync history for this workspace
-            self.sync_history = crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+            self.sync_history = crate::cache::SyncHistoryManager::for_workspace(&ws.root_path)
                 .and_then(|m| m.load())
                 .unwrap_or_default();
             self.active_workspace = Some(ws);

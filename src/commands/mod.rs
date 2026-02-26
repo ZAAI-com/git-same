@@ -5,6 +5,7 @@
 
 pub mod init;
 pub mod reset;
+pub mod scan;
 #[cfg(feature = "tui")]
 pub mod setup;
 pub mod status;
@@ -37,6 +38,9 @@ pub async fn run_command(
     if let Command::Reset(args) = command {
         return reset::run(args, output).await;
     }
+    if let Command::Scan(args) = command {
+        return scan::run(args, output);
+    }
     #[cfg(feature = "tui")]
     if let Command::Setup(args) = command {
         return setup::run(args, output).await;
@@ -46,7 +50,7 @@ pub async fn run_command(
     let config = load_config(config_path)?;
 
     match command {
-        Command::Init(_) | Command::Reset(_) => unreachable!(),
+        Command::Init(_) | Command::Reset(_) | Command::Scan(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
