@@ -2,8 +2,7 @@
 //!
 //! Main entry point for the git-same CLI application.
 
-use git_same::cli::Cli;
-use git_same::commands::run_command;
+use git_same::app::cli::{run_command, Cli};
 use git_same::output::{Output, Verbosity};
 use std::process::ExitCode;
 use tracing::debug;
@@ -83,7 +82,7 @@ async fn main() -> ExitCode {
                 };
 
                 match config {
-                    Ok(config) => match git_same::tui::run_tui(config).await {
+                    Ok(config) => match git_same::app::tui::run_tui(config).await {
                         Ok(()) => ExitCode::SUCCESS,
                         Err(e) => {
                             eprintln!("TUI error: {}", e);

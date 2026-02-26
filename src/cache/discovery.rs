@@ -1,8 +1,3 @@
-//! Discovery cache module
-//!
-//! Caches GitHub API discovery results to avoid hitting rate limits
-//! and speed up subsequent runs.
-
 use crate::types::OwnedRepo;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -19,7 +14,7 @@ const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(3600);
 /// Increment this when making breaking changes to the cache format.
 pub const CACHE_VERSION: u32 = 1;
 
-/// Discovery cache data
+/// Discovery cache data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryCache {
     /// Cache format version for forward compatibility.
@@ -27,24 +22,24 @@ pub struct DiscoveryCache {
     #[serde(default)]
     pub version: u32,
 
-    /// When the discovery was last performed (Unix timestamp)
+    /// When the discovery was last performed (Unix timestamp).
     pub last_discovery: u64,
 
-    /// Username or identifier
+    /// Username or identifier.
     pub username: String,
 
-    /// List of organization names
+    /// List of organization names.
     pub orgs: Vec<String>,
 
-    /// Total number of repositories discovered
+    /// Total number of repositories discovered.
     pub repo_count: usize,
 
-    /// Cached repositories by provider
+    /// Cached repositories by provider.
     pub repos: HashMap<String, Vec<OwnedRepo>>,
 }
 
 impl DiscoveryCache {
-    /// Create a new cache entry
+    /// Create a new cache entry.
     pub fn new(username: String, repos: HashMap<String, Vec<OwnedRepo>>) -> Self {
         let orgs: Vec<String> = repos
             .values()
@@ -57,7 +52,7 @@ impl DiscoveryCache {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         debug!(
@@ -82,11 +77,11 @@ impl DiscoveryCache {
         self.version == CACHE_VERSION
     }
 
-    /// Check if the cache is still valid
+    /// Check if the cache is still valid.
     pub fn is_valid(&self, ttl: Duration) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         if now < self.last_discovery {
@@ -97,18 +92,18 @@ impl DiscoveryCache {
         age < ttl.as_secs()
     }
 
-    /// Get the age of the cache in seconds
+    /// Get the age of the cache in seconds.
     pub fn age_secs(&self) -> u64 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         now.saturating_sub(self.last_discovery)
     }
 }
 
-/// Cache manager
+/// Discovery cache manager.
 pub struct CacheManager {
     cache_path: PathBuf,
     ttl: Duration,
@@ -116,8 +111,6 @@ pub struct CacheManager {
 
 impl CacheManager {
     /// Create a cache manager for a specific workspace.
-    ///
-    /// Cache is stored at `~/.config/git-same/<name>/workspace-cache.json`.
     pub fn for_workspace(workspace_name: &str) -> Result<Self> {
         let cache_path = crate::config::WorkspaceManager::cache_path(workspace_name)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
@@ -141,7 +134,7 @@ impl CacheManager {
         self
     }
 
-    /// Load the cache if it exists and is valid
+    /// Load the cache if it exists and is valid.
     pub fn load(&self) -> Result<Option<DiscoveryCache>> {
         if !self.cache_path.exists() {
             debug!(path = %self.cache_path.display(), "Cache file does not exist");
@@ -149,11 +142,9 @@ impl CacheManager {
         }
 
         let content = fs::read_to_string(&self.cache_path).context("Failed to read cache file")?;
-
         let cache: DiscoveryCache =
             serde_json::from_str(&content).context("Failed to parse cache file")?;
 
-        // Check version compatibility
         if !cache.is_compatible() {
             warn!(
                 cache_version = cache.version,
@@ -176,15 +167,13 @@ impl CacheManager {
         }
     }
 
-    /// Save the cache to disk
+    /// Save the cache to disk.
     pub fn save(&self, cache: &DiscoveryCache) -> Result<()> {
-        // Ensure parent directory exists
         if let Some(parent) = self.cache_path.parent() {
             fs::create_dir_all(parent).context("Failed to create cache directory")?;
         }
 
         let json = serde_json::to_string_pretty(cache).context("Failed to serialize cache")?;
-
         fs::write(&self.cache_path, &json).context("Failed to write cache file")?;
 
         debug!(
@@ -198,7 +187,7 @@ impl CacheManager {
         Ok(())
     }
 
-    /// Clear the cache file
+    /// Clear the cache file.
     pub fn clear(&self) -> Result<()> {
         if self.cache_path.exists() {
             fs::remove_file(&self.cache_path).context("Failed to remove cache file")?;
@@ -206,92 +195,9 @@ impl CacheManager {
         Ok(())
     }
 
-    /// Get the cache path
+    /// Get the cache path.
     pub fn path(&self) -> &Path {
         &self.cache_path
-    }
-}
-
-// -- Sync History Persistence --
-
-#[cfg(feature = "tui")]
-use crate::tui::app::SyncHistoryEntry;
-
-#[cfg(feature = "tui")]
-const HISTORY_VERSION: u32 = 1;
-#[cfg(feature = "tui")]
-const MAX_HISTORY_ENTRIES: usize = 50;
-
-#[cfg(feature = "tui")]
-#[derive(Debug, Serialize, Deserialize)]
-struct SyncHistoryFile {
-    version: u32,
-    entries: Vec<SyncHistoryEntry>,
-}
-
-/// Manages per-workspace sync history persistence.
-///
-/// History is stored at `~/.config/git-same/<workspace>/sync-history.json`.
-#[cfg(feature = "tui")]
-pub struct SyncHistoryManager {
-    path: PathBuf,
-}
-
-#[cfg(feature = "tui")]
-impl SyncHistoryManager {
-    /// Create a history manager for a specific workspace.
-    pub fn for_workspace(workspace_name: &str) -> Result<Self> {
-        let dir = crate::config::WorkspaceManager::workspace_dir(workspace_name)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        Ok(Self {
-            path: dir.join("sync-history.json"),
-        })
-    }
-
-    /// Load sync history from disk. Returns empty vec if file doesn't exist.
-    pub fn load(&self) -> Result<Vec<SyncHistoryEntry>> {
-        if !self.path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = fs::read_to_string(&self.path).context("Failed to read sync history file")?;
-        let file: SyncHistoryFile =
-            serde_json::from_str(&content).context("Failed to parse sync history")?;
-        if file.version != HISTORY_VERSION {
-            debug!(
-                file_version = file.version,
-                current_version = HISTORY_VERSION,
-                "Sync history version mismatch, starting fresh"
-            );
-            return Ok(Vec::new());
-        }
-        Ok(file.entries)
-    }
-
-    /// Save sync history to disk, keeping only the most recent entries.
-    pub fn save(&self, entries: &[SyncHistoryEntry]) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).context("Failed to create history directory")?;
-        }
-        let capped: Vec<SyncHistoryEntry> = entries
-            .iter()
-            .rev()
-            .take(MAX_HISTORY_ENTRIES)
-            .rev()
-            .cloned()
-            .collect();
-        let file = SyncHistoryFile {
-            version: HISTORY_VERSION,
-            entries: capped,
-        };
-        let json =
-            serde_json::to_string_pretty(&file).context("Failed to serialize sync history")?;
-        fs::write(&self.path, &json).context("Failed to write sync history")?;
-        debug!(
-            path = %self.path.display(),
-            entries = file.entries.len(),
-            "Saved sync history"
-        );
-        Ok(())
     }
 }
 
@@ -348,14 +254,11 @@ mod tests {
         let repos = HashMap::new();
         let mut cache = DiscoveryCache::new("testuser".to_string(), repos);
 
-        // Current version should be compatible
         assert!(cache.is_compatible());
 
-        // Old version should not be compatible
         cache.version = 0;
         assert!(!cache.is_compatible());
 
-        // Future version should not be compatible
         cache.version = CACHE_VERSION + 1;
         assert!(!cache.is_compatible());
     }
@@ -365,10 +268,8 @@ mod tests {
         let repos = HashMap::new();
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
 
-        // Should be valid immediately
         assert!(cache.is_valid(Duration::from_secs(3600)));
 
-        // Test with very short TTL
         sleep(Duration::from_millis(100));
         assert!(!cache.is_valid(Duration::from_millis(50)));
     }
@@ -380,12 +281,12 @@ mod tests {
 
         sleep(Duration::from_millis(100));
         let age = cache.age_secs();
-        assert!(age == 0 || age == 1); // Should be very recent
+        assert!(age == 0 || age == 1);
     }
 
     #[test]
     fn test_cache_save_and_load() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("temp dir");
         let cache_path = temp_dir.path().join("workspace-cache.json");
 
         let manager = CacheManager::with_path(cache_path.clone());
@@ -398,48 +299,40 @@ mod tests {
 
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
 
-        // Save cache
-        manager.save(&cache).unwrap();
+        manager.save(&cache).expect("save cache");
         assert!(cache_path.exists());
 
-        // Load cache
-        let loaded = manager.load().unwrap();
+        let loaded = manager.load().expect("load cache");
         assert!(loaded.is_some());
 
-        let loaded_cache = loaded.unwrap();
+        let loaded_cache = loaded.expect("cache exists");
         assert_eq!(loaded_cache.username, "testuser");
         assert_eq!(loaded_cache.repo_count, 1);
     }
 
     #[test]
     fn test_cache_expiration() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("temp dir");
         let cache_path = temp_dir.path().join("workspace-cache.json");
 
-        // Use a generous TTL to ensure cache is valid when first loaded
         let manager = CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_secs(1));
 
         let repos = HashMap::new();
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
 
-        manager.save(&cache).unwrap();
+        manager.save(&cache).expect("save cache");
 
-        // Cache should be valid well within TTL
-        let loaded = manager.load().unwrap();
+        let loaded = manager.load().expect("load cache");
         assert!(
             loaded.is_some(),
             "Cache should be valid immediately after save"
         );
 
-        // Now test with a very short TTL to ensure expiration works
         let short_ttl_manager =
             CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_millis(50));
-
-        // Wait long enough to definitely expire
         sleep(Duration::from_millis(100));
 
-        // Cache should be expired with short TTL
-        let loaded = short_ttl_manager.load().unwrap();
+        let loaded = short_ttl_manager.load().expect("load short ttl cache");
         assert!(
             loaded.is_none(),
             "Cache should be expired after waiting longer than TTL"
@@ -448,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_cache_clear() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("temp dir");
         let cache_path = temp_dir.path().join("workspace-cache.json");
 
         let manager = CacheManager::with_path(cache_path.clone());
@@ -456,21 +349,20 @@ mod tests {
         let repos = HashMap::new();
         let cache = DiscoveryCache::new("testuser".to_string(), repos);
 
-        manager.save(&cache).unwrap();
+        manager.save(&cache).expect("save cache");
         assert!(cache_path.exists());
 
-        manager.clear().unwrap();
+        manager.clear().expect("clear cache");
         assert!(!cache_path.exists());
     }
 
     #[test]
     fn test_cache_load_nonexistent() {
-        let temp_dir = TempDir::new().unwrap();
+        let temp_dir = TempDir::new().expect("temp dir");
         let cache_path = temp_dir.path().join("nonexistent.json");
 
         let manager = CacheManager::with_path(cache_path);
-
-        let loaded = manager.load().unwrap();
+        let loaded = manager.load().expect("load cache");
         assert!(loaded.is_none());
     }
 }

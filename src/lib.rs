@@ -46,6 +46,7 @@
 //! git same clone ~/github
 //! ```
 
+pub mod app;
 pub mod auth;
 pub mod banner;
 pub mod cache;
@@ -54,8 +55,10 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod discovery;
+pub mod domain;
 pub mod errors;
 pub mod git;
+pub mod infra;
 pub mod operations;
 pub mod output;
 pub mod provider;
@@ -64,6 +67,7 @@ pub mod setup;
 #[cfg(feature = "tui")]
 pub mod tui;
 pub mod types;
+pub mod workflows;
 
 /// Re-export commonly used types for convenience.
 pub mod prelude {
@@ -77,6 +81,7 @@ pub mod prelude {
         SyncMode as ConfigSyncMode,
     };
     pub use crate::discovery::DiscoveryOrchestrator;
+    pub use crate::domain::RepoPathTemplate;
     pub use crate::errors::{AppError, GitError, ProviderError, Result};
     pub use crate::git::{
         CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus, ShellGit,

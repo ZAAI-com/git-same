@@ -30,6 +30,7 @@
 //! # }
 //! ```
 
+use crate::domain::RepoPathTemplate;
 use crate::git::{CloneOptions, GitOperations};
 use crate::types::{OpResult, OpSummary, OwnedRepo};
 use std::path::{Path, PathBuf};
@@ -179,14 +180,8 @@ impl<G: GitOperations + 'static> CloneManager<G> {
 
     /// Computes the local path for a repository.
     pub fn compute_path(&self, base_path: &Path, repo: &OwnedRepo, provider: &str) -> PathBuf {
-        let path_str = self
-            .options
-            .structure
-            .replace("{provider}", provider)
-            .replace("{org}", &repo.owner)
-            .replace("{repo}", &repo.repo.name);
-
-        base_path.join(path_str)
+        RepoPathTemplate::new(self.options.structure.clone())
+            .render_owned_repo(base_path, repo, provider)
     }
 
     /// Gets the clone URL for a repository.

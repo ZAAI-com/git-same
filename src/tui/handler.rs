@@ -11,6 +11,7 @@ use super::event::{AppEvent, BackendMessage};
 use super::screens;
 use crate::cache::SyncHistoryManager;
 use crate::config::WorkspaceManager;
+use crate::domain::RepoPathTemplate;
 use crate::setup::state::{SetupOutcome, SetupStep};
 
 const MAX_THROUGHPUT_SAMPLES: usize = 240;
@@ -227,21 +228,13 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
 fn compute_repo_path(app: &App, repo_name: &str) -> Option<std::path::PathBuf> {
     let ws = app.active_workspace.as_ref()?;
     let base_path = ws.expanded_base_path();
-    let structure = ws
+    let template = ws
         .structure
         .clone()
         .unwrap_or_else(|| app.config.structure.clone());
-    let parts: Vec<&str> = repo_name.splitn(2, '/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let (org, repo) = (parts[0], parts[1]);
     let provider_name = ws.provider.kind.to_string().to_lowercase();
-    let path_str = structure
-        .replace("{provider}", &provider_name)
-        .replace("{org}", org)
-        .replace("{repo}", repo);
-    Some(base_path.join(path_str))
+
+    RepoPathTemplate::new(template).render_full_name(&base_path, &provider_name, repo_name)
 }
 
 fn handle_backend_message(

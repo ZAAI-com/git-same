@@ -222,8 +222,8 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         SetupStep::SelectProvider => (
             vec![Span::styled(" [Enter]", blue), Span::styled(" Select", dim)],
             vec![
-                Span::styled(" [j/k]", blue),
-                Span::styled(" Navigate  ", dim),
+                Span::styled(" [←] [↑] [↓] [→]", blue),
+                Span::styled(" Move  ", dim),
                 Span::styled("[Esc]", blue),
                 Span::styled(" Cancel  ", dim),
                 Span::styled("[qq]", blue),
@@ -260,8 +260,8 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Span::styled(" Edit", dim),
                     ],
                     vec![
-                        Span::styled(" [j/k]", blue),
-                        Span::styled(" Select  ", dim),
+                        Span::styled(" [←] [↑] [↓] [→]", blue),
+                        Span::styled(" Move  ", dim),
                         Span::styled("[Esc]", blue),
                         Span::styled(" Back  ", dim),
                         Span::styled("[qq]", blue),
@@ -309,8 +309,8 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Span::styled(" Confirm", dim),
                     ],
                     vec![
-                        Span::styled(" [j/k]", blue),
-                        Span::styled(" Navigate  ", dim),
+                        Span::styled(" [←] [↑] [↓] [→]", blue),
+                        Span::styled(" Move  ", dim),
                         Span::styled("[Esc]", blue),
                         Span::styled(" Back  ", dim),
                         Span::styled("[qq]", blue),

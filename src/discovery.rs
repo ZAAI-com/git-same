@@ -4,6 +4,7 @@
 //! and manages action planning for clone/sync operations.
 
 use crate::config::FilterOptions;
+use crate::domain::RepoPathTemplate;
 use crate::git::GitOperations;
 use crate::operations::sync::LocalRepo;
 use crate::provider::{DiscoveryOptions, DiscoveryProgress, Provider};
@@ -46,13 +47,7 @@ impl DiscoveryOrchestrator {
 
     /// Computes the local path for a repository.
     pub fn compute_path(&self, base_path: &Path, repo: &OwnedRepo, provider: &str) -> PathBuf {
-        let path_str = self
-            .structure
-            .replace("{provider}", provider)
-            .replace("{org}", &repo.owner)
-            .replace("{repo}", &repo.repo.name);
-
-        base_path.join(path_str)
+        RepoPathTemplate::new(self.structure.clone()).render_owned_repo(base_path, repo, provider)
     }
 
     /// Creates an action plan by comparing discovered repos with local filesystem.
@@ -136,8 +131,7 @@ impl DiscoveryOrchestrator {
         // Determine scan depth based on structure
         // {org}/{repo} -> 2 levels
         // {provider}/{org}/{repo} -> 3 levels
-        let has_provider = self.structure.contains("{provider}");
-        let depth = if has_provider { 3 } else { 2 };
+        let depth = RepoPathTemplate::new(self.structure.clone()).scan_depth();
 
         self.scan_dir(base_path, base_path, git, &mut repos, 0, depth);
 

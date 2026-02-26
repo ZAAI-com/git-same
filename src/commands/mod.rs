@@ -9,6 +9,7 @@ pub mod reset;
 #[cfg(feature = "tui")]
 pub mod setup;
 pub mod status;
+pub mod support;
 pub mod sync;
 pub mod sync_cmd;
 pub mod workspace;
@@ -18,13 +19,13 @@ pub use status::run as run_status;
 pub use sync_cmd::run as run_sync_cmd;
 
 use crate::cli::Command;
-use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::config::Config;
 use crate::errors::{AppError, Result};
-use crate::operations::clone::MAX_CONCURRENCY;
 use crate::operations::sync::SyncMode;
 use crate::output::Output;
-use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+pub(crate) use support::{ensure_base_path, expand_path, warn_if_concurrency_capped};
 
 /// Run the specified command.
 pub async fn run_command(
@@ -85,127 +86,4 @@ fn load_config(config_path: Option<&Path>) -> Result<Config> {
         ));
     }
     Config::load_from(&path)
-}
-
-/// Warn if requested concurrency exceeds the maximum.
-/// Returns the effective concurrency to use.
-pub(crate) fn warn_if_concurrency_capped(requested: usize, output: &Output) -> usize {
-    if requested > MAX_CONCURRENCY {
-        output.warn(&format!(
-            "Requested concurrency {} exceeds maximum {}. Using {} instead.",
-            requested, MAX_CONCURRENCY, MAX_CONCURRENCY
-        ));
-        MAX_CONCURRENCY
-    } else {
-        requested
-    }
-}
-
-/// Expands ~ in a path.
-pub(crate) fn expand_path(path: &Path) -> PathBuf {
-    let path_str = path.to_string_lossy();
-    let expanded = shellexpand::tilde(&path_str);
-    PathBuf::from(expanded.as_ref())
-}
-
-/// Ensure the workspace base_path exists.
-///
-/// If the configured path is missing, checks whether the current directory
-/// could be the new location and offers to update the workspace config.
-/// Returns an error if the path cannot be resolved.
-pub(crate) fn ensure_base_path(workspace: &mut WorkspaceConfig, output: &Output) -> Result<()> {
-    let base_path = workspace.expanded_base_path();
-    if base_path.exists() {
-        return Ok(());
-    }
-
-    let cwd = std::env::current_dir()
-        .map_err(|e| AppError::path(format!("Cannot determine current directory: {}", e)))?;
-
-    output.warn(&format!(
-        "Base path '{}' does not exist.",
-        workspace.base_path
-    ));
-    output.info(&format!("Current directory: {}", cwd.display()));
-
-    let prompt = format!(
-        "Update workspace at '{}' to use '{}'? [y/N] ",
-        workspace.base_path,
-        cwd.display()
-    );
-
-    if confirm_stderr(&prompt)? {
-        workspace.base_path = cwd.to_string_lossy().to_string();
-        WorkspaceManager::save(workspace)?;
-        output.success(&format!("Updated base path to '{}'", workspace.base_path));
-        Ok(())
-    } else {
-        Err(AppError::config(format!(
-            "Base path '{}' does not exist. \
-             Move to the correct directory and retry, \
-             or update manually with 'gisa setup'.",
-            base_path.display()
-        )))
-    }
-}
-
-/// Prompt on stderr and return true if the user answers y/yes.
-fn confirm_stderr(prompt: &str) -> Result<bool> {
-    eprint!("{}", prompt);
-    io::stderr().flush()?;
-
-    let stdin = io::stdin();
-    let mut line = String::new();
-    stdin.lock().read_line(&mut line)?;
-
-    let answer = line.trim().to_lowercase();
-    Ok(answer == "y" || answer == "yes")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::output::{Output, Verbosity};
-
-    fn quiet_output() -> Output {
-        Output::new(Verbosity::Quiet, false)
-    }
-
-    #[test]
-    fn test_concurrency_within_limit() {
-        let output = quiet_output();
-        assert_eq!(warn_if_concurrency_capped(4, &output), 4);
-    }
-
-    #[test]
-    fn test_concurrency_at_limit() {
-        let output = quiet_output();
-        assert_eq!(
-            warn_if_concurrency_capped(MAX_CONCURRENCY, &output),
-            MAX_CONCURRENCY
-        );
-    }
-
-    #[test]
-    fn test_concurrency_above_limit() {
-        let output = quiet_output();
-        assert_eq!(
-            warn_if_concurrency_capped(MAX_CONCURRENCY + 10, &output),
-            MAX_CONCURRENCY
-        );
-    }
-
-    #[test]
-    fn test_expand_path_absolute() {
-        let path = Path::new("/tmp/some/path");
-        assert_eq!(expand_path(path), PathBuf::from("/tmp/some/path"));
-    }
-
-    #[test]
-    fn test_expand_path_tilde() {
-        let path = Path::new("~/foo");
-        let expanded = expand_path(path);
-        assert!(!expanded.to_string_lossy().contains('~'));
-        assert!(expanded.to_string_lossy().ends_with("/foo"));
-    }
 }

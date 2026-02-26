@@ -42,12 +42,12 @@ fn handle_welcome(state: &mut SetupState, key: KeyEvent) {
 
 fn handle_provider(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up => {
             if state.provider_index > 0 {
                 state.provider_index -= 1;
             }
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down => {
             if state.provider_index + 1 < state.provider_choices.len() {
                 state.provider_index += 1;
             }
@@ -124,12 +124,12 @@ fn confirm_path(state: &mut SetupState) {
 
 fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up => {
             if state.path_suggestion_index > 0 {
                 state.path_suggestion_index -= 1;
             }
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down => {
             if state.path_suggestion_index + 1 < state.path_suggestions.len() {
                 state.path_suggestion_index += 1;
             }
@@ -318,12 +318,12 @@ async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up => {
             if state.org_index > 0 {
                 state.org_index -= 1;
             }
         }
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down => {
             if state.org_index + 1 < state.orgs.len() {
                 state.org_index += 1;
             }
