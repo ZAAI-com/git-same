@@ -17,9 +17,8 @@
     "test": "cargo test",
     "run": "gisa",
     "init": "gisa init",
-    "clone": "gisa clone",
+    "sync": "gisa sync",
     "status": "gisa status",
-    "fetch": "gisa fetch",
-    "pull": "gisa pull"
+    "sync-pull": "gisa sync --pull"
   }
 }

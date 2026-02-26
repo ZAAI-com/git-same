@@ -16,7 +16,7 @@ cargo fmt -- --check               # Check formatting
 cargo clippy -- -D warnings        # Lint (zero warnings enforced)
 ```
 
-Logging is controlled via `GISA_LOG` env var (e.g., `GISA_LOG=debug cargo run -- clone`).
+Logging is controlled via `GISA_LOG` env var (e.g., `GISA_LOG=debug cargo run -- sync`).
 
 ## Architecture
 
@@ -28,7 +28,7 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 **CLI flow:** CLI parsing (`src/cli.rs`) → `main.rs` routes to command handler → handler orchestrates modules.
 
-**Commands:** `init`, `setup`, `sync`, `status`, `workspace {list,default}`, `reset`. Legacy `clone`/`fetch`/`pull` are hidden but still parse (deprecated, redirect to `sync`).
+**Commands:** `init`, `setup`, `sync`, `status`, `workspace {list,default}`, `reset`.
 
 ### Core modules
 

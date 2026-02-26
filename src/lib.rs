@@ -27,23 +27,18 @@
 //! # Initialize configuration
 //! git-same init
 //!
-//! # Clone all repositories (dry run first)
-//! git-same clone ~/github --dry-run
+//! # Set up a workspace
+//! git-same setup
 //!
-//! # Clone for real
-//! git-same clone ~/github
-//!
-//! # Fetch updates
-//! git-same fetch ~/github
-//!
-//! # Pull updates (modifies working tree)
-//! git-same pull ~/github
+//! # Sync repositories (clone new + fetch existing)
+//! git-same sync --dry-run
+//! git-same sync
 //!
 //! # Show status
-//! git-same status ~/github
+//! git-same status
 //!
 //! # Also works as git subcommand
-//! git same clone ~/github
+//! git same sync
 //! ```
 
 pub mod app;
@@ -73,9 +68,7 @@ pub mod workflows;
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
-    pub use crate::cli::{
-        Cli, CloneArgs, Command, InitArgs, LegacySyncArgs, ResetArgs, StatusArgs, SyncCmdArgs,
-    };
+    pub use crate::cli::{Cli, Command, InitArgs, ResetArgs, StatusArgs, SyncCmdArgs};
     pub use crate::config::{
         AuthMethod, Config, ConfigCloneOptions, FilterOptions, ProviderEntry,
         SyncMode as ConfigSyncMode,

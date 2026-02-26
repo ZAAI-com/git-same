@@ -1,6 +1,6 @@
 //! Workspace screen — two-pane layout with workspace list (left) and detail (right).
 //!
-//! Left sidebar lists all workspaces plus a "Create Workspace" entry.
+//! Left sidebar lists all workspaces plus a "Create New Workspace" entry.
 //! Right panel shows detail for the selected workspace or a create prompt.
 
 use chrono::{DateTime, Utc};
@@ -19,9 +19,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::banner::render_banner;
-use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::config::{Config, SyncMode, WorkspaceConfig, WorkspaceManager};
 use crate::setup::state::SetupState;
-use crate::tui::app::{App, Screen};
+use crate::tui::app::{App, Screen, WorkspacePane};
 use crate::tui::event::{AppEvent, BackendMessage};
 
 #[cfg(test)]
@@ -31,53 +31,62 @@ static OPEN_WORKSPACE_FOLDER_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
     let num_ws = app.workspaces.len();
-    let total_entries = num_ws + 1; // workspaces + "Create Workspace"
+    let total_entries = num_ws + 1; // workspaces + "Create New Workspace"
 
     match key.code {
-        // Arrows: scroll detail pane when config is expanded, navigate sidebar otherwise
-        KeyCode::Down if app.settings_config_expanded => {
+        KeyCode::Left => {
+            app.workspace_pane = WorkspacePane::Left;
+        }
+        KeyCode::Right => {
+            app.workspace_pane = WorkspacePane::Right;
+        }
+        KeyCode::Tab => {
+            app.workspace_pane = match app.workspace_pane {
+                WorkspacePane::Left => WorkspacePane::Right,
+                WorkspacePane::Right => WorkspacePane::Left,
+            };
+        }
+        // Right pane: scroll detail when config is expanded
+        KeyCode::Down
+            if app.workspace_pane == WorkspacePane::Right && app.settings_config_expanded =>
+        {
             app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_add(1);
         }
-        KeyCode::Up if app.settings_config_expanded => {
+        KeyCode::Up
+            if app.workspace_pane == WorkspacePane::Right && app.settings_config_expanded =>
+        {
             app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_sub(1);
         }
-        // Tab/arrows navigate the sidebar
-        KeyCode::Down | KeyCode::Right | KeyCode::Tab if total_entries > 0 => {
+        // Left pane: navigate workspace list
+        KeyCode::Down if app.workspace_pane == WorkspacePane::Left && total_entries > 0 => {
             app.workspace_index = (app.workspace_index + 1) % total_entries;
             app.settings_config_expanded = false;
             app.workspace_detail_scroll = 0;
         }
-        KeyCode::Up | KeyCode::Left if total_entries > 0 => {
+        KeyCode::Up if app.workspace_pane == WorkspacePane::Left && total_entries > 0 => {
             app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
             app.settings_config_expanded = false;
             app.workspace_detail_scroll = 0;
         }
         KeyCode::Enter => {
             if app.workspace_index < num_ws {
-                // On a workspace entry
-                let is_active = app
-                    .active_workspace
-                    .as_ref()
-                    .map(|aw| aw.name == app.workspaces[app.workspace_index].name)
-                    .unwrap_or(false);
-                if is_active {
-                    // Toggle config expansion
-                    app.settings_config_expanded = !app.settings_config_expanded;
-                    app.workspace_detail_scroll = 0;
-                } else {
-                    // Switch active workspace and go to dashboard
-                    app.select_workspace(app.workspace_index);
-                    app.screen = Screen::Dashboard;
-                    app.screen_stack.clear();
-                }
+                // Select workspace and go to dashboard
+                app.select_workspace(app.workspace_index);
+                app.screen = Screen::Dashboard;
+                app.screen_stack.clear();
             } else {
-                // "Create Workspace" entry
+                // "Create New Workspace" entry
                 let default_path = std::env::current_dir()
                     .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
                 app.setup_state = Some(SetupState::new(&default_path));
                 app.navigate_to(Screen::WorkspaceSetup);
             }
+        }
+        KeyCode::Char('c') if app.workspace_index < num_ws => {
+            app.workspace_pane = WorkspacePane::Right;
+            app.settings_config_expanded = !app.settings_config_expanded;
+            app.workspace_detail_scroll = 0;
         }
         KeyCode::Char('n') => {
             // Shortcut to create workspace
@@ -213,6 +222,10 @@ fn render_workspace_nav(app: &App, frame: &mut Frame, area: Rect) {
         ))));
     }
 
+    if !app.workspaces.is_empty() {
+        items.push(ListItem::new(Line::from("")));
+    }
+
     for (i, ws) in app.workspaces.iter().enumerate() {
         let selected = app.workspace_index == i;
         let is_active = app
@@ -266,7 +279,7 @@ fn render_workspace_nav(app: &App, frame: &mut Frame, area: Rect) {
         items.push(ListItem::new(Line::from("")));
     }
 
-    // "Create Workspace" entry
+    // "Create New Workspace" entry
     let create_selected = app.workspace_index == app.workspaces.len();
     let (create_marker, create_style) = if create_selected {
         (
@@ -280,7 +293,7 @@ fn render_workspace_nav(app: &App, frame: &mut Frame, area: Rect) {
     };
     items.push(ListItem::new(Line::from(vec![
         Span::styled(format!("  {} ", create_marker), create_style),
-        Span::styled("+ Create Workspace", create_style),
+        Span::styled("Create New Workspace [n]", create_style),
     ])));
 
     let list = List::new(items).block(
@@ -297,6 +310,9 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         .fg(Color::White)
         .add_modifier(Modifier::BOLD);
     let val_style = Style::default().fg(Color::White);
+    let key_style = Style::default()
+        .fg(Color::Rgb(37, 99, 235))
+        .add_modifier(Modifier::BOLD);
 
     let is_default = app
         .config
@@ -329,14 +345,14 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
 
     let sync_mode = ws
         .sync_mode
-        .as_ref()
-        .map(|m| format!("{:?}", m))
-        .unwrap_or_else(|| "global default".to_string());
+        .map(sync_mode_name)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{} (global default)", sync_mode_name(app.config.sync_mode)));
 
     let concurrency = ws
         .concurrency
         .map(|c| c.to_string())
-        .unwrap_or_else(|| format!("{} (global)", app.config.concurrency));
+        .unwrap_or_else(|| format!("{} (global default)", app.config.concurrency));
 
     let (last_synced_relative, last_synced_absolute) =
         format_last_synced(ws.last_synced.as_deref());
@@ -358,22 +374,28 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         Line::from(""),
     ];
 
-    lines.push(Line::from(vec![
-        Span::styled(format!("    {:<14}", "Active"), dim),
-        Span::styled(active_label.to_string(), val_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(format!("    {:<14}", "Default"), dim),
-        Span::styled(default_label.to_string(), val_style),
-        Span::styled(
-            if is_default {
-                " (current)"
-            } else {
-                "  [d] Set default"
-            },
-            dim,
-        ),
-    ]));
+    lines.push(detail_row_with_hint(
+        area,
+        "Active",
+        active_label,
+        Some(("[Enter]", "Select Workspace")),
+        dim,
+        val_style,
+        key_style,
+    ));
+    lines.push(detail_row_with_hint(
+        area,
+        "Default",
+        default_label,
+        if is_default {
+            None
+        } else {
+            Some(("[d]", "Set default"))
+        },
+        dim,
+        val_style,
+        key_style,
+    ));
     lines.push(Line::from(vec![
         Span::styled(format!("    {:<14}", "Provider"), dim),
         Span::styled(ws.provider.kind.display_name().to_string(), val_style),
@@ -382,18 +404,33 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled("  Paths", section_style)));
     lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled(format!("    {:<14}", "Path"), dim),
-        Span::styled(ws.base_path.clone(), val_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(format!("    {:<14}", "Full path"), dim),
-        Span::styled(full_path, val_style),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(format!("    {:<14}", "Config file"), dim),
-        Span::styled(config_file, val_style),
-    ]));
+    lines.push(detail_row_with_hint(
+        area,
+        "Path",
+        &ws.base_path,
+        None,
+        dim,
+        val_style,
+        key_style,
+    ));
+    lines.push(detail_row_with_hint(
+        area,
+        "Full path",
+        &full_path,
+        Some(("[f]", "Open Finder Folder")),
+        dim,
+        val_style,
+        key_style,
+    ));
+    lines.push(detail_row_with_hint(
+        area,
+        "Config",
+        &config_file,
+        None,
+        dim,
+        val_style,
+        key_style,
+    ));
     lines.push(Line::from(vec![
         Span::styled(format!("    {:<14}", "Cache file"), dim),
         Span::styled(cache_file, val_style),
@@ -445,7 +482,15 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     // Config content section (collapsible)
     lines.push(Line::from(""));
     if app.settings_config_expanded {
-        lines.push(Line::from(Span::styled("  \u{25BC} Config", section_style)));
+        lines.push(section_line_with_hint(
+            area,
+            "\u{25BC} Config",
+            "[c]",
+            "Collapse config file",
+            section_style,
+            dim,
+            key_style,
+        ));
         lines.push(Line::from(""));
         match ws.to_toml() {
             Ok(toml) => {
@@ -461,10 +506,15 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
             }
         }
     } else {
-        lines.push(Line::from(vec![
-            Span::styled("  \u{25B6} Config", section_style),
-            Span::styled("  (press Enter to expand)", dim),
-        ]));
+        lines.push(section_line_with_hint(
+            area,
+            "\u{25B6} Config",
+            "[c]",
+            "Expand config file",
+            section_style,
+            dim,
+            key_style,
+        ));
     }
 
     let content = Paragraph::new(lines)
@@ -475,6 +525,69 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         )
         .scroll((app.workspace_detail_scroll, 0));
     frame.render_widget(content, area);
+}
+
+fn sync_mode_name(mode: SyncMode) -> &'static str {
+    match mode {
+        SyncMode::Fetch => "fetch",
+        SyncMode::Pull => "pull",
+    }
+}
+
+fn detail_row_with_hint(
+    area: Rect,
+    label: &str,
+    value: &str,
+    hint: Option<(&str, &str)>,
+    dim: Style,
+    val_style: Style,
+    key_style: Style,
+) -> Line<'static> {
+    let right_padding = 2usize;
+    let label_text = format!("    {:<14}", label);
+    let mut spans = vec![
+        Span::styled(label_text.clone(), dim),
+        Span::styled(value.to_string(), val_style),
+    ];
+
+    if let Some((hint_key, hint_label)) = hint {
+        let content_width = area.width.saturating_sub(2) as usize;
+        let left_width = label_text.chars().count() + value.chars().count();
+        let hint_width = hint_key.chars().count() + 1 + hint_label.chars().count() + right_padding;
+        let gap = content_width.saturating_sub(left_width + hint_width).max(1);
+
+        spans.push(Span::raw(" ".repeat(gap)));
+        spans.push(Span::styled(hint_key.to_string(), key_style));
+        spans.push(Span::styled(format!(" {}", hint_label), dim));
+        spans.push(Span::raw(" ".repeat(right_padding)));
+    }
+
+    Line::from(spans)
+}
+
+fn section_line_with_hint(
+    area: Rect,
+    section: &str,
+    hint_key: &str,
+    hint_label: &str,
+    section_style: Style,
+    dim: Style,
+    key_style: Style,
+) -> Line<'static> {
+    let right_padding = 2usize;
+    let section_text = format!("  {}", section);
+    let content_width = area.width.saturating_sub(2) as usize;
+    let left_width = section_text.chars().count();
+    let hint_width = hint_key.chars().count() + 1 + hint_label.chars().count() + right_padding;
+    let gap = content_width.saturating_sub(left_width + hint_width).max(1);
+
+    Line::from(vec![
+        Span::styled(section_text, section_style),
+        Span::raw(" ".repeat(gap)),
+        Span::styled(hint_key.to_string(), key_style),
+        Span::styled(format!(" {}", hint_label), dim),
+        Span::raw(" ".repeat(right_padding)),
+    ])
 }
 
 fn format_last_synced(raw: Option<&str>) -> (String, Option<String>) {
@@ -544,10 +657,21 @@ fn render_create_workspace_detail(frame: &mut Frame, area: Rect) {
     let section_style = Style::default()
         .fg(Color::White)
         .add_modifier(Modifier::BOLD);
+    let key_style = Style::default()
+        .fg(Color::Rgb(37, 99, 235))
+        .add_modifier(Modifier::BOLD);
 
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled("  Create Workspace", section_style)),
+        section_line_with_hint(
+            area,
+            "New Workspace",
+            "[n]",
+            "Create New Workspace",
+            section_style,
+            dim,
+            key_style,
+        ),
         Line::from(""),
         Line::from(Span::styled(
             "    Press Enter to launch the Setup Wizard",
@@ -590,32 +714,8 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
-    // Line 1: Context-sensitive actions (centered)
-    let mut action_spans = vec![];
-    if app.workspace_index < app.workspaces.len() {
-        // Workspace selected
-        action_spans.extend([
-            Span::raw(" "),
-            Span::styled("[Enter]", key_style),
-            Span::styled(" Switch / Config", dim),
-            Span::raw("   "),
-            Span::styled("[d]", key_style),
-            Span::styled(" Set default", dim),
-            Span::raw("   "),
-            Span::styled("[Open folder (f)]", key_style),
-            Span::raw("   "),
-            Span::styled("[n]", key_style),
-            Span::styled(" New", dim),
-        ]);
-    } else {
-        // "Create Workspace" selected
-        action_spans.extend([
-            Span::raw(" "),
-            Span::styled("[Enter]", key_style),
-            Span::styled(" Create workspace", dim),
-        ]);
-    }
-    let actions = Paragraph::new(vec![Line::from(action_spans)]).centered();
+    // Line 1: intentionally blank (action hints are shown inline in the right panel)
+    let actions = Paragraph::new(vec![Line::from("")]).centered();
 
     // Line 2: Navigation — left (quit, back) and right (arrows)
     let nav_cols =
@@ -630,37 +730,54 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" Back", dim),
     ];
 
-    let right_spans = if app.workspace_index < app.workspaces.len() && app.settings_config_expanded
+    let right_spans = if app.workspace_pane == WorkspacePane::Right
+        && app.workspace_index < app.workspaces.len()
+        && app.settings_config_expanded
     {
         vec![
+            Span::styled("[\u{2190}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2192}]", key_style),
+            Span::styled(" Panel", dim),
+            Span::raw("   "),
             Span::styled("[\u{2191}]", key_style),
             Span::raw(" "),
             Span::styled("[\u{2193}]", key_style),
             Span::styled(" Scroll", dim),
             Span::raw("   "),
+            Span::styled("[c]", key_style),
+            Span::styled(" Collapse", dim),
+            Span::raw("  "),
+        ]
+    } else if app.workspace_pane == WorkspacePane::Left {
+        vec![
             Span::styled("[\u{2190}]", key_style),
             Span::raw(" "),
             Span::styled("[\u{2192}]", key_style),
+            Span::styled(" Panel", dim),
+            Span::raw("   "),
+            Span::styled("[\u{2191}]", key_style),
+            Span::raw(" "),
+            Span::styled("[\u{2193}]", key_style),
             Span::styled(" Move", dim),
             Span::raw("   "),
             Span::styled("[Enter]", key_style),
-            Span::styled(" Collapse", dim),
-            Span::raw(" "),
+            Span::styled(" Select", dim),
+            Span::raw("  "),
         ]
     } else {
         vec![
             Span::styled("[\u{2190}]", key_style),
             Span::raw(" "),
-            Span::styled("[\u{2191}]", key_style),
-            Span::raw(" "),
-            Span::styled("[\u{2193}]", key_style),
-            Span::raw(" "),
             Span::styled("[\u{2192}]", key_style),
-            Span::styled(" Move", dim),
+            Span::styled(" Panel", dim),
+            Span::raw("   "),
+            Span::styled("[c]", key_style),
+            Span::styled(" Expand", dim),
             Span::raw("   "),
             Span::styled("[Enter]", key_style),
             Span::styled(" Select", dim),
-            Span::raw(" "),
+            Span::raw("  "),
         ]
     };
 
@@ -727,6 +844,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_key_c_toggles_config_expansion() {
+        let mut app = build_workspace_app(None);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.workspace_pane, WorkspacePane::Right);
+        assert!(app.settings_config_expanded);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert!(!app.settings_config_expanded);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn workspace_left_right_controls_panel_focus_and_list_movement() {
+        let mut config = Config::default();
+        config.default_workspace = None;
+        let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
+        let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
+        let mut app = App::new(config, vec![ws1.clone(), ws2]);
+        app.screen = Screen::Workspaces;
+        app.workspace_index = 0;
+        app.active_workspace = Some(ws1);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+        assert_eq!(app.workspace_pane, WorkspacePane::Right);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+        assert_eq!(app.workspace_index, 0);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+        assert_eq!(app.workspace_pane, WorkspacePane::Left);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+        assert_eq!(app.workspace_index, 1);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
     async fn workspace_key_o_is_noop() {
         let mut app = build_workspace_app(None);
         let before_index = app.workspace_index;
@@ -744,6 +933,23 @@ mod tests {
         assert_eq!(app.workspace_index, before_index);
         assert_eq!(app.workspace_detail_scroll, before_scroll);
         assert_eq!(take_open_workspace_folder_call_count(), 0);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn workspace_enter_selects_workspace_even_if_active() {
+        let mut app = build_workspace_app(None);
+        app.settings_config_expanded = true;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.screen, Screen::Dashboard);
         assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 

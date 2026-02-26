@@ -55,18 +55,6 @@ pub enum Command {
 
     /// Reset gisa — remove all config, workspaces, and cache
     Reset(ResetArgs),
-
-    /// [deprecated] Clone repositories — use 'gisa sync' instead
-    #[command(hide = true)]
-    Clone(CloneArgs),
-
-    /// [deprecated] Fetch updates — use 'gisa sync' instead
-    #[command(hide = true)]
-    Fetch(LegacySyncArgs),
-
-    /// [deprecated] Pull updates — use 'gisa sync --pull' instead
-    #[command(hide = true)]
-    Pull(LegacySyncArgs),
 }
 
 /// Arguments for the init command
@@ -115,65 +103,6 @@ pub struct SyncCmdArgs {
     /// Don't skip repositories with uncommitted changes
     #[arg(long)]
     pub no_skip_uncommitted: bool,
-}
-
-/// Arguments for the clone command (deprecated)
-#[derive(Args, Debug)]
-pub struct CloneArgs {
-    /// Base directory for cloned repositories
-    pub base_path: PathBuf,
-
-    /// Perform a dry run (show what would be cloned)
-    #[arg(short = 'n', long)]
-    pub dry_run: bool,
-
-    /// Maximum number of concurrent clones
-    #[arg(short, long)]
-    pub concurrency: Option<usize>,
-
-    /// Clone depth (0 for full clone)
-    #[arg(short = 'd', long)]
-    pub depth: Option<u32>,
-
-    /// Clone a specific branch instead of the default
-    #[arg(short = 'b', long)]
-    pub branch: Option<String>,
-
-    /// Clone submodules recursively
-    #[arg(long)]
-    pub recurse_submodules: bool,
-
-    /// Include archived repositories
-    #[arg(long)]
-    pub include_archived: bool,
-
-    /// Include forked repositories
-    #[arg(long)]
-    pub include_forks: bool,
-
-    /// Filter to specific organizations (can be repeated)
-    #[arg(short, long)]
-    pub org: Vec<String>,
-
-    /// Exclude specific organizations (can be repeated)
-    #[arg(long)]
-    pub exclude_org: Vec<String>,
-
-    /// Filter repositories by name pattern (regex)
-    #[arg(long)]
-    pub filter: Option<String>,
-
-    /// Exclude repositories by name pattern (regex)
-    #[arg(long)]
-    pub exclude: Option<String>,
-
-    /// Use HTTPS instead of SSH for cloning
-    #[arg(long)]
-    pub https: bool,
-
-    /// Provider to use (default: all configured)
-    #[arg(short, long)]
-    pub provider: Option<String>,
 }
 
 /// Arguments for the status command
@@ -225,37 +154,6 @@ pub struct WorkspaceDefaultArgs {
     /// Clear the default workspace
     #[arg(long)]
     pub clear: bool,
-}
-
-/// Arguments for legacy fetch/pull commands (deprecated)
-#[derive(Args, Debug)]
-pub struct LegacySyncArgs {
-    /// Base directory containing cloned repositories
-    pub base_path: PathBuf,
-
-    /// Perform a dry run (show what would be synced)
-    #[arg(short = 'n', long)]
-    pub dry_run: bool,
-
-    /// Maximum number of concurrent operations
-    #[arg(short, long)]
-    pub concurrency: Option<usize>,
-
-    /// Don't skip repositories with uncommitted changes (sync them anyway)
-    #[arg(long)]
-    pub no_skip_uncommitted: bool,
-
-    /// Filter to specific organizations (can be repeated)
-    #[arg(short, long)]
-    pub org: Vec<String>,
-
-    /// Exclude specific organizations (can be repeated)
-    #[arg(long)]
-    pub exclude_org: Vec<String>,
-
-    /// Filter repositories by name pattern (regex)
-    #[arg(long)]
-    pub filter: Option<String>,
 }
 
 /// Arguments for the reset command
@@ -380,41 +278,22 @@ mod tests {
         }
     }
 
-    // Legacy commands still parse (hidden but functional)
     #[test]
-    fn test_cli_parsing_legacy_clone() {
-        let cli = Cli::try_parse_from(["gisa", "clone", "~/github", "--dry-run"]).unwrap();
-        match cli.command {
-            Some(Command::Clone(args)) => {
-                assert_eq!(args.base_path, PathBuf::from("~/github"));
-                assert!(args.dry_run);
-            }
-            _ => panic!("Expected Clone command"),
-        }
+    fn test_cli_rejects_clone_subcommand() {
+        let cli = Cli::try_parse_from(["gisa", "clone"]);
+        assert!(cli.is_err());
     }
 
     #[test]
-    fn test_cli_parsing_legacy_fetch() {
-        let cli = Cli::try_parse_from(["gisa", "fetch", "~/github", "--org", "my-org"]).unwrap();
-        match cli.command {
-            Some(Command::Fetch(args)) => {
-                assert_eq!(args.base_path, PathBuf::from("~/github"));
-                assert_eq!(args.org, vec!["my-org"]);
-            }
-            _ => panic!("Expected Fetch command"),
-        }
+    fn test_cli_rejects_fetch_subcommand() {
+        let cli = Cli::try_parse_from(["gisa", "fetch"]);
+        assert!(cli.is_err());
     }
 
     #[test]
-    fn test_cli_parsing_legacy_pull() {
-        let cli =
-            Cli::try_parse_from(["gisa", "pull", "~/github", "--no-skip-uncommitted"]).unwrap();
-        match cli.command {
-            Some(Command::Pull(args)) => {
-                assert!(args.no_skip_uncommitted);
-            }
-            _ => panic!("Expected Pull command"),
-        }
+    fn test_cli_rejects_pull_subcommand() {
+        let cli = Cli::try_parse_from(["gisa", "pull"]);
+        assert!(cli.is_err());
     }
 
     #[test]

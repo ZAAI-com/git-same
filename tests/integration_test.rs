@@ -55,44 +55,51 @@ fn test_version_command() {
 }
 
 #[test]
-fn test_clone_help() {
+fn test_clone_subcommand_removed() {
     let output = Command::new(git_same_binary())
-        .args(["clone", "--help"])
+        .arg("clone")
         .output()
         .expect("Failed to execute git-same");
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Clone repositories"));
-    assert!(stdout.contains("--dry-run"));
-    assert!(stdout.contains("--concurrency"));
-    assert!(stdout.contains("--org"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand") || stderr.contains("unexpected argument"),
+        "Expected unknown subcommand error, got: {}",
+        stderr
+    );
 }
 
 #[test]
-fn test_fetch_help() {
+fn test_fetch_subcommand_removed() {
     let output = Command::new(git_same_binary())
-        .args(["fetch", "--help"])
+        .arg("fetch")
         .output()
         .expect("Failed to execute git-same");
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Fetch updates"));
-    assert!(stdout.contains("--dry-run"));
-    assert!(stdout.contains("--no-skip-uncommitted"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand") || stderr.contains("unexpected argument"),
+        "Expected unknown subcommand error, got: {}",
+        stderr
+    );
 }
 
 #[test]
-fn test_pull_help() {
+fn test_pull_subcommand_removed() {
     let output = Command::new(git_same_binary())
-        .args(["pull", "--help"])
+        .arg("pull")
         .output()
         .expect("Failed to execute git-same");
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Pull updates"));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand") || stderr.contains("unexpected argument"),
+        "Expected unknown subcommand error, got: {}",
+        stderr
+    );
 }
 
 #[test]
@@ -120,18 +127,6 @@ fn test_init_help() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Initialize"));
     assert!(stdout.contains("--force"));
-}
-
-#[test]
-fn test_clone_missing_argument() {
-    let output = Command::new(git_same_binary())
-        .arg("clone")
-        .output()
-        .expect("Failed to execute git-same");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("BASE_PATH") || stderr.contains("required"));
 }
 
 #[test]
@@ -321,35 +316,6 @@ fn test_missing_config_suggests_init() {
     assert!(
         stderr.contains("gisa init"),
         "Expected suggestion to run 'gisa init', got: {}",
-        stderr
-    );
-}
-
-// Tests that require authentication are ignored by default
-// Run with: cargo test -- --ignored
-
-#[test]
-#[ignore = "Requires GitHub authentication"]
-fn test_clone_dry_run() {
-    use tempfile::TempDir;
-
-    let temp = TempDir::new().expect("Failed to create temp dir");
-
-    let output = Command::new(git_same_binary())
-        .args(["clone", temp.path().to_str().unwrap(), "--dry-run", "-v"])
-        .output()
-        .expect("Failed to execute git-same");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    // Should show discovery progress or dry run output
-    assert!(
-        stdout.contains("repositories")
-            || stdout.contains("Dry run")
-            || stderr.contains("Authenticating"),
-        "Expected discovery output, got stdout: {}, stderr: {}",
-        stdout,
         stderr
     );
 }

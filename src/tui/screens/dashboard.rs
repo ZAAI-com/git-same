@@ -291,7 +291,7 @@ fn render_tagline(frame: &mut Frame, area: Rect) {
 
 fn render_info_line(frame: &mut Frame, area: Rect, left: Vec<Span>, right: Vec<Span>) {
     let cols =
-        Layout::horizontal([Constraint::Percentage(46), Constraint::Percentage(54)]).split(area);
+        Layout::horizontal([Constraint::Percentage(41), Constraint::Percentage(59)]).split(area);
     frame.render_widget(Paragraph::new(Line::from(left)).right_aligned(), cols[0]);
     frame.render_widget(Paragraph::new(Line::from(right)), cols[1]);
 }

@@ -95,14 +95,14 @@ brew install gh  # macOS
 gh auth login
 
 # Git-Same will now use your gh credentials
-git-same clone ~/github
+gisa sync
 ```
 
 Alternatively, use a personal access token:
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
-git-same clone ~/github
+gisa sync
 ```
 
 ## Configuration
@@ -243,15 +243,6 @@ Remove all config, workspaces, and cache:
 gisa reset [-f | --force]
 ```
 
-### Deprecated Commands
-
-`clone`, `fetch`, and `pull` still work but are hidden. Use `gisa sync` instead:
-
-```bash
-gisa sync                  # replaces: gisa clone + gisa fetch
-gisa sync --pull           # replaces: gisa pull
-```
-
 ## TUI Mode
 
 Running `gisa` without a subcommand launches the interactive terminal UI.
@@ -261,13 +252,13 @@ Running `gisa` without a subcommand launches the interactive terminal UI.
 | Screen | Purpose | Key bindings |
 |--------|---------|-------------|
 | **Dashboard** | Overview with stats, quick actions | `s`: Sync, `t`: Status, `w`: Workspaces, `?`: Settings |
-| **Workspace Selector** | Pick active workspace | `j/k`: Navigate, `Enter`: Select, `d`: Set default, `n`: New |
+| **Workspace Selector** | Pick active workspace | `[←] [↑] [↓] [→]`: Move, `Enter`: Select, `d`: Set default, `n`: New |
 | **Init Check** | System requirements check | `Enter`: Check, `c`: Create config, `s`: Setup |
 | **Setup Wizard** | Interactive workspace configuration | Step-by-step prompts |
 | **Command Picker** | Choose operation to run | `Enter`: Run |
 | **Progress** | Live sync progress with per-repo updates | `Esc`: Back when complete |
-| **Repo Status** | Table of local repos with git status | `j/k`: Navigate, `/`: Filter, `D`: Uncommitted, `B`: Behind, `r`: Refresh |
-| **Org Browser** | Browse discovered repos by organization | `j/k`: Navigate |
+| **Repo Status** | Table of local repos with git status | `[←] [↑] [↓] [→]`: Move, `/`: Filter, `D`: Uncommitted, `B`: Behind, `r`: Refresh |
+| **Org Browser** | Browse discovered repos by organization | `[←] [↑] [↓] [→]`: Move |
 | **Settings** | View workspace settings | `Esc`: Back |
 
 ## Examples

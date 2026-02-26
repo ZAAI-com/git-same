@@ -98,7 +98,9 @@ async fn main() -> ExitCode {
             }
             #[cfg(not(feature = "tui"))]
             {
-                eprintln!("TUI not available. Run a subcommand (e.g., 'gisa clone') or build with --features tui.");
+                eprintln!(
+                    "TUI not available. Run a subcommand (e.g., 'gisa sync') or build with --features tui."
+                );
                 ExitCode::from(1)
             }
         }

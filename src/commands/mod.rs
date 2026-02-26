@@ -3,14 +3,12 @@
 //! This module contains the runtime behavior for each subcommand,
 //! separated from `main.rs` so the entrypoint stays focused on bootstrapping.
 
-pub mod clone;
 pub mod init;
 pub mod reset;
 #[cfg(feature = "tui")]
 pub mod setup;
 pub mod status;
 pub mod support;
-pub mod sync;
 pub mod sync_cmd;
 pub mod workspace;
 
@@ -21,11 +19,10 @@ pub use sync_cmd::run as run_sync_cmd;
 use crate::cli::Command;
 use crate::config::Config;
 use crate::errors::{AppError, Result};
-use crate::operations::sync::SyncMode;
 use crate::output::Output;
 use std::path::Path;
 
-pub(crate) use support::{ensure_base_path, expand_path, warn_if_concurrency_capped};
+pub(crate) use support::{ensure_base_path, warn_if_concurrency_capped};
 
 /// Run the specified command.
 pub async fn run_command(
@@ -55,19 +52,6 @@ pub async fn run_command(
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
         Command::Status(args) => run_status(args, &config, output).await,
         Command::Workspace(args) => workspace::run(args, &config, output),
-        // Deprecated commands — show warning then delegate
-        Command::Clone(args) => {
-            output.warn("'clone' is deprecated. Use 'gisa sync' instead.");
-            clone::run(args, &config, output).await
-        }
-        Command::Fetch(args) => {
-            output.warn("'fetch' is deprecated. Use 'gisa sync' instead.");
-            sync::run(args, &config, output, SyncMode::Fetch).await
-        }
-        Command::Pull(args) => {
-            output.warn("'pull' is deprecated. Use 'gisa sync --pull' instead.");
-            sync::run(args, &config, output, SyncMode::Pull).await
-        }
     }
 }
 

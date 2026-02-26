@@ -20,6 +20,13 @@ pub enum Screen {
     Settings,
 }
 
+/// Focused pane on the Workspace screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspacePane {
+    Left,
+    Right,
+}
+
 /// Which operation is running or was last selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
@@ -184,6 +191,9 @@ pub struct App {
     /// Selected index in workspace selector.
     pub workspace_index: usize,
 
+    /// Focused pane in the Workspaces screen.
+    pub workspace_pane: WorkspacePane,
+
     /// Base path for repos (derived from active workspace).
     pub base_path: Option<PathBuf>,
 
@@ -343,6 +353,7 @@ impl App {
             workspaces,
             active_workspace,
             workspace_index: 0,
+            workspace_pane: WorkspacePane::Left,
             base_path,
             repos_by_org: HashMap::new(),
             all_repos: Vec::new(),
