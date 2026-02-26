@@ -6,7 +6,7 @@ use crate::banner;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 /// Render the setup wizard.
@@ -24,9 +24,9 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
     }
     constraints.push(Constraint::Length(2)); // Title
     if show_progress {
-        constraints.push(Constraint::Length(3)); // Step progress indicator
+        constraints.push(Constraint::Length(4)); // Step progress indicator (with border)
     }
-    constraints.push(Constraint::Min(8)); // Step content
+    constraints.push(Constraint::Min(10)); // Step content (with border)
     constraints.push(Constraint::Length(2)); // Status bar
 
     let chunks = Layout::vertical(constraints).split(area);
@@ -66,22 +66,32 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
 
     // Step progress indicator
     if show_progress {
-        render_step_progress(state, frame, chunks[idx]);
+        let progress_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray));
+        let progress_inner = progress_block.inner(chunks[idx]);
+        frame.render_widget(progress_block, chunks[idx]);
+        render_step_progress(state, frame, progress_inner);
         idx += 1;
     }
 
     // Step content
     let content_area = chunks[idx];
+    let content_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let content_inner = content_block.inner(content_area);
+    frame.render_widget(content_block, content_area);
     idx += 1;
 
     match state.step {
-        SetupStep::Welcome => screens::welcome::render(state, frame, content_area),
-        SetupStep::SelectProvider => screens::provider::render(state, frame, content_area),
-        SetupStep::Authenticate => screens::auth::render(state, frame, content_area),
-        SetupStep::SelectOrgs => screens::orgs::render(state, frame, content_area),
-        SetupStep::SelectPath => screens::path::render(state, frame, content_area),
-        SetupStep::Confirm => screens::confirm::render(state, frame, content_area),
-        SetupStep::Complete => screens::complete::render(state, frame, content_area),
+        SetupStep::Welcome => screens::welcome::render(state, frame, content_inner),
+        SetupStep::SelectProvider => screens::provider::render(state, frame, content_inner),
+        SetupStep::Authenticate => screens::auth::render(state, frame, content_inner),
+        SetupStep::SelectOrgs => screens::orgs::render(state, frame, content_inner),
+        SetupStep::SelectPath => screens::path::render(state, frame, content_inner),
+        SetupStep::Confirm => screens::confirm::render(state, frame, content_inner),
+        SetupStep::Complete => screens::complete::render(state, frame, content_inner),
     }
 
     // Status bar
@@ -205,170 +215,127 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(Color::DarkGray);
+    let yellow = Style::default().fg(Color::Yellow);
 
-    let (actions, nav) = match state.step {
-        SetupStep::Welcome => (
-            vec![
-                Span::styled(" [Enter]", blue),
-                Span::styled(" Get Started", dim),
-            ],
-            vec![
-                Span::styled(" [Esc]", blue),
-                Span::styled(" Cancel  ", dim),
-                Span::styled("[q]", blue),
-                Span::styled(" Quit", dim),
-            ],
-        ),
-        SetupStep::SelectProvider => (
-            vec![Span::styled(" [Enter]", blue), Span::styled(" Select", dim)],
-            vec![
-                Span::styled(" [←] [↑] [↓] [→]", blue),
-                Span::styled(" Move  ", dim),
-                Span::styled("[Esc]", blue),
-                Span::styled(" Cancel  ", dim),
-                Span::styled("[q]", blue),
-                Span::styled(" Quit", dim),
-            ],
-        ),
+    let top_center = match state.step {
+        SetupStep::Welcome => vec![
+            Span::styled("Press ", dim),
+            Span::styled("[Enter]", blue),
+            Span::styled(" to get started", dim),
+        ],
+        SetupStep::SelectProvider => vec![
+            Span::styled("[↑] [↓]", blue),
+            Span::styled(" Select provider", dim),
+        ],
         SetupStep::Authenticate => {
             use super::state::AuthStatus;
-            let action_label = match &state.auth_status {
-                AuthStatus::Pending | AuthStatus::Failed(_) => " Authenticate",
-                AuthStatus::Success => " Continue",
-                AuthStatus::Checking => " Checking...",
-            };
-            (
-                vec![
-                    Span::styled(" [Enter]", blue),
-                    Span::styled(action_label, dim),
+            match &state.auth_status {
+                AuthStatus::Pending | AuthStatus::Failed(_) => vec![
+                    Span::styled("[Enter]", blue),
+                    Span::styled(" Authenticate", dim),
                 ],
-                vec![
-                    Span::styled(" [Esc]", blue),
-                    Span::styled(" Back  ", dim),
-                    Span::styled("[q]", blue),
-                    Span::styled(" Quit", dim),
+                AuthStatus::Success => vec![
+                    Span::styled("[Enter]", blue),
+                    Span::styled(" Continue", dim),
                 ],
-            )
+                AuthStatus::Checking => vec![Span::styled("Authenticating...", yellow)],
+            }
         }
         SetupStep::SelectPath => {
             if state.path_browse_mode {
-                (
-                    vec![
-                        Span::styled(" [Enter]", blue),
-                        Span::styled(" Open  ", dim),
-                        Span::styled("[u]", blue),
-                        Span::styled(" Use Folder  ", dim),
-                        Span::styled("[n]", blue),
-                        Span::styled(" New Folder", dim),
-                    ],
-                    vec![
-                        Span::styled(" [\u{2190}] [\u{2191}] [\u{2193}] [\u{2192}]", blue),
-                        Span::styled(" Move/Open  ", dim),
-                        Span::styled("[h] [c] [r]", blue),
-                        Span::styled(" Jump  ", dim),
-                        Span::styled("[.]", blue),
-                        Span::styled(" Hidden  ", dim),
-                        Span::styled("[Esc]", blue),
-                        Span::styled(" Close  ", dim),
-                        Span::styled("[q]", blue),
-                        Span::styled(" Quit", dim),
-                    ],
-                )
+                vec![
+                    Span::styled("[u]", blue),
+                    Span::styled(" Use Folder  ", dim),
+                    Span::styled("[n]", blue),
+                    Span::styled(" New Folder  ", dim),
+                    Span::styled("[h] [c] [r]", blue),
+                    Span::styled(" Jump  ", dim),
+                    Span::styled("[.]", blue),
+                    Span::styled(" Hidden", dim),
+                ]
             } else if state.path_suggestions_mode {
-                (
-                    vec![
-                        Span::styled(" [Enter]", blue),
-                        Span::styled(" Confirm  ", dim),
-                        Span::styled("[Tab]", blue),
-                        Span::styled(" Edit  ", dim),
-                        Span::styled("[b]", blue),
-                        Span::styled(" Browse", dim),
-                    ],
-                    vec![
-                        Span::styled(" [←] [↑] [↓] [→]", blue),
-                        Span::styled(" Move  ", dim),
-                        Span::styled("[Esc]", blue),
-                        Span::styled(" Back  ", dim),
-                        Span::styled("[q]", blue),
-                        Span::styled(" Quit", dim),
-                    ],
-                )
+                vec![
+                    Span::styled("[Tab]", blue),
+                    Span::styled(" Edit  ", dim),
+                    Span::styled("[b]", blue),
+                    Span::styled(" Browse", dim),
+                ]
             } else {
-                (
-                    vec![
-                        Span::styled(" [Enter]", blue),
-                        Span::styled(" Confirm  ", dim),
-                        Span::styled("[Tab]", blue),
-                        Span::styled(" Complete  ", dim),
-                        Span::styled("[Ctrl+b]", blue),
-                        Span::styled(" Browse", dim),
-                    ],
-                    vec![
-                        Span::styled(" [Esc]", blue),
-                        Span::styled(" Back  ", dim),
-                        Span::styled("[q]", blue),
-                        Span::styled(" Quit", dim),
-                    ],
-                )
+                vec![
+                    Span::styled("[Tab]", blue),
+                    Span::styled(" Complete  ", dim),
+                    Span::styled("[Ctrl+b]", blue),
+                    Span::styled(" Browse", dim),
+                ]
             }
         }
         SetupStep::SelectOrgs => {
             if state.org_loading {
-                (
-                    vec![Span::styled(" Discovering organizations...", dim)],
-                    vec![
-                        Span::styled(" [Esc]", blue),
-                        Span::styled(" Back  ", dim),
-                        Span::styled("[q]", blue),
-                        Span::styled(" Quit", dim),
-                    ],
-                )
+                vec![Span::styled("Discovering organizations...", yellow)]
             } else {
-                (
-                    vec![
-                        Span::styled(" [Space]", blue),
-                        Span::styled(" Toggle  ", dim),
-                        Span::styled("[a]", blue),
-                        Span::styled(" All  ", dim),
-                        Span::styled("[n]", blue),
-                        Span::styled(" None  ", dim),
-                        Span::styled("[Enter]", blue),
-                        Span::styled(" Confirm", dim),
-                    ],
-                    vec![
-                        Span::styled(" [←] [↑] [↓] [→]", blue),
-                        Span::styled(" Move  ", dim),
-                        Span::styled("[Esc]", blue),
-                        Span::styled(" Back  ", dim),
-                        Span::styled("[q]", blue),
-                        Span::styled(" Quit", dim),
-                    ],
-                )
+                vec![
+                    Span::styled("[Space]", blue),
+                    Span::styled(" Toggle  ", dim),
+                    Span::styled("[a]", blue),
+                    Span::styled(" All  ", dim),
+                    Span::styled("[n]", blue),
+                    Span::styled(" None", dim),
+                ]
             }
         }
-        SetupStep::Confirm => (
-            vec![Span::styled(" [Enter]", blue), Span::styled(" Save", dim)],
-            vec![
-                Span::styled(" [Esc]", blue),
-                Span::styled(" Back  ", dim),
-                Span::styled("[q]", blue),
-                Span::styled(" Quit", dim),
-            ],
-        ),
-        SetupStep::Complete => (
-            vec![
-                Span::styled(" [Enter]", blue),
-                Span::styled(" Dashboard  ", dim),
-                Span::styled("[s]", blue),
-                Span::styled(" Sync Now", dim),
-            ],
-            vec![
-                Span::styled(" [Esc]", blue),
-                Span::styled(" Back  ", dim),
-                Span::styled("[q]", blue),
-                Span::styled(" Quit", dim),
-            ],
-        ),
+        SetupStep::Confirm => vec![
+            Span::styled("[Enter]", blue),
+            Span::styled(" Save workspace", dim),
+        ],
+        SetupStep::Complete => vec![
+            Span::styled("[Enter]", blue),
+            Span::styled(" Dashboard  ", dim),
+            Span::styled("[s]", blue),
+            Span::styled(" Sync Now", dim),
+        ],
+    };
+
+    let bottom_left = vec![
+        Span::styled("[q]", blue),
+        Span::styled(" Quit  ", dim),
+        Span::styled("[Esc]", blue),
+        Span::styled(" Back", dim),
+    ];
+
+    let bottom_right = match state.step {
+        SetupStep::SelectProvider | SetupStep::SelectOrgs => vec![
+            Span::styled("[↑] [↓]", blue),
+            Span::styled(" Move  ", dim),
+            Span::styled("[←] [→]", blue),
+            Span::styled(" Step  ", dim),
+            Span::styled("[Enter]", blue),
+            Span::styled(" Next Step", dim),
+        ],
+        SetupStep::SelectPath => {
+            if state.path_browse_mode || state.path_suggestions_mode {
+                vec![
+                    Span::styled("[↑] [↓]", blue),
+                    Span::styled(" Move  ", dim),
+                    Span::styled("[←] [→]", blue),
+                    Span::styled(" Step  ", dim),
+                    Span::styled("[Enter]", blue),
+                    Span::styled(" Next Step", dim),
+                ]
+            } else {
+                vec![
+                    Span::styled("[←] [→]", blue),
+                    Span::styled(" Step  ", dim),
+                    Span::styled("[Enter]", blue),
+                    Span::styled(" Next Step", dim),
+                ]
+            }
+        }
+        _ => vec![
+            Span::styled("[←] [→]", blue),
+            Span::styled(" Step  ", dim),
+            Span::styled("[Enter]", blue),
+            Span::styled(" Next Step", dim),
+        ],
     };
 
     let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
@@ -378,20 +345,32 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
     } else {
         None
     };
+
     let step_width = step_text
         .as_ref()
         .map(|s| s.chars().count() as u16 + 1)
         .unwrap_or(0);
     let top_cols =
-        Layout::horizontal([Constraint::Min(0), Constraint::Length(step_width)]).split(rows[0]);
+        Layout::horizontal([Constraint::Length(step_width), Constraint::Min(0)]).split(rows[0]);
 
-    frame.render_widget(Paragraph::new(Line::from(actions)), top_cols[0]);
     if let Some(text) = step_text {
-        let step_widget = Paragraph::new(Line::from(Span::styled(text, dim))).right_aligned();
-        frame.render_widget(step_widget, top_cols[1]);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(text, dim))),
+            top_cols[0],
+        );
     }
+    frame.render_widget(
+        Paragraph::new(Line::from(top_center)).alignment(Alignment::Center),
+        top_cols[1],
+    );
 
-    frame.render_widget(Paragraph::new(Line::from(nav)), rows[1]);
+    let bottom_cols =
+        Layout::horizontal([Constraint::Length(24), Constraint::Min(0)]).split(rows[1]);
+    frame.render_widget(Paragraph::new(Line::from(bottom_left)), bottom_cols[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(bottom_right)).right_aligned(),
+        bottom_cols[1],
+    );
 }
 
 #[cfg(test)]

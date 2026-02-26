@@ -26,6 +26,24 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         state.should_quit = true;
         return;
     }
+    if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Esc {
+        state.outcome = Some(SetupOutcome::Cancelled);
+        state.should_quit = true;
+        return;
+    }
+    if key.modifiers == KeyModifiers::NONE {
+        match key.code {
+            KeyCode::Left => {
+                state.prev_step();
+                return;
+            }
+            KeyCode::Right => {
+                handle_step_forward(state).await;
+                return;
+            }
+            _ => {}
+        }
+    }
 
     match state.step {
         SetupStep::Welcome => handle_welcome(state, key),
@@ -35,6 +53,66 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         SetupStep::SelectOrgs => handle_orgs(state, key).await,
         SetupStep::Confirm => handle_confirm(state, key),
         SetupStep::Complete => handle_complete(state, key),
+    }
+}
+
+async fn handle_step_forward(state: &mut SetupState) {
+    match state.step {
+        SetupStep::Welcome => {
+            state.next_step();
+        }
+        SetupStep::SelectProvider => {
+            if state.provider_choices[state.provider_index].available {
+                state.auth_status = AuthStatus::Pending;
+                state.next_step();
+            }
+        }
+        SetupStep::Authenticate => match state.auth_status.clone() {
+            AuthStatus::Pending | AuthStatus::Failed(_) => {
+                state.auth_status = AuthStatus::Checking;
+                do_authenticate(state).await;
+            }
+            AuthStatus::Success => {
+                state.next_step();
+            }
+            AuthStatus::Checking => {}
+        },
+        SetupStep::SelectOrgs => {
+            if state.org_loading {
+                do_discover_orgs(state).await;
+            } else if state.org_error.is_some() {
+                state.org_loading = true;
+                state.org_error = None;
+            } else {
+                state.next_step();
+            }
+        }
+        SetupStep::SelectPath => {
+            if state.path_browse_mode {
+                if !state.path_browse_current_dir.is_empty() {
+                    state.base_path = state.path_browse_current_dir.clone();
+                    state.path_cursor = state.base_path.len();
+                }
+                close_path_browse_to_input(state);
+            } else if state.path_suggestions_mode {
+                if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
+                    state.base_path = s.path.clone();
+                    state.path_cursor = state.base_path.len();
+                }
+            }
+            confirm_path(state);
+        }
+        SetupStep::Confirm => match save_workspace(state) {
+            Ok(()) => {
+                state.next_step();
+            }
+            Err(e) => {
+                state.error_message = Some(e.to_string());
+            }
+        },
+        SetupStep::Complete => {
+            state.next_step();
+        }
     }
 }
 

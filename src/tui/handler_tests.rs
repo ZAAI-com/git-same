@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{Config, WorkspaceConfig};
-use crate::setup::state::SetupState;
+use crate::setup::state::{SetupState, SetupStep};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -48,4 +48,19 @@ async fn setup_cancel_without_history_falls_back_to_system_check() {
     assert!(app.setup_state.is_none());
     assert_eq!(app.screen, Screen::SystemCheck);
     assert!(app.screen_stack.is_empty());
+}
+
+#[tokio::test]
+async fn setup_right_moves_to_next_step() {
+    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let mut app = App::new(Config::default(), vec![ws]);
+    app.screen = Screen::WorkspaceSetup;
+    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+
+    handle_setup_wizard_key(&mut app, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).await;
+
+    assert_eq!(
+        app.setup_state.as_ref().map(|s| s.step),
+        Some(SetupStep::Authenticate)
+    );
 }

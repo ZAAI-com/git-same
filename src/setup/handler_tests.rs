@@ -16,6 +16,66 @@ async fn q_quits_setup_wizard() {
 }
 
 #[tokio::test]
+async fn esc_cancels_setup_from_any_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
+
+    assert!(state.should_quit);
+    assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+}
+
+#[tokio::test]
+async fn left_moves_to_previous_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+
+    assert_eq!(state.step, SetupStep::Authenticate);
+}
+
+#[tokio::test]
+async fn right_advances_from_provider_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    assert_eq!(state.step, SetupStep::SelectProvider);
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Authenticate);
+}
+
+#[tokio::test]
+async fn right_in_path_browse_mode_advances_step() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = super::tilde_collapse(&temp.path().to_string_lossy());
+
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectPath;
+    state.path_browse_mode = true;
+    state.path_suggestions_mode = false;
+    state.path_browse_current_dir = path.clone();
+    state.base_path = "~/Git-Same/GitHub".to_string();
+    state.path_cursor = state.base_path.len();
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Confirm);
+    assert_eq!(state.base_path, path);
+}
+
+#[tokio::test]
 async fn b_opens_path_browser_from_suggestions_mode() {
     let temp = tempfile::tempdir().unwrap();
     let child = temp.path().join("child");
