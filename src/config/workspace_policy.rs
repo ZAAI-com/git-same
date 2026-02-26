@@ -98,3 +98,7 @@ impl WorkspacePolicy {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "workspace_policy_tests.rs"]
+mod tests;

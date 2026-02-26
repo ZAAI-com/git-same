@@ -223,3 +223,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     };
     status_bar::render(frame, chunks[3], hint);
 }
+
+#[cfg(test)]
+#[path = "system_check_tests.rs"]
+mod tests;

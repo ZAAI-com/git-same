@@ -106,3 +106,7 @@ async fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;

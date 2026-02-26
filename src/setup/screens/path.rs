@@ -247,3 +247,7 @@ fn render_completions(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     frame.render_widget(Paragraph::new(lines), area);
 }
+
+#[cfg(test)]
+#[path = "path_tests.rs"]
+mod tests;

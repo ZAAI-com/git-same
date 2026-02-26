@@ -61,3 +61,7 @@ pub fn scan_workspace_status(config: &Config, workspace: &WorkspaceConfig) -> Ve
 
     entries
 }
+
+#[cfg(all(test, feature = "tui"))]
+#[path = "status_scan_tests.rs"]
+mod tests;

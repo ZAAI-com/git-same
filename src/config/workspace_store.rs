@@ -179,3 +179,7 @@ impl WorkspaceStore {
         Ok(ws)
     }
 }
+
+#[cfg(test)]
+#[path = "workspace_store_tests.rs"]
+mod tests;

@@ -156,3 +156,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let widget = Paragraph::new(lines);
     frame.render_widget(widget, area);
 }
+
+#[cfg(test)]
+#[path = "orgs_tests.rs"]
+mod tests;

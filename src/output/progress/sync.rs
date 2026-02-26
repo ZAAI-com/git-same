@@ -143,3 +143,7 @@ impl SyncProgress for SyncProgressBar {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "sync_tests.rs"]
+mod tests;

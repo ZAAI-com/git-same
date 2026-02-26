@@ -263,3 +263,7 @@ pub fn render_animated_banner(frame: &mut Frame, area: Rect, phase: f64) {
     let banner = Paragraph::new(banner_lines).centered();
     frame.render_widget(banner, area);
 }
+
+#[cfg(test)]
+#[path = "banner_tests.rs"]
+mod tests;

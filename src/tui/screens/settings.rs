@@ -311,3 +311,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         nav_cols[1],
     );
 }
+
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

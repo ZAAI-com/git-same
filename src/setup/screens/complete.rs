@@ -81,3 +81,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let help = Paragraph::new("Enter Dashboard  Esc Back").style(dim);
     frame.render_widget(help, chunks[2]);
 }
+
+#[cfg(test)]
+#[path = "complete_tests.rs"]
+mod tests;

@@ -92,3 +92,7 @@ impl DiscoveryProgress for DiscoveryProgressBar {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "discovery_tests.rs"]
+mod tests;

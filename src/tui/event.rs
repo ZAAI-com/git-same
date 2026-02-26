@@ -117,3 +117,7 @@ pub fn spawn_event_loop(
 
     (rx, tx)
 }
+
+#[cfg(test)]
+#[path = "event_tests.rs"]
+mod tests;

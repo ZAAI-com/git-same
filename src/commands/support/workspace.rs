@@ -56,3 +56,7 @@ fn confirm_stderr(prompt: &str) -> Result<bool> {
     let answer = line.trim().to_lowercase();
     Ok(answer == "y" || answer == "yes")
 }
+
+#[cfg(test)]
+#[path = "workspace_tests.rs"]
+mod tests;

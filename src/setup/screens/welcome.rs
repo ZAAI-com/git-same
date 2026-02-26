@@ -73,3 +73,7 @@ pub fn render(_state: &SetupState, frame: &mut Frame, area: Rect) {
         Paragraph::new("Enter Start  Esc Cancel").style(Style::default().fg(Color::DarkGray));
     frame.render_widget(help, chunks[2]);
 }
+
+#[cfg(test)]
+#[path = "welcome_tests.rs"]
+mod tests;

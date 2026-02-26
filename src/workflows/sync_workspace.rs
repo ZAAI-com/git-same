@@ -294,3 +294,7 @@ pub async fn execute_prepared_sync(
         sync_results,
     }
 }
+
+#[cfg(test)]
+#[path = "sync_workspace_tests.rs"]
+mod tests;

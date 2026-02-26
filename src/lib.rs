@@ -94,3 +94,7 @@ pub mod prelude {
     };
     pub use crate::types::{ActionPlan, OpResult, OpSummary, Org, OwnedRepo, ProviderKind, Repo};
 }
+
+#[cfg(test)]
+#[path = "lib_tests.rs"]
+mod tests;

@@ -105,3 +105,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     frame.render_widget(content.block(block), area);
 }
+
+#[cfg(test)]
+#[path = "auth_tests.rs"]
+mod tests;

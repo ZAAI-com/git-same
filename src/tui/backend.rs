@@ -386,3 +386,7 @@ async fn run_status_scan(
 
     let _ = tx.send(AppEvent::Backend(BackendMessage::StatusResults(entries)));
 }
+
+#[cfg(test)]
+#[path = "backend_tests.rs"]
+mod tests;

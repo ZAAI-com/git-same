@@ -57,3 +57,7 @@ pub fn create_provider(entry: &ProviderEntry, token: &str) -> Result<Box<dyn Pro
         ))),
     }
 }
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

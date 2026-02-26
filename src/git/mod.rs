@@ -41,3 +41,7 @@ pub use traits::{CloneOptions, FetchResult, GitOperations, PullResult, RepoStatu
 
 #[cfg(test)]
 pub use traits::mock::{MockConfig, MockGit};
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

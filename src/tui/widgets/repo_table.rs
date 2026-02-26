@@ -66,3 +66,7 @@ pub fn render_owned_repos(
     );
     frame.render_widget(table, area);
 }
+
+#[cfg(test)]
+#[path = "repo_table_tests.rs"]
+mod tests;

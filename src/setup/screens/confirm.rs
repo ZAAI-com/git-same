@@ -103,3 +103,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     frame.render_widget(Paragraph::new(info_lines), chunks[2]);
 }
+
+#[cfg(test)]
+#[path = "confirm_tests.rs"]
+mod tests;

@@ -88,3 +88,7 @@ impl CloneProgress for CloneProgressBar {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "clone_tests.rs"]
+mod tests;

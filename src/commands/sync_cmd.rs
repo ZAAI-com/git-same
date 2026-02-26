@@ -173,16 +173,5 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
 }
 
 #[cfg(test)]
-mod tests {
-    // Sync command orchestrates workspace -> auth -> provider -> discovery -> clone + sync.
-    // Unit tests are not feasible because `run()` requires real credentials.
-    //
-    // Component-level tests exist in:
-    // - src/operations/clone.rs (CloneManager)
-    // - src/operations/sync.rs (SyncManager)
-    // - src/discovery/mod.rs (DiscoveryOrchestrator)
-    // - src/config/workspace.rs (WorkspaceConfig)
-    // - src/config/workspace_manager.rs (WorkspaceManager)
-    //
-    // Integration coverage: tests/integration_test.rs
-}
+#[path = "sync_cmd_tests.rs"]
+mod tests;

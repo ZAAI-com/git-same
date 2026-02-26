@@ -78,3 +78,7 @@ impl SyncHistoryManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "sync_history_tests.rs"]
+mod tests;
