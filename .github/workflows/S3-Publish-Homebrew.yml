@@ -1,0 +1,124 @@
+name: S3 - Publish Homebrew
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v0.9.0)"
+        required: true
+        type: string
+
+env:
+  TAP_REPO: zaai-com/homebrew-tap
+  FORMULA_NAME: git-same
+
+jobs:
+  homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version from tag
+        id: version
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "${GITHUB_REF}" ]; then
+            echo "Invalid tag. Provide workflow_dispatch input 'tag' (e.g., v0.9.0)."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          gh release download "${{ steps.version.outputs.tag }}" \
+            --pattern "git-same-linux-x86_64" \
+            --pattern "git-same-linux-aarch64" \
+            --pattern "git-same-macos-x86_64" \
+            --pattern "git-same-macos-aarch64" \
+            --dir assets
+
+      - name: Compute SHA256 hashes
+        id: sha
+        run: |
+          echo "linux_x86_64=$(sha256sum assets/git-same-linux-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_aarch64=$(sha256sum assets/git-same-linux-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "macos_x86_64=$(sha256sum assets/git-same-macos-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "macos_aarch64=$(sha256sum assets/git-same-macos-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          REPO_URL="https://github.com/zaai-com/git-same/releases/download/${TAG}"
+
+          cat > formula.rb << 'FORMULA'
+          class GitSame < Formula
+            desc "Discover and mirror GitHub org/repo structures locally"
+            homepage "https://github.com/zaai-com/git-same"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            if OS.mac?
+              if Hardware::CPU.arm?
+                url "URL_PLACEHOLDER/git-same-macos-aarch64"
+                sha256 "SHA_MACOS_AARCH64_PLACEHOLDER"
+              else
+                url "URL_PLACEHOLDER/git-same-macos-x86_64"
+                sha256 "SHA_MACOS_X86_64_PLACEHOLDER"
+              end
+            elsif OS.linux?
+              if Hardware::CPU.arm?
+                url "URL_PLACEHOLDER/git-same-linux-aarch64"
+                sha256 "SHA_LINUX_AARCH64_PLACEHOLDER"
+              else
+                url "URL_PLACEHOLDER/git-same-linux-x86_64"
+                sha256 "SHA_LINUX_X86_64_PLACEHOLDER"
+              end
+            end
+
+            def install
+              if OS.mac?
+                bin.install "git-same-macos-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
+              elsif OS.linux?
+                bin.install "git-same-linux-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/git-same --version")
+            end
+          end
+          FORMULA
+
+          sed -i "s|VERSION_PLACEHOLDER|${VERSION}|g" formula.rb
+          sed -i "s|URL_PLACEHOLDER|${REPO_URL}|g" formula.rb
+          sed -i "s|SHA_LINUX_X86_64_PLACEHOLDER|${{ steps.sha.outputs.linux_x86_64 }}|g" formula.rb
+          sed -i "s|SHA_MACOS_X86_64_PLACEHOLDER|${{ steps.sha.outputs.macos_x86_64 }}|g" formula.rb
+          sed -i "s|SHA_LINUX_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.linux_aarch64 }}|g" formula.rb
+          sed -i "s|SHA_MACOS_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.macos_aarch64 }}|g" formula.rb
+
+      - name: Push formula to tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp formula.rb "tap/Formula/${FORMULA_NAME}.rb"
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${FORMULA_NAME}.rb"
+          if git diff --cached --quiet; then
+            echo "Formula unchanged, skipping commit"
+          else
+            git commit -m "Update ${FORMULA_NAME} to ${{ steps.version.outputs.version }}"
+            git push
+          fi

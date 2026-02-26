@@ -1,0 +1,36 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Config (don't commit user configs)
+config.toml
+*.local.toml
+
+# Cache
+.cache/
+*.cache
+
+# Test artifacts
+/tmp/
+/test-output/
+*.profraw
+*.profdata
+
+# Environment
+.env
+.env.local
+
+# Conductor
+.context/
+
+# Claude Code
+.claude/settings.local.json
