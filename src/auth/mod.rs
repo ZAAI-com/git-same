@@ -134,12 +134,11 @@ pub fn get_auth(config_token: Option<&str>) -> Result<AuthResult, AppError> {
     Err(AppError::auth(format!(
         "No authentication found for your Git provider.\n\n\
          Please authenticate using one of these methods:\n\n\
-         1. Provider CLI (recommended, e.g. GitHub CLI):\n   \
-            gh auth login\n\n\
+         1. Provider CLI (recommended):\n   \
+            e.g. `gh auth login` for GitHub\n\n\
          2. Environment variable:\n   \
-            export GITHUB_TOKEN=ghp_xxxx\n\
-         {}\n\
-         For more info: https://cli.github.com/manual/gh_auth_login",
+            e.g. GITHUB_TOKEN, GITLAB_TOKEN, or similar for your provider\n\
+         {}",
         ssh_note
     )))
 }

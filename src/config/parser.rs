@@ -189,6 +189,8 @@ impl Config {
         const MAX_CONCURRENCY: usize = 32;
 
         // Validate concurrency
+        // 32 is chosen as a safe upper bound to prevent resource exhaustion
+        // (file descriptors, memory, CPU) on typical developer machines.
         if !(1..=MAX_CONCURRENCY).contains(&self.concurrency) {
             return Err(AppError::config(format!(
                 "concurrency must be between 1 and {}",
