@@ -262,15 +262,7 @@ include_forks = false
 kind = "github"
 auth = "gh-cli"
 prefer_ssh = true
-
-# Example: GitHub Enterprise
-# [[providers]]
-# kind = "github-enterprise"
-# name = "Work GitHub"
-# api_url = "https://github.mycompany.com/api/v3"
-# auth = "env"
-# token_env = "WORK_GITHUB_TOKEN"
-# base_path = "~/work/code"
+# base_path = "~/github"
 "#
     }
 

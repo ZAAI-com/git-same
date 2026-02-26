@@ -93,7 +93,7 @@ fn check_gh_installed() -> CheckResult {
             passed: true,
             message: version,
             suggestion: None,
-            critical: false,
+            critical: true,
         }
     } else {
         CheckResult {
@@ -101,7 +101,7 @@ fn check_gh_installed() -> CheckResult {
             passed: false,
             message: "not found".to_string(),
             suggestion: Some("Install from https://cli.github.com/".to_string()),
-            critical: false,
+            critical: true,
         }
     }
 }
@@ -114,7 +114,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: false,
             message: "gh CLI not installed".to_string(),
             suggestion: Some("Install gh CLI first, then run: gh auth login".to_string()),
-            critical: false,
+            critical: true,
         };
     }
 
@@ -125,7 +125,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: true,
             message: format!("logged in as {}", username),
             suggestion: None,
-            critical: false,
+            critical: true,
         }
     } else {
         CheckResult {
@@ -133,7 +133,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: false,
             message: "not authenticated".to_string(),
             suggestion: Some("Run: gh auth login".to_string()),
-            critical: false,
+            critical: true,
         }
     }
 }

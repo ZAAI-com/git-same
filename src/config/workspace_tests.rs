@@ -22,20 +22,15 @@ fn test_workspace_provider_default() {
 #[test]
 fn test_workspace_provider_to_provider_entry() {
     let provider = WorkspaceProvider {
-        kind: ProviderKind::GitHubEnterprise,
-        auth: AuthMethod::Env,
-        api_url: Some("https://github.corp.com/api/v3".to_string()),
-        token_env: Some("CORP_TOKEN".to_string()),
+        kind: ProviderKind::GitHub,
+        auth: AuthMethod::GhCli,
+        api_url: None,
         prefer_ssh: false,
     };
     let entry = provider.to_provider_entry();
-    assert_eq!(entry.kind, ProviderKind::GitHubEnterprise);
-    assert_eq!(entry.auth, AuthMethod::Env);
-    assert_eq!(
-        entry.api_url,
-        Some("https://github.corp.com/api/v3".to_string())
-    );
-    assert_eq!(entry.token_env, Some("CORP_TOKEN".to_string()));
+    assert_eq!(entry.kind, ProviderKind::GitHub);
+    assert_eq!(entry.auth, AuthMethod::GhCli);
+    assert!(entry.api_url.is_none());
     assert!(!entry.prefer_ssh);
     assert!(entry.enabled);
 }
@@ -49,7 +44,6 @@ fn test_serde_roundtrip() {
             kind: ProviderKind::GitHub,
             auth: AuthMethod::GhCli,
             api_url: None,
-            token_env: None,
             prefer_ssh: true,
         },
         username: "testuser".to_string(),

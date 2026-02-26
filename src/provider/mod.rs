@@ -3,9 +3,12 @@
 //! This module contains the [`Provider`] trait and implementations for
 //! various Git hosting services:
 //!
-//! - **GitHub** - github.com and GitHub Enterprise
-//! - **GitLab** - gitlab.com and self-hosted (future)
-//! - **Bitbucket** - bitbucket.org (future)
+//! - **GitHub** - github.com (active)
+//! - **GitHub Enterprise** - coming soon
+//! - **GitLab** - coming soon
+//! - **GitLab Self-Managed** - coming soon
+//! - **Codeberg** - coming soon
+//! - **Bitbucket** - coming soon
 //!
 //! # Example
 //!
@@ -43,18 +46,16 @@ pub fn create_provider(entry: &ProviderEntry, token: &str) -> Result<Box<dyn Pro
     let api_url = entry.effective_api_url();
 
     match entry.kind {
-        ProviderKind::GitHub | ProviderKind::GitHubEnterprise => {
+        ProviderKind::GitHub => {
             let credentials = Credentials::new(token, api_url);
             let provider = github::GitHubProvider::new(credentials, entry.display_name())
                 .map_err(AppError::Provider)?;
             Ok(Box::new(provider))
         }
-        ProviderKind::GitLab => Err(AppError::Provider(ProviderError::NotImplemented(
-            "GitLab support coming soon".to_string(),
-        ))),
-        ProviderKind::Bitbucket => Err(AppError::Provider(ProviderError::NotImplemented(
-            "Bitbucket support coming soon".to_string(),
-        ))),
+        other => Err(AppError::Provider(ProviderError::NotImplemented(format!(
+            "{} support coming soon",
+            other.display_name()
+        )))),
     }
 }
 

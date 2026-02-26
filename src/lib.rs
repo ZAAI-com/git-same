@@ -6,7 +6,7 @@
 //!
 //! ## Features
 //!
-//! - **Multi-Provider Support**: Works with GitHub and GitHub Enterprise (GitLab and Bitbucket coming soon)
+//! - **Multi-Provider Support**: Works with GitHub (more providers coming soon)
 //! - **Parallel Operations**: Clones and syncs repositories concurrently
 //! - **Smart Filtering**: Filter by archived status, forks, organizations
 //! - **Incremental Sync**: Only fetches/pulls what has changed
@@ -66,7 +66,7 @@ pub mod workflows;
 
 /// Re-export commonly used types for convenience.
 pub mod prelude {
-    pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult, ResolvedAuthMethod};
+    pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult};
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
     pub use crate::cli::{Cli, Command, InitArgs, ResetArgs, StatusArgs, SyncCmdArgs};
     pub use crate::config::{

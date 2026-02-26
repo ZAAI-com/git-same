@@ -33,6 +33,8 @@ impl WorkspacePolicy {
             ProviderKind::GitHub => "github",
             ProviderKind::GitHubEnterprise => "ghe",
             ProviderKind::GitLab => "gitlab",
+            ProviderKind::GitLabSelfManaged => "glsm",
+            ProviderKind::Codeberg => "codeberg",
             ProviderKind::Bitbucket => "bitbucket",
         };
         format!("{}-{}", prefix, last_component)

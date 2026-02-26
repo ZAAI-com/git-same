@@ -44,6 +44,12 @@ fn test_git_not_found_is_not_retryable() {
 }
 
 #[test]
+fn test_command_failed_is_not_retryable() {
+    let err = GitError::CommandFailed("some failure".to_string());
+    assert!(!err.is_retryable());
+}
+
+#[test]
 fn test_repo_identifier_extraction() {
     let err = GitError::CloneFailed {
         repo: "my-org/my-repo".to_string(),

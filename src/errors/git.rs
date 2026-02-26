@@ -129,7 +129,7 @@ impl GitError {
 
     /// Returns `true` if this error might be resolved by retrying.
     pub fn is_retryable(&self) -> bool {
-        matches!(self, GitError::Timeout { .. } | GitError::CommandFailed(_))
+        matches!(self, GitError::Timeout { .. })
     }
 
     /// Returns a user-friendly suggestion for how to resolve this error.

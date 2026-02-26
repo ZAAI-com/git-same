@@ -1,6 +1,6 @@
 //! Setup wizard state (the "Model" in Elm architecture).
 
-use crate::config::{AuthMethod, WorkspaceProvider};
+use crate::config::WorkspaceProvider;
 use crate::types::ProviderKind;
 
 /// Which step of the wizard is active.
@@ -156,17 +156,27 @@ impl SetupState {
             },
             ProviderChoice {
                 kind: ProviderKind::GitHubEnterprise,
-                label: "GitHub Enterprise".to_string(),
-                available: true,
+                label: "GitHub Enterprise (coming soon)".to_string(),
+                available: false,
             },
             ProviderChoice {
                 kind: ProviderKind::GitLab,
-                label: "GitLab (coming soon)".to_string(),
+                label: "GitLab.com (coming soon)".to_string(),
+                available: false,
+            },
+            ProviderChoice {
+                kind: ProviderKind::GitLabSelfManaged,
+                label: "GitLab Self-Managed (coming soon)".to_string(),
+                available: false,
+            },
+            ProviderChoice {
+                kind: ProviderKind::Codeberg,
+                label: "Codeberg.org (coming soon)".to_string(),
                 available: false,
             },
             ProviderChoice {
                 kind: ProviderKind::Bitbucket,
-                label: "Bitbucket (coming soon)".to_string(),
+                label: "Bitbucket.org (coming soon)".to_string(),
                 available: false,
             },
         ];
@@ -225,10 +235,8 @@ impl SetupState {
         let kind = self.selected_provider();
         WorkspaceProvider {
             kind,
-            auth: AuthMethod::GhCli,
             api_url: None,
-            token_env: None,
-            prefer_ssh: true,
+            ..WorkspaceProvider::default()
         }
     }
 

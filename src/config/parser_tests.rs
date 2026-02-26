@@ -63,20 +63,14 @@ kind = "github"
 auth = "gh-cli"
 
 [[providers]]
-kind = "github-enterprise"
+kind = "github"
 name = "Work"
-api_url = "https://github.work.com/api/v3"
-auth = "env"
-token_env = "WORK_TOKEN"
+auth = "gh-cli"
 "#;
 
     let config = Config::parse(content).unwrap();
     assert_eq!(config.providers.len(), 2);
     assert_eq!(config.providers[0].kind, crate::types::ProviderKind::GitHub);
-    assert_eq!(
-        config.providers[1].kind,
-        crate::types::ProviderKind::GitHubEnterprise
-    );
     assert_eq!(config.providers[1].name, Some("Work".to_string()));
 }
 

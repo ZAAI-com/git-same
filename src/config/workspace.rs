@@ -24,10 +24,6 @@ pub struct WorkspaceProvider {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_url: Option<String>,
 
-    /// Environment variable name for token (when auth = "env")
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_env: Option<String>,
-
     /// Whether to prefer SSH for cloning (default: true)
     #[serde(default = "default_true")]
     pub prefer_ssh: bool,
@@ -43,7 +39,6 @@ impl Default for WorkspaceProvider {
             kind: ProviderKind::GitHub,
             auth: AuthMethod::GhCli,
             api_url: None,
-            token_env: None,
             prefer_ssh: true,
         }
     }
@@ -57,8 +52,6 @@ impl WorkspaceProvider {
             name: Some(self.kind.display_name().to_string()),
             api_url: self.api_url.clone(),
             auth: self.auth.clone(),
-            token_env: self.token_env.clone(),
-            token: None,
             prefer_ssh: self.prefer_ssh,
             base_path: None,
             enabled: true,

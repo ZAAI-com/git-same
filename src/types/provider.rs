@@ -12,13 +12,19 @@ pub enum ProviderKind {
     #[serde(rename = "github")]
     #[default]
     GitHub,
-    /// GitHub Enterprise Server (self-hosted)
+    /// GitHub Enterprise (Cloud & Server)
     #[serde(rename = "github-enterprise")]
     GitHubEnterprise,
-    /// GitLab.com or self-hosted GitLab
+    /// GitLab.com
     #[serde(rename = "gitlab")]
     GitLab,
-    /// Atlassian Bitbucket
+    /// GitLab Dedicated & Self-Managed
+    #[serde(rename = "gitlab-self-managed")]
+    GitLabSelfManaged,
+    /// Codeberg.org
+    #[serde(rename = "codeberg")]
+    Codeberg,
+    /// Bitbucket.org
     #[serde(rename = "bitbucket")]
     Bitbucket,
 }
@@ -30,6 +36,8 @@ impl ProviderKind {
             ProviderKind::GitHub => "github",
             ProviderKind::GitHubEnterprise => "github-enterprise",
             ProviderKind::GitLab => "gitlab",
+            ProviderKind::GitLabSelfManaged => "gitlab-self-managed",
+            ProviderKind::Codeberg => "codeberg",
             ProviderKind::Bitbucket => "bitbucket",
         }
     }
@@ -40,6 +48,8 @@ impl ProviderKind {
             ProviderKind::GitHub => "https://api.github.com",
             ProviderKind::GitHubEnterprise => "", // Must be configured
             ProviderKind::GitLab => "https://gitlab.com/api/v4",
+            ProviderKind::GitLabSelfManaged => "", // Must be configured
+            ProviderKind::Codeberg => "https://codeberg.org/api/v1",
             ProviderKind::Bitbucket => "https://api.bitbucket.org/2.0",
         }
     }
@@ -50,13 +60,18 @@ impl ProviderKind {
             ProviderKind::GitHub => "github.com",
             ProviderKind::GitHubEnterprise => "", // Must be configured
             ProviderKind::GitLab => "gitlab.com",
+            ProviderKind::GitLabSelfManaged => "", // Must be configured
+            ProviderKind::Codeberg => "codeberg.org",
             ProviderKind::Bitbucket => "bitbucket.org",
         }
     }
 
     /// Returns true if this provider requires custom URL configuration.
     pub fn requires_custom_url(&self) -> bool {
-        matches!(self, ProviderKind::GitHubEnterprise)
+        matches!(
+            self,
+            ProviderKind::GitHubEnterprise | ProviderKind::GitLabSelfManaged
+        )
     }
 
     /// Returns the human-readable name for this provider.
@@ -65,6 +80,8 @@ impl ProviderKind {
             ProviderKind::GitHub => "GitHub",
             ProviderKind::GitHubEnterprise => "GitHub Enterprise",
             ProviderKind::GitLab => "GitLab",
+            ProviderKind::GitLabSelfManaged => "GitLab Self-Managed",
+            ProviderKind::Codeberg => "Codeberg",
             ProviderKind::Bitbucket => "Bitbucket",
         }
     }
@@ -75,6 +92,8 @@ impl ProviderKind {
             ProviderKind::GitHub,
             ProviderKind::GitHubEnterprise,
             ProviderKind::GitLab,
+            ProviderKind::GitLabSelfManaged,
+            ProviderKind::Codeberg,
             ProviderKind::Bitbucket,
         ]
     }
@@ -94,9 +113,14 @@ impl std::str::FromStr for ProviderKind {
             "github" | "gh" => Ok(ProviderKind::GitHub),
             "github-enterprise" | "ghe" | "github_enterprise" => Ok(ProviderKind::GitHubEnterprise),
             "gitlab" | "gl" => Ok(ProviderKind::GitLab),
+            "gitlab-self-managed" | "glsm" | "gitlab_self_managed" => {
+                Ok(ProviderKind::GitLabSelfManaged)
+            }
+            "codeberg" | "cb" => Ok(ProviderKind::Codeberg),
             "bitbucket" | "bb" => Ok(ProviderKind::Bitbucket),
             _ => Err(format!(
-                "Unknown provider: '{}'. Supported: github, github-enterprise, gitlab, bitbucket",
+                "Unknown provider: '{}'. Supported: github, github-enterprise, gitlab, \
+                 gitlab-self-managed, codeberg, bitbucket",
                 s
             )),
         }

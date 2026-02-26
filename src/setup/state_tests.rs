@@ -6,7 +6,7 @@ fn test_new_state() {
     assert_eq!(state.step, SetupStep::SelectProvider);
     assert!(!state.should_quit);
     assert_eq!(state.base_path, "~/Git-Same/GitHub");
-    assert_eq!(state.provider_choices.len(), 4);
+    assert_eq!(state.provider_choices.len(), 6);
     assert!(state.provider_choices[0].available);
     assert!(!state.provider_choices[2].available); // GitLab
     assert!(state.path_suggestions_mode);

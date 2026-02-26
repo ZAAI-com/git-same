@@ -29,7 +29,7 @@ fn prepared_workspace(with_clone: bool, with_sync: bool) -> PreparedSyncWorkspac
         workspace: WorkspaceConfig::new("ws", "/tmp"),
         auth: AuthResult {
             token: "token".to_string(),
-            method: ResolvedAuthMethod::ConfigToken,
+            method: ResolvedAuthMethod::GhCli,
             username: Some("octocat".to_string()),
         },
         repos: vec![repo],

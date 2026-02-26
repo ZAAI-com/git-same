@@ -12,9 +12,11 @@ use ratatui::Frame;
 fn provider_description(kind: ProviderKind) -> &'static str {
     match kind {
         ProviderKind::GitHub => "github.com \u{2014} Public and private repositories",
-        ProviderKind::GitHubEnterprise => "Self-hosted GitHub instance",
-        ProviderKind::GitLab => "gitlab.com or self-hosted",
-        ProviderKind::Bitbucket => "bitbucket.org",
+        ProviderKind::GitHubEnterprise => "GitHub Enterprise Cloud & Server (coming soon)",
+        ProviderKind::GitLab => "gitlab.com (coming soon)",
+        ProviderKind::GitLabSelfManaged => "GitLab Dedicated & Self-Managed (coming soon)",
+        ProviderKind::Codeberg => "codeberg.org (coming soon)",
+        ProviderKind::Bitbucket => "bitbucket.org (coming soon)",
     }
 }
 
