@@ -32,6 +32,7 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
     // Get status for each
     let mut uncommitted_count = 0;
     let mut behind_count = 0;
+    let mut error_count = 0;
 
     for (path, org, name) in &local_repos {
         let status = git.status(path);
@@ -93,6 +94,7 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
                 }
             }
             Err(e) => {
+                error_count += 1;
                 output.verbose(&format!("  {}/{} - error: {}", org, name, e));
             }
         }
@@ -112,7 +114,12 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
             behind_count
         ));
     }
-    if uncommitted_count == 0 && behind_count == 0 {
+    if error_count > 0 {
+        output.warn(&format!(
+            "{} repositories could not be checked",
+            error_count
+        ));
+    } else if uncommitted_count == 0 && behind_count == 0 {
         output.success("All repositories are clean and up to date");
     }
 

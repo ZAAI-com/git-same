@@ -26,6 +26,7 @@ fn test_get_token_when_authenticated() {
     // GitHub tokens start with specific prefixes
     assert!(
         token.starts_with("ghp_")
+            || token.starts_with("github_pat_")
             || token.starts_with("gho_")
             || token.starts_with("ghu_")
             || token.starts_with("ghr_")

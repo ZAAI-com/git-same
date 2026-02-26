@@ -30,6 +30,6 @@ fn test_list_empty() {
     // the actual CRUD tests are in workspace_manager.rs
     let config = Config::default();
     let output = quiet_output();
-    // Just verify it doesn't panic
-    let _ = list(&config, &output);
+    let result = list(&config, &output);
+    assert!(result.is_ok());
 }

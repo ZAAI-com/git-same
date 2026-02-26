@@ -272,6 +272,7 @@ impl GitOperations for ShellGit {
             debug!(repo = %repo_path.display(), "Skipping pull: uncommitted changes");
             return Ok(PullResult {
                 success: false,
+                updated: false,
                 fast_forward: false,
                 error: Some("Working tree has uncommitted changes".to_string()),
             });
@@ -283,13 +284,20 @@ impl GitOperations for ShellGit {
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
+            let updated = !stdout.contains("Already up to date");
             let fast_forward =
                 stdout.contains("Fast-forward") || stdout.contains("Already up to date");
 
-            debug!(repo = %repo_path.display(), fast_forward, "Pull completed successfully");
+            debug!(
+                repo = %repo_path.display(),
+                updated,
+                fast_forward,
+                "Pull completed successfully"
+            );
 
             Ok(PullResult {
                 success: true,
+                updated,
                 fast_forward,
                 error: None,
             })
@@ -301,6 +309,7 @@ impl GitOperations for ShellGit {
                 debug!(repo = %repo_path.display(), "Pull failed: branch has diverged");
                 Ok(PullResult {
                     success: false,
+                    updated: false,
                     fast_forward: false,
                     error: Some("Cannot fast-forward, local branch has diverged".to_string()),
                 })

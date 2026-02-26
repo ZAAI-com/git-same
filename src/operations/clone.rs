@@ -220,6 +220,8 @@ impl<G: GitOperations + 'static> CloneManager<G> {
             let url = self.get_clone_url(&repo).to_string();
             let dry_run = self.options.dry_run;
             let progress = Arc::clone(&progress);
+            let panic_repo = repo.clone();
+            let panic_path = target_path.clone();
 
             let handle = tokio::spawn(async move {
                 // Notify progress - clone starting
@@ -263,14 +265,14 @@ impl<G: GitOperations + 'static> CloneManager<G> {
                 }
             });
 
-            handles.push(handle);
+            handles.push((panic_repo, panic_path, handle));
         }
 
         // Collect results
         let mut summary = OpSummary::new();
         let mut results = Vec::with_capacity(total);
 
-        for (index, handle) in handles.into_iter().enumerate() {
+        for (index, (panic_repo, panic_path, handle)) in handles.into_iter().enumerate() {
             match handle.await {
                 Ok(clone_result) => {
                     // Notify progress
@@ -290,10 +292,15 @@ impl<G: GitOperations + 'static> CloneManager<G> {
                     results.push(clone_result);
                 }
                 Err(e) => {
-                    // Task panicked - create a failed result
-                    // Note: We don't have the repo here, so we can't report it properly
-                    // This should be rare in practice
-                    summary.record(&OpResult::Failed(format!("Task panicked: {}", e)));
+                    let err = format!("Task panicked: {}", e);
+                    progress.on_error(&panic_repo, &err, index, total);
+                    let failed = CloneResult {
+                        repo: panic_repo,
+                        path: panic_path,
+                        result: OpResult::Failed(err),
+                    };
+                    summary.record(&failed.result);
+                    results.push(failed);
                 }
             }
         }

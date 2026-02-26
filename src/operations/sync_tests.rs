@@ -100,7 +100,8 @@ fn test_sync_single_uncommitted_skip() {
 fn test_sync_single_fetch_success() {
     let temp = TempDir::new().unwrap();
 
-    let git = MockGit::new();
+    let mut git = MockGit::new();
+    git.add_repo(temp.path().to_string_lossy().to_string());
     let options = SyncManagerOptions::new().with_mode(SyncMode::Fetch);
     let manager = SyncManager::new(git, options);
 
@@ -118,7 +119,8 @@ fn test_sync_single_pull_success() {
         fetch_has_updates: true,
         ..Default::default()
     };
-    let git = MockGit::with_config(config);
+    let mut git = MockGit::with_config(config);
+    git.add_repo(temp.path().to_string_lossy().to_string());
 
     let options = SyncManagerOptions::new().with_mode(SyncMode::Pull);
     let manager = SyncManager::new(git, options);
@@ -135,6 +137,7 @@ fn test_sync_single_fetch_failure() {
     let temp = TempDir::new().unwrap();
 
     let mut git = MockGit::new();
+    git.add_repo(temp.path().to_string_lossy().to_string());
     git.fail_fetches(Some("network error".to_string()));
 
     let options = SyncManagerOptions::new();
@@ -211,7 +214,10 @@ async fn test_sync_repos_parallel() {
     let temp2 = TempDir::new().unwrap();
     let temp3 = TempDir::new().unwrap();
 
-    let git = MockGit::new();
+    let mut git = MockGit::new();
+    git.add_repo(temp1.path().to_string_lossy().to_string());
+    git.add_repo(temp2.path().to_string_lossy().to_string());
+    git.add_repo(temp3.path().to_string_lossy().to_string());
     let options = SyncManagerOptions::new().with_concurrency(2);
     let manager = SyncManager::new(git, options);
 
@@ -235,7 +241,8 @@ async fn test_sync_repos_parallel() {
 async fn test_sync_repos_dry_run() {
     let temp = TempDir::new().unwrap();
 
-    let git = MockGit::new();
+    let mut git = MockGit::new();
+    git.add_repo(temp.path().to_string_lossy().to_string());
     let options = SyncManagerOptions::new().with_dry_run(true);
     let manager = SyncManager::new(git, options);
 
@@ -255,7 +262,8 @@ async fn test_sync_repos_with_updates_pull_mode() {
         fetch_has_updates: true,
         ..Default::default()
     };
-    let git = MockGit::with_config(config);
+    let mut git = MockGit::with_config(config);
+    git.add_repo(temp.path().to_string_lossy().to_string());
 
     let options = SyncManagerOptions::new().with_mode(SyncMode::Pull);
     let manager = SyncManager::new(git, options);
@@ -275,7 +283,8 @@ async fn test_sync_repos_with_updates_pull_mode() {
 async fn test_sync_repos_zero_concurrency_is_clamped() {
     let temp = TempDir::new().unwrap();
 
-    let git = MockGit::new();
+    let mut git = MockGit::new();
+    git.add_repo(temp.path().to_string_lossy().to_string());
     let mut options = SyncManagerOptions::new().with_dry_run(true);
     options.concurrency = 0; // bypass builder clamp on purpose
     let manager = SyncManager::new(git, options);

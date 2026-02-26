@@ -41,12 +41,19 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         state.should_quit = true;
         return;
     }
-    if !path_popup_active && key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Esc {
+    if !path_popup_active
+        && state.step != SetupStep::SelectPath
+        && key.modifiers == KeyModifiers::NONE
+        && key.code == KeyCode::Esc
+    {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
         return;
     }
-    if !path_popup_active && key.modifiers == KeyModifiers::NONE {
+    if !path_popup_active
+        && state.step != SetupStep::SelectPath
+        && key.modifiers == KeyModifiers::NONE
+    {
         match key.code {
             KeyCode::Left => {
                 state.prev_step();
@@ -686,18 +693,21 @@ fn longest_common_prefix(strings: &[String]) -> String {
     if strings.is_empty() {
         return String::new();
     }
-    let first = &strings[0];
-    let mut len = first.len();
+    let mut prefix: Vec<char> = strings[0].chars().collect();
     for s in &strings[1..] {
-        len = len.min(s.len());
-        for (i, (a, b)) in first.bytes().zip(s.bytes()).enumerate() {
+        let mut matched = 0usize;
+        for (a, b) in prefix.iter().copied().zip(s.chars()) {
             if a != b {
-                len = len.min(i);
                 break;
             }
+            matched += 1;
+        }
+        prefix.truncate(matched);
+        if prefix.is_empty() {
+            break;
         }
     }
-    first[..len].to_string()
+    prefix.into_iter().collect()
 }
 
 async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {

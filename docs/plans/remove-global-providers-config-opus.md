@@ -51,7 +51,7 @@ Previous work simplified auth to gh-cli only and restructured providers (Steps 1
 | File | Change |
 |------|--------|
 | `src/config/parser.rs` | Remove `providers` field, `default_providers()`, empty-providers validation, `enabled_providers()`, `[[providers]]` from default TOML |
-| `src/config/mod.rs` | Remove `AuthMethod`/`ProviderEntry` from public exports; update doc example |
+| `src/config/mod.rs` | Keep `AuthMethod`/`ProviderEntry` in public exports (required for public API); update doc example |
 | `src/lib.rs` | Remove `AuthMethod`/`ProviderEntry` from prelude |
 | `src/config/parser_tests.rs` | Remove provider-related assertions and tests |
 

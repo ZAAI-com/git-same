@@ -103,9 +103,6 @@ gisa sync
 Edit `~/.config/git-same/config.toml` to customize behavior:
 
 ```toml
-# Base directory for cloning (can be overridden per-provider)
-base_path = "~/code"
-
 # Directory structure: {org}/{repo} or {provider}/{org}/{repo}
 structure = "{org}/{repo}"
 
@@ -142,6 +139,9 @@ auth = "gh-cli"
 prefer_ssh = true
 enabled = true
 ```
+
+`base_path` is workspace-specific (`WorkspaceConfig.base_path`) and is set during
+`gisa setup` (or via workspace config files), not in the global `Config`.
 
 ### Multi-Provider Setup
 

@@ -65,8 +65,8 @@ fn test_cache_validity() {
 
     assert!(cache.is_valid(Duration::from_secs(3600)));
 
-    sleep(Duration::from_millis(100));
-    assert!(!cache.is_valid(Duration::from_millis(50)));
+    sleep(Duration::from_millis(1100));
+    assert!(!cache.is_valid(Duration::from_secs(1)));
 }
 
 #[test]
@@ -124,8 +124,8 @@ fn test_cache_expiration() {
     );
 
     let short_ttl_manager =
-        CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_millis(50));
-    sleep(Duration::from_millis(100));
+        CacheManager::with_path(cache_path.clone()).with_ttl(Duration::from_secs(1));
+    sleep(Duration::from_millis(1100));
 
     let loaded = short_ttl_manager.load().expect("load short ttl cache");
     assert!(

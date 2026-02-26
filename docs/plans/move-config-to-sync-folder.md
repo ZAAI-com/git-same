@@ -15,7 +15,7 @@ Workspace configs live in `~/.config/git-same/<name>/` — a location disconnect
 
 Move workspace config into the sync folder itself:
 
-```
+```text
 ~/repos/                               ~/.config/git-same/
 ├── .git-same/                         └── config.toml  (global only)
 │   ├── config.toml                        ├── structure = "{org}/{repo}"

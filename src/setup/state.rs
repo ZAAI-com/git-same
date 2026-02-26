@@ -272,7 +272,13 @@ impl SetupState {
         ] {
             let expanded = shellexpand::tilde(candidate);
             let path = std::path::Path::new(expanded.as_ref());
-            if path.is_dir() && !suggestions.iter().any(|s| s.path == *candidate) {
+            let expanded_candidate = expanded.as_ref().to_string();
+            if path.is_dir()
+                && !suggestions.iter().any(|s| {
+                    s.path == *candidate
+                        || shellexpand::tilde(&s.path).as_ref() == expanded_candidate
+                })
+            {
                 suggestions.push(PathSuggestion {
                     path: candidate.to_string(),
                     label: String::new(),

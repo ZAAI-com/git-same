@@ -31,10 +31,31 @@ pub async fn run_setup() -> Result<bool> {
         .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
     let mut state = SetupState::new(&default_path);
 
+    struct SetupTerminalGuard {
+        raw_enabled: bool,
+        alt_enabled: bool,
+    }
+    impl Drop for SetupTerminalGuard {
+        fn drop(&mut self) {
+            if self.alt_enabled {
+                let mut stdout = io::stdout();
+                let _ = execute!(stdout, LeaveAlternateScreen, DisableMouseCapture);
+            }
+            if self.raw_enabled {
+                let _ = disable_raw_mode();
+            }
+        }
+    }
+
     // Setup terminal
     enable_raw_mode()?;
+    let mut guard = SetupTerminalGuard {
+        raw_enabled: true,
+        alt_enabled: false,
+    };
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    guard.alt_enabled = true;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -43,11 +64,13 @@ pub async fn run_setup() -> Result<bool> {
 
     // Restore terminal (always, even on error)
     let _ = disable_raw_mode();
+    guard.raw_enabled = false;
     let _ = execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture
     );
+    guard.alt_enabled = false;
     let _ = terminal.show_cursor();
 
     result?;

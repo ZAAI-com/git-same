@@ -66,12 +66,32 @@ async fn main() -> ExitCode {
 
                 // Auto-create default config if it doesn't exist
                 if cli.config.is_none() {
-                    if let Ok(default_path) = Config::default_path() {
-                        if !default_path.exists() {
-                            if let Some(parent) = default_path.parent() {
-                                let _ = std::fs::create_dir_all(parent);
+                    let default_path = match Config::default_path() {
+                        Ok(path) => path,
+                        Err(e) => {
+                            eprintln!("Failed to determine default config path: {}", e);
+                            return ExitCode::from(2);
+                        }
+                    };
+
+                    if !default_path.exists() {
+                        if let Some(parent) = default_path.parent() {
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                eprintln!(
+                                    "Failed to create config directory '{}': {}",
+                                    parent.display(),
+                                    e
+                                );
+                                return ExitCode::from(2);
                             }
-                            let _ = std::fs::write(&default_path, Config::default_toml());
+                        }
+                        if let Err(e) = std::fs::write(&default_path, Config::default_toml()) {
+                            eprintln!(
+                                "Failed to write default config '{}': {}",
+                                default_path.display(),
+                                e
+                            );
+                            return ExitCode::from(2);
                         }
                     }
                 }

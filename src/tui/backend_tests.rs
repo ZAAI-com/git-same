@@ -146,6 +146,7 @@ fn sync_progress_emits_fetch_pull_error_and_skip() {
 
     let pull = PullResult {
         success: true,
+        updated: true,
         fast_forward: true,
         error: None,
     };

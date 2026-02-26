@@ -10,8 +10,14 @@ use std::io::{self, BufRead, Write};
 /// Returns an error if the path cannot be resolved.
 pub(crate) fn ensure_base_path(workspace: &mut WorkspaceConfig, output: &Output) -> Result<()> {
     let base_path = workspace.expanded_base_path();
-    if base_path.exists() {
+    if base_path.is_dir() {
         return Ok(());
+    }
+    if base_path.exists() {
+        return Err(AppError::config(format!(
+            "Base path '{}' exists but is not a directory.",
+            base_path.display()
+        )));
     }
 
     let cwd = std::env::current_dir()

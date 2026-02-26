@@ -194,26 +194,23 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
                 had_errors |= !remove_file(path, "config", output);
             }
             try_remove_empty_dir(&target.config_dir, output);
-            output.success("Reset complete. Run 'gisa init' to start fresh.");
         }
         ResetScope::ConfigOnly => {
             if let Some(ref path) = target.config_file {
                 had_errors |= !remove_file(path, "config", output);
             }
-            output.success("Global config removed.");
         }
         ResetScope::AllWorkspaces => {
             for ws in &target.workspaces {
                 had_errors |= !remove_workspace_dir(ws, output);
             }
-            output.success("All workspaces removed.");
         }
         ResetScope::Workspace(name) => {
             if let Some(ws) = target.workspaces.iter().find(|w| w.name == *name) {
                 had_errors |= !remove_workspace_dir(ws, output);
-                output.success(&format!("Workspace at {} removed.", ws.base_path));
             } else {
                 output.warn(&format!("Workspace '{}' not found.", name));
+                had_errors = true;
             }
         }
     }
@@ -223,6 +220,20 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
             "Reset completed with one or more removal errors.",
         ))
     } else {
+        match scope {
+            ResetScope::Everything => {
+                output.success("Reset complete. Run 'gisa init' to start fresh.");
+            }
+            ResetScope::ConfigOnly => {
+                output.success("Global config removed.");
+            }
+            ResetScope::AllWorkspaces => {
+                output.success("All workspaces removed.");
+            }
+            ResetScope::Workspace(name) => {
+                output.success(&format!("Workspace '{}' removed.", name));
+            }
+        }
         Ok(())
     }
 }
@@ -346,7 +357,10 @@ fn prompt_number(prompt: &str, max: usize) -> Result<usize> {
 
         let stdin = io::stdin();
         let mut line = String::new();
-        stdin.lock().read_line(&mut line)?;
+        let bytes_read = stdin.lock().read_line(&mut line)?;
+        if bytes_read == 0 {
+            return Err(AppError::Interrupted);
+        }
 
         match line.trim().parse::<usize>() {
             Ok(n) if n >= 1 && n <= max => return Ok(n),

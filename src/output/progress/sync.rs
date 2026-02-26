@@ -95,11 +95,13 @@ impl SyncProgress for SyncProgressBar {
         _total: usize,
     ) {
         self.main_bar.inc(1);
-        if result.success {
+        if result.updated {
             self.updates_count.fetch_add(1, Ordering::SeqCst);
         }
         if self.verbosity >= Verbosity::Debug {
-            let status = if result.fast_forward {
+            let status = if !result.updated {
+                "up to date"
+            } else if result.fast_forward {
                 "fast-forward"
             } else {
                 "merged"

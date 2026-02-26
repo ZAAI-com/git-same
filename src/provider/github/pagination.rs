@@ -103,12 +103,21 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
         let mut backoff_ms = INITIAL_BACKOFF_MS;
 
         let (next_url_opt, items) = loop {
-            let response = client
+            let response = match client
                 .get(&current_url)
                 .header(AUTHORIZATION, format!("Bearer {}", token))
                 .send()
                 .await
-                .map_err(|e| ProviderError::Network(e.to_string()))?;
+            {
+                Ok(response) => response,
+                Err(e) if retry_count < MAX_RETRIES => {
+                    retry_count += 1;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(ProviderError::Network(e.to_string())),
+            };
 
             let status = response.status();
 
@@ -176,8 +185,11 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
         results.extend(items);
 
         page_count += 1;
-        if page_count >= MAX_PAGES {
-            break;
+        if page_count >= MAX_PAGES && url.is_some() {
+            return Err(ProviderError::Configuration(format!(
+                "Pagination truncated after {} pages for '{}'",
+                MAX_PAGES, initial_url
+            )));
         }
     }
 

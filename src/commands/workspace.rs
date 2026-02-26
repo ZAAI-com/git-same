@@ -41,15 +41,15 @@ fn list(config: &Config, output: &Output) -> Result<()> {
         };
         let provider_label = ws.provider.kind.display_name();
 
-        println!(
+        output.plain(&format!(
             "  {} {}  ({}, {}, last synced: {})",
             marker, ws.base_path, provider_label, org_info, last_synced
-        );
+        ));
     }
 
     if !default_name.is_empty() {
         if let Ok(default_ws) = WorkspaceManager::load(default_name) {
-            println!();
+            output.plain("");
             output.info(&format!("Default: {}", default_ws.display_label()));
         }
     }

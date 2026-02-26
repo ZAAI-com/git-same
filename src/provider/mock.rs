@@ -222,11 +222,12 @@ impl Provider for MockProvider {
             .filter(|r| !repos.iter().any(|or| or.repo.id == r.id))
             .collect();
 
+        let personal_count = personal_filtered.len();
         for repo in personal_filtered {
             repos.push(OwnedRepo::new(&self.username, repo.clone()));
         }
 
-        progress.on_personal_repos_complete(self.user_repos.len());
+        progress.on_personal_repos_complete(personal_count);
 
         Ok(repos)
     }

@@ -243,6 +243,18 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                         pull_result: None,
                     };
                 }
+                if !git.is_repo(&path) {
+                    drop(permit);
+                    return SyncResult {
+                        repo: local_repo.repo,
+                        path,
+                        result: OpResult::Skipped("not a git repository".to_string()),
+                        had_updates: false,
+                        status: None,
+                        fetch_result: None,
+                        pull_result: None,
+                    };
+                }
 
                 // Get status (blocking)
                 let status = match tokio::task::spawn_blocking({
@@ -458,6 +470,17 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 repo: local_repo.repo.clone(),
                 path: path.clone(),
                 result: OpResult::Skipped("path does not exist".to_string()),
+                had_updates: false,
+                status: None,
+                fetch_result: None,
+                pull_result: None,
+            };
+        }
+        if !self.git.is_repo(path) {
+            return SyncResult {
+                repo: local_repo.repo.clone(),
+                path: path.clone(),
+                result: OpResult::Skipped("not a git repository".to_string()),
                 had_updates: false,
                 status: None,
                 fetch_result: None,

@@ -9,8 +9,9 @@ fn sample_repo() -> OwnedRepo {
 fn sync_progress_bar_methods_execute_without_panics() {
     let progress = SyncProgressBar::new(3, Verbosity::Verbose, "Fetch");
     let repo = sample_repo();
+    let temp_dir = std::env::temp_dir();
 
-    progress.on_start(&repo, std::path::Path::new("/tmp"), 1, 3);
+    progress.on_start(&repo, temp_dir.as_path(), 1, 3);
     progress.on_fetch_complete(
         &repo,
         &FetchResult {
@@ -24,6 +25,7 @@ fn sync_progress_bar_methods_execute_without_panics() {
         &repo,
         &PullResult {
             success: true,
+            updated: true,
             fast_forward: true,
             error: None,
         },

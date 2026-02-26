@@ -8,16 +8,20 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
     let _lock = HOME_LOCK.lock().expect("HOME lock poisoned");
     let original_home = std::env::var("HOME").ok();
 
-    std::env::set_var("HOME", home);
-    let result = f();
-
-    if let Some(value) = original_home {
-        std::env::set_var("HOME", value);
-    } else {
-        std::env::remove_var("HOME");
+    struct HomeRestore(Option<String>);
+    impl Drop for HomeRestore {
+        fn drop(&mut self) {
+            if let Some(value) = self.0.take() {
+                std::env::set_var("HOME", value);
+            } else {
+                std::env::remove_var("HOME");
+            }
+        }
     }
 
-    result
+    let _restore = HomeRestore(original_home);
+    std::env::set_var("HOME", home);
+    f()
 }
 
 #[test]

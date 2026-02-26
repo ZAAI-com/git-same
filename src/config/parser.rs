@@ -285,7 +285,10 @@ prefer_ssh = true
         };
 
         let new_line = match workspace {
-            Some(name) => format!("default_workspace = \"{}\"", name),
+            Some(name) => {
+                let escaped = toml::Value::String(name.to_string()).to_string();
+                format!("default_workspace = {}", escaped)
+            }
             None => String::new(),
         };
 

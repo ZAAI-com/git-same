@@ -70,6 +70,15 @@ impl Output {
         }
     }
 
+    /// Prints a plain stdout line (no prefix).
+    ///
+    /// Useful for tabular/list output that should still respect quiet/json modes.
+    pub fn plain(&self, msg: &str) {
+        if !self.json && self.verbosity >= Verbosity::Normal {
+            println!("{}", msg);
+        }
+    }
+
     /// Prints a verbose message.
     pub fn verbose(&self, msg: &str) {
         if !self.json && self.verbosity >= Verbosity::Verbose {

@@ -89,6 +89,8 @@ pub struct FetchResult {
 pub struct PullResult {
     /// Whether the pull was successful
     pub success: bool,
+    /// Whether the pull applied updates to the local branch
+    pub updated: bool,
     /// Whether this was a fast-forward
     pub fast_forward: bool,
     /// Error message if not successful
@@ -334,6 +336,7 @@ pub mod mock {
             if self.config.pull_succeeds {
                 Ok(PullResult {
                     success: true,
+                    updated: true,
                     fast_forward: true,
                     error: None,
                 })
