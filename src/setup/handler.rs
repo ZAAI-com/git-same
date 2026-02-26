@@ -10,8 +10,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 ///
 /// Returns true if the event triggered an async operation that should be awaited.
 pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
-    // Global: Ctrl+C quits
+    // Global quit shortcuts
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        state.outcome = Some(SetupOutcome::Cancelled);
+        state.should_quit = true;
+        return;
+    }
+    if key.code == KeyCode::Char('q') {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
         return;
@@ -448,4 +453,23 @@ fn save_workspace(state: &SetupState) -> Result<(), crate::errors::AppError> {
 
     WorkspaceManager::save(&ws)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn q_quits_setup_wizard() {
+        let mut state = SetupState::new("~/Git-Same/GitHub");
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+        )
+        .await;
+
+        assert!(state.should_quit);
+        assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+    }
 }

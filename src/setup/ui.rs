@@ -215,7 +215,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             vec![
                 Span::styled(" [Esc]", blue),
                 Span::styled(" Cancel  ", dim),
-                Span::styled("[qq]", blue),
+                Span::styled("[q]", blue),
                 Span::styled(" Quit", dim),
             ],
         ),
@@ -226,7 +226,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                 Span::styled(" Move  ", dim),
                 Span::styled("[Esc]", blue),
                 Span::styled(" Cancel  ", dim),
-                Span::styled("[qq]", blue),
+                Span::styled("[q]", blue),
                 Span::styled(" Quit", dim),
             ],
         ),
@@ -245,7 +245,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                 vec![
                     Span::styled(" [Esc]", blue),
                     Span::styled(" Back  ", dim),
-                    Span::styled("[qq]", blue),
+                    Span::styled("[q]", blue),
                     Span::styled(" Quit", dim),
                 ],
             )
@@ -264,7 +264,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Span::styled(" Move  ", dim),
                         Span::styled("[Esc]", blue),
                         Span::styled(" Back  ", dim),
-                        Span::styled("[qq]", blue),
+                        Span::styled("[q]", blue),
                         Span::styled(" Quit", dim),
                     ],
                 )
@@ -279,7 +279,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                     vec![
                         Span::styled(" [Esc]", blue),
                         Span::styled(" Back  ", dim),
-                        Span::styled("[qq]", blue),
+                        Span::styled("[q]", blue),
                         Span::styled(" Quit", dim),
                     ],
                 )
@@ -292,7 +292,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                     vec![
                         Span::styled(" [Esc]", blue),
                         Span::styled(" Back  ", dim),
-                        Span::styled("[qq]", blue),
+                        Span::styled("[q]", blue),
                         Span::styled(" Quit", dim),
                     ],
                 )
@@ -313,7 +313,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Span::styled(" Move  ", dim),
                         Span::styled("[Esc]", blue),
                         Span::styled(" Back  ", dim),
-                        Span::styled("[qq]", blue),
+                        Span::styled("[q]", blue),
                         Span::styled(" Quit", dim),
                     ],
                 )
@@ -324,7 +324,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             vec![
                 Span::styled(" [Esc]", blue),
                 Span::styled(" Back  ", dim),
-                Span::styled("[qq]", blue),
+                Span::styled("[q]", blue),
                 Span::styled(" Quit", dim),
             ],
         ),
@@ -338,7 +338,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             vec![
                 Span::styled(" [Esc]", blue),
                 Span::styled(" Back  ", dim),
-                Span::styled("[qq]", blue),
+                Span::styled("[q]", blue),
                 Span::styled(" Quit", dim),
             ],
         ),

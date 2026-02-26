@@ -739,7 +739,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 
     let left_spans = vec![
         Span::raw(" "),
-        Span::styled("[qq]", key_style),
+        Span::styled("[q]", key_style),
         Span::styled(" Quit", dim),
         Span::raw("   "),
         Span::styled("[Esc]", key_style),

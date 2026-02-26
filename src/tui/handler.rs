@@ -131,17 +131,6 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         return;
     }
 
-    // WorkspaceSetup handles its own keys (q is valid in path input, Esc navigates steps)
-    if app.screen == Screen::WorkspaceSetup {
-        // Only Ctrl+C quits the whole app from setup
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            app.should_quit = true;
-            return;
-        }
-        handle_setup_wizard_key(app, key).await;
-        return;
-    }
-
     // Global keybindings
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         app.should_quit = true;
@@ -149,14 +138,15 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     }
 
     if key.code == KeyCode::Char('q') {
-        if app.quit_pending {
-            app.should_quit = true;
-        } else {
-            app.quit_pending = true;
-        }
+        app.should_quit = true;
         return;
     }
-    app.quit_pending = false;
+
+    // WorkspaceSetup handles its own screen-specific keys.
+    if app.screen == Screen::WorkspaceSetup {
+        handle_setup_wizard_key(app, key).await;
+        return;
+    }
 
     if key.code == KeyCode::Esc {
         // On Sync screen, collapse expanded entry before navigating back
@@ -562,6 +552,23 @@ mod tests {
     use crate::config::{Config, WorkspaceConfig};
     use crate::setup::state::SetupState;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    #[tokio::test]
+    async fn q_quits_immediately() {
+        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+        let mut app = App::new(Config::default(), vec![ws]);
+        let (tx, _rx) = unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert!(app.should_quit);
+    }
 
     #[tokio::test]
     async fn setup_cancel_returns_to_previous_screen_when_present() {

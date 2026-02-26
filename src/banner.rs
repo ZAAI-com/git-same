@@ -19,6 +19,9 @@ const LINE5_SUFFIX: &str = "╗";
 /// Line 6.
 const LAST_LINE: &str = " ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝";
 
+/// Visual width of the ASCII logo (in monospace columns).
+const ART_WIDTH: usize = 62;
+
 /// Static gradient color stops: Blue → Cyan → Green.
 const GRADIENT_STOPS: [(u8, u8, u8); 3] = [
     (59, 130, 246), // Blue
@@ -35,6 +38,11 @@ const ANIMATED_GRADIENT_STOPS: [(u8, u8, u8); 5] = [
     (147, 51, 234), // Purple
 ];
 
+/// Canonical subheadline used by CLI + Dashboard.
+pub fn subheadline() -> &'static str {
+    env!("CARGO_PKG_DESCRIPTION")
+}
+
 /// Prints the gisa ASCII art banner to stdout (CLI mode).
 pub fn print_banner() {
     // Build full art from shared constants
@@ -47,18 +55,10 @@ pub fn print_banner() {
     );
 
     println!("{}", style(art).cyan().bold());
-    let subtitle = format!(
-        "Mirror GitHub structure /orgs/repos/ to local file system  {}",
-        style(format!("Version {}", version)).dim()
-    );
-    let visible_len = format!(
-        "Mirror GitHub structure /orgs/repos/ to local file system  Version {}",
-        version
-    )
-    .len();
-    let art_width = 62;
-    let pad = if visible_len < art_width {
-        (art_width - visible_len) / 2
+    let subtitle = subheadline();
+    let visible_len = subtitle.chars().count();
+    let pad = if visible_len < ART_WIDTH {
+        (ART_WIDTH - visible_len) / 2
     } else {
         0
     };

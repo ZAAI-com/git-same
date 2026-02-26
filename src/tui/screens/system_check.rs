@@ -217,9 +217,9 @@ pub fn render(app: &App, frame: &mut Frame) {
     frame.render_widget(help, chunks[2]);
 
     let hint = if !app.check_results.is_empty() && !app.config_created {
-        "Enter: Re-check  c: Create Config  s: Setup  qq: Quit"
+        "Enter: Re-check  c: Create Config  s: Setup  q: Quit"
     } else {
-        "s: Setup  Enter: Check  qq: Quit"
+        "s: Setup  Enter: Check  q: Quit"
     };
     status_bar::render(frame, chunks[3], hint);
 }

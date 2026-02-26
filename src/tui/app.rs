@@ -170,9 +170,6 @@ pub struct App {
     /// Whether the user has requested quit.
     pub should_quit: bool,
 
-    /// Whether the first 'q' has been pressed (waiting for second 'q' to confirm quit).
-    pub quit_pending: bool,
-
     /// Active screen.
     pub screen: Screen,
 
@@ -346,7 +343,6 @@ impl App {
 
         Self {
             should_quit: false,
-            quit_pending: false,
             screen,
             screen_stack: Vec::new(),
             config,

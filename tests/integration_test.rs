@@ -2,13 +2,49 @@
 //!
 //! These tests verify the CLI behavior as a whole.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn git_same_binary() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("target/debug/git-same");
     path
+}
+
+fn command_with_temp_env(home: &Path) -> Command {
+    let mut cmd = Command::new(git_same_binary());
+    cmd.env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_CACHE_HOME", home.join(".cache"))
+        .env("NO_COLOR", "1");
+    cmd
+}
+
+fn run_cli_with_env(home: &Path, args: &[&str]) -> std::process::Output {
+    command_with_temp_env(home)
+        .args(args)
+        .output()
+        .expect("Failed to execute git-same")
+}
+
+fn assert_banner_branding(stdout: &str) {
+    let description = env!("CARGO_PKG_DESCRIPTION");
+    assert!(
+        stdout.contains("██████╗ ██╗████████╗"),
+        "Expected ASCII logo in stdout, got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains(description),
+        "Expected subheadline '{}' in stdout, got:\n{}",
+        description,
+        stdout
+    );
+    assert!(
+        !stdout.contains(&format!("{description}  Version")),
+        "Unexpected legacy version suffix in subheadline, got:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -20,7 +56,7 @@ fn test_help_command() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Mirror GitHub structure /orgs/repos/ to local file system"));
+    assert!(stdout.contains(env!("CARGO_PKG_DESCRIPTION")));
     assert!(stdout.contains("init"));
     assert!(stdout.contains("setup"));
     assert!(stdout.contains("sync"));
@@ -317,5 +353,74 @@ fn test_missing_config_suggests_init() {
         stderr.contains("gisa init"),
         "Expected suggestion to run 'gisa init', got: {}",
         stderr
+    );
+}
+
+#[test]
+fn test_cli_subcommands_use_dashboard_subheadline() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    std::fs::create_dir_all(home.join(".config")).expect("Failed to create config dir");
+    std::fs::create_dir_all(home.join(".cache")).expect("Failed to create cache dir");
+
+    let config_path = temp.path().join("config.toml");
+    let config_str = config_path
+        .to_str()
+        .expect("Config path is not valid UTF-8");
+
+    let init_output = run_cli_with_env(&home, &["init", "--path", config_str, "--force"]);
+    assert!(
+        init_output.status.success(),
+        "Init failed: {:?}",
+        init_output
+    );
+    assert_banner_branding(&String::from_utf8_lossy(&init_output.stdout));
+
+    let command_matrix: Vec<Vec<String>> = vec![
+        vec![
+            "-C".to_string(),
+            config_str.to_string(),
+            "sync".to_string(),
+            "--dry-run".to_string(),
+        ],
+        vec![
+            "-C".to_string(),
+            config_str.to_string(),
+            "status".to_string(),
+        ],
+        vec![
+            "-C".to_string(),
+            config_str.to_string(),
+            "workspace".to_string(),
+            "list".to_string(),
+        ],
+        vec![
+            "-C".to_string(),
+            config_str.to_string(),
+            "workspace".to_string(),
+            "default".to_string(),
+        ],
+        vec!["reset".to_string(), "--force".to_string()],
+    ];
+
+    for args in command_matrix {
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = run_cli_with_env(&home, &arg_refs);
+        assert_banner_branding(&String::from_utf8_lossy(&output.stdout));
+    }
+}
+
+#[test]
+fn test_banner_source_no_legacy_version_subheadline() {
+    let source = include_str!("../src/banner.rs");
+    assert!(
+        !source.contains("Mirror GitHub structure /orgs/repos/ to local file system  {}"),
+        "Found legacy CLI subheadline format string in banner.rs"
+    );
+    assert!(
+        !source.contains("local file system  Version"),
+        "Found legacy versioned subheadline text in banner.rs"
     );
 }

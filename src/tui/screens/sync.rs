@@ -229,10 +229,8 @@ fn render_running_layout(app: &App, frame: &mut Frame, phase: f64) {
     render_running_log(app, frame, chunks[7]);
 
     let hint = match &app.operation_state {
-        OperationState::Running { .. } => {
-            "Esc: Minimize  \u{2191}/\u{2193}: Scroll log  Ctrl+C: Quit"
-        }
-        _ => "Esc: Minimize  Ctrl+C: Quit",
+        OperationState::Running { .. } => "Esc: Minimize  \u{2191}/\u{2193}: Scroll log  q: Quit",
+        _ => "Esc: Minimize  q: Quit",
     };
     status_bar::render(frame, chunks[8], hint);
 }
@@ -275,7 +273,7 @@ fn render_finished_layout(app: &App, frame: &mut Frame, phase: f64) {
     status_bar::render(
         frame,
         chunks[6],
-        "Esc: Back  qq: Quit  Enter: Commits  a:All u:Upd f:Err x:Skip h:History",
+        "Esc: Back  q: Quit  Enter: Commits  a:All u:Upd f:Err x:Skip h:History",
     );
 }
 
@@ -319,7 +317,7 @@ fn render_nothing_changed_layout(app: &App, frame: &mut Frame, phase: f64) {
     }
 
     render_performance_line(app, frame, chunks[4]);
-    status_bar::render(frame, chunks[5], "Esc: Back  qq: Quit  h: History");
+    status_bar::render(frame, chunks[5], "Esc: Back  q: Quit  h: History");
 }
 
 // ── Shared render functions ─────────────────────────────────────────────────

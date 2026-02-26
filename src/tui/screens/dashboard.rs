@@ -277,7 +277,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 }
 
 fn render_tagline(frame: &mut Frame, area: Rect) {
-    let description = env!("CARGO_PKG_DESCRIPTION");
+    let description = crate::banner::subheadline();
 
     let line = Line::from(Span::styled(
         description,
@@ -412,7 +412,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
     let total_repos = discovered_repos.max(completed_repos);
     let total_owners = discovered_owners.max(completed_owners);
     let owners_progress = format!("{}/{}", completed_owners, total_owners);
-    let repos_progress = format!("{}/{}", completed_repos, total_repos);
+    let repos_progress = total_repos.to_string();
     let uncommitted = app.local_repos.iter().filter(|r| r.is_uncommitted).count();
     let behind = app.local_repos.iter().filter(|r| r.behind > 0).count();
     let ahead = app.local_repos.iter().filter(|r| r.ahead > 0).count();
@@ -1116,7 +1116,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 
     let left_spans = vec![
         Span::raw(" "),
-        Span::styled("[qq]", key_style),
+        Span::styled("[q]", key_style),
         Span::styled(" Quit", dim),
         Span::raw("   "),
         Span::styled("[Esc]", key_style),
