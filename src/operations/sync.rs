@@ -195,7 +195,8 @@ pub struct SyncManager<G: GitOperations> {
 
 impl<G: GitOperations + 'static> SyncManager<G> {
     /// Creates a new sync manager.
-    pub fn new(git: G, options: SyncManagerOptions) -> Self {
+    pub fn new(git: G, mut options: SyncManagerOptions) -> Self {
+        options.concurrency = options.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         Self {
             git: Arc::new(git),
             options,
@@ -209,7 +210,11 @@ impl<G: GitOperations + 'static> SyncManager<G> {
         progress: Arc<dyn SyncProgress>,
     ) -> (OpSummary, Vec<SyncResult>) {
         let total = repos.len();
-        let semaphore = Arc::new(Semaphore::new(self.options.concurrency));
+        let concurrency = self
+            .options
+            .concurrency
+            .clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
+        let semaphore = Arc::new(Semaphore::new(concurrency));
         let mut handles = Vec::with_capacity(total);
 
         for (index, local_repo) in repos.into_iter().enumerate() {
@@ -240,14 +245,44 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 }
 
                 // Get status (blocking)
-                let status = tokio::task::spawn_blocking({
+                let status = match tokio::task::spawn_blocking({
                     let git = git.clone();
                     let path = path.clone();
                     move || git.status(&path)
                 })
                 .await
-                .ok()
-                .and_then(|r| r.ok());
+                {
+                    Ok(Ok(status)) => Some(status),
+                    Ok(Err(e)) if skip_uncommitted => {
+                        drop(permit);
+                        return SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Skipped(format!("failed to get status: {}", e)),
+                            had_updates: false,
+                            status: None,
+                            fetch_result: None,
+                            pull_result: None,
+                        };
+                    }
+                    Ok(Err(_)) => None,
+                    Err(e) if skip_uncommitted => {
+                        drop(permit);
+                        return SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Skipped(format!(
+                                "failed to get status: task join error: {}",
+                                e
+                            )),
+                            had_updates: false,
+                            status: None,
+                            fetch_result: None,
+                            pull_result: None,
+                        };
+                    }
+                    Err(_) => None,
+                };
 
                 // Check if uncommitted and should skip
                 if skip_uncommitted {
@@ -431,7 +466,21 @@ impl<G: GitOperations + 'static> SyncManager<G> {
         }
 
         // Get status
-        let status = self.git.status(path).ok();
+        let status = match self.git.status(path) {
+            Ok(status) => Some(status),
+            Err(e) if self.options.skip_uncommitted => {
+                return SyncResult {
+                    repo: local_repo.repo.clone(),
+                    path: path.clone(),
+                    result: OpResult::Skipped(format!("failed to get status: {}", e)),
+                    had_updates: false,
+                    status: None,
+                    fetch_result: None,
+                    pull_result: None,
+                };
+            }
+            Err(_) => None,
+        };
 
         // Check if uncommitted
         if self.options.skip_uncommitted {

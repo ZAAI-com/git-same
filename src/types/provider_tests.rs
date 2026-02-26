@@ -79,6 +79,14 @@ fn test_default_api_urls() {
 }
 
 #[test]
+fn test_slug() {
+    assert_eq!(ProviderKind::GitHub.slug(), "github");
+    assert_eq!(ProviderKind::GitHubEnterprise.slug(), "github-enterprise");
+    assert_eq!(ProviderKind::GitLab.slug(), "gitlab");
+    assert_eq!(ProviderKind::Bitbucket.slug(), "bitbucket");
+}
+
+#[test]
 fn test_requires_custom_url() {
     assert!(!ProviderKind::GitHub.requires_custom_url());
     assert!(ProviderKind::GitHubEnterprise.requires_custom_url());

@@ -106,9 +106,15 @@ impl DiscoveryOrchestrator {
             }
 
             if skip_uncommitted {
-                if let Ok(status) = git.status(&local_path) {
-                    if status.is_uncommitted || status.has_untracked {
-                        skipped.push((repo, "uncommitted changes".to_string()));
+                match git.status(&local_path) {
+                    Ok(status) => {
+                        if status.is_uncommitted || status.has_untracked {
+                            skipped.push((repo, "uncommitted changes".to_string()));
+                            continue;
+                        }
+                    }
+                    Err(err) => {
+                        skipped.push((repo, format!("failed to get status: {}", err)));
                         continue;
                     }
                 }

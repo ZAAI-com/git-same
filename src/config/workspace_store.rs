@@ -2,7 +2,7 @@
 
 use super::workspace::WorkspaceConfig;
 use crate::errors::AppError;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Filesystem-backed workspace store.
 pub struct WorkspaceStore;
@@ -145,6 +145,7 @@ impl WorkspaceStore {
 
     /// Returns the directory path for a workspace: `~/.config/git-same/<name>/`.
     pub fn workspace_dir(name: &str) -> Result<PathBuf, AppError> {
+        Self::validate_workspace_name(name)?;
         Ok(Self::config_dir()?.join(name))
     }
 
@@ -156,6 +157,46 @@ impl WorkspaceStore {
     /// Returns the file path for a workspace config.
     fn config_path(name: &str) -> Result<PathBuf, AppError> {
         Ok(Self::workspace_dir(name)?.join("workspace-config.toml"))
+    }
+
+    /// Validate workspace names to prevent path traversal.
+    fn validate_workspace_name(name: &str) -> Result<(), AppError> {
+        if name.trim().is_empty() {
+            return Err(AppError::config("Workspace name cannot be empty"));
+        }
+
+        let path = Path::new(name);
+        if path.is_absolute()
+            || path.components().any(|c| {
+                matches!(
+                    c,
+                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
+                )
+            })
+        {
+            return Err(AppError::config(format!(
+                "Invalid workspace name '{}'",
+                name
+            )));
+        }
+
+        if name.contains('/') || name.contains('\\') {
+            return Err(AppError::config(format!(
+                "Invalid workspace name '{}'",
+                name
+            )));
+        }
+
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        {
+            return Err(AppError::config(
+                "Workspace name may only contain letters, numbers, '-', '_' and '.'",
+            ));
+        }
+
+        Ok(())
     }
 
     /// Load a workspace config from a specific file path.

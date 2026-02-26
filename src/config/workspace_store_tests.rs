@@ -82,3 +82,23 @@ fn delete_nonexistent_workspace_returns_error() {
         assert!(err.to_string().contains("not found"));
     });
 }
+
+#[test]
+fn workspace_name_rejects_path_traversal() {
+    let temp = tempfile::tempdir().unwrap();
+
+    with_temp_home(temp.path(), || {
+        let err = WorkspaceStore::workspace_dir("../escape").unwrap_err();
+        assert!(err.to_string().contains("Invalid workspace name"));
+    });
+}
+
+#[test]
+fn workspace_name_allows_safe_characters() {
+    let temp = tempfile::tempdir().unwrap();
+
+    with_temp_home(temp.path(), || {
+        let path = WorkspaceStore::workspace_dir("team.alpha-1_repo").unwrap();
+        assert_eq!(path, temp.path().join(".config/git-same/team.alpha-1_repo"));
+    });
+}

@@ -288,3 +288,21 @@ async fn test_clone_repos_with_failure() {
     assert_eq!(summary.failed, 1);
     assert_eq!(progress.errors.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn test_clone_repos_zero_concurrency_is_clamped() {
+    let temp = TempDir::new().unwrap();
+
+    let git = MockGit::new();
+    let mut options = CloneManagerOptions::new().with_dry_run(true);
+    options.concurrency = 0; // bypass builder clamp on purpose
+    let manager = CloneManager::new(git, options);
+
+    let repos = vec![test_repo("repo1", "org")];
+    let progress: Arc<dyn CloneProgress> = Arc::new(NoProgress);
+    let (summary, _results) = manager
+        .clone_repos(temp.path(), repos, "github", progress)
+        .await;
+
+    assert_eq!(summary.skipped, 1);
+}

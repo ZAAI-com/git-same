@@ -1,7 +1,7 @@
 //! Repository path templating.
 
 use crate::types::OwnedRepo;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Canonical renderer for workspace repository paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,11 +24,14 @@ impl RepoPathTemplate {
 
     /// Render a repository path from template placeholders.
     pub fn render(&self, base_path: &Path, provider: &str, owner: &str, repo: &str) -> PathBuf {
+        let provider = sanitize_component(provider);
+        let owner = sanitize_component(owner);
+        let repo = sanitize_component(repo);
         let rendered = self
             .template
-            .replace("{provider}", provider)
-            .replace("{org}", owner)
-            .replace("{repo}", repo);
+            .replace("{provider}", &provider)
+            .replace("{org}", &owner)
+            .replace("{repo}", &repo);
 
         base_path.join(rendered)
     }
@@ -51,12 +54,38 @@ impl RepoPathTemplate {
 
     /// Expected scan depth for local repository traversal.
     pub fn scan_depth(&self) -> usize {
-        if self.template.contains("{provider}") {
-            3
-        } else {
-            2
-        }
+        let sample = self
+            .template
+            .replace("{provider}", "provider")
+            .replace("{org}", "org")
+            .replace("{repo}", "repo");
+
+        let depth = Path::new(&sample)
+            .components()
+            .filter(|c| matches!(c, Component::Normal(_)))
+            .count();
+
+        depth.max(1)
     }
+}
+
+fn sanitize_component(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "_".to_string();
+    }
+
+    let mut sanitized = trimmed
+        .replace(['/', '\\'], "_")
+        .replace("..", "__")
+        .trim()
+        .to_string();
+
+    if sanitized.is_empty() {
+        sanitized = "_".to_string();
+    }
+
+    sanitized
 }
 
 impl Default for RepoPathTemplate {

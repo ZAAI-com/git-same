@@ -24,6 +24,16 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
+    /// Returns a stable slug for path templating and cache keys.
+    pub fn slug(&self) -> &'static str {
+        match self {
+            ProviderKind::GitHub => "github",
+            ProviderKind::GitHubEnterprise => "github-enterprise",
+            ProviderKind::GitLab => "gitlab",
+            ProviderKind::Bitbucket => "bitbucket",
+        }
+    }
+
     /// Returns the default API base URL for this provider.
     pub fn default_api_url(&self) -> &'static str {
         match self {

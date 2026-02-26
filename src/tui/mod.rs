@@ -27,22 +27,36 @@ pub async fn run_tui(config: Config) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    if let Err(e) = execute!(stdout, EnterAlternateScreen) {
+        let _ = disable_raw_mode();
+        return Err(e.into());
+    }
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = match Terminal::new(backend) {
+        Ok(terminal) => terminal,
+        Err(e) => {
+            let _ = disable_raw_mode();
+            let mut stdout = io::stdout();
+            let _ = execute!(stdout, LeaveAlternateScreen);
+            return Err(e.into());
+        }
+    };
 
-    // Load workspaces
-    let workspaces = WorkspaceManager::list().unwrap_or_default();
+    let result = async {
+        // Load workspaces
+        let workspaces = WorkspaceManager::list()?;
 
-    // Create app state
-    let mut app = App::new(config, workspaces);
+        // Create app state
+        let mut app = App::new(config, workspaces);
 
-    // Start event loop
-    let tick_rate = Duration::from_millis(100);
-    let (mut rx, backend_tx) = event::spawn_event_loop(tick_rate);
+        // Start event loop
+        let tick_rate = Duration::from_millis(100);
+        let (mut rx, backend_tx) = event::spawn_event_loop(tick_rate);
 
-    // Main loop
-    let result = run_app(&mut terminal, &mut app, &mut rx, &backend_tx).await;
+        // Main loop
+        run_app(&mut terminal, &mut app, &mut rx, &backend_tx).await
+    }
+    .await;
 
     // Restore terminal (always, even on error)
     let _ = disable_raw_mode();
@@ -61,8 +75,9 @@ async fn run_app(
     loop {
         terminal.draw(|frame| ui::render(app, frame))?;
 
-        if let Some(event) = rx.recv().await {
-            handler::handle_event(app, event, backend_tx).await;
+        match rx.recv().await {
+            Some(event) => handler::handle_event(app, event, backend_tx).await,
+            None => break,
         }
 
         if app.should_quit {

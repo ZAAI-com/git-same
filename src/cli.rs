@@ -64,7 +64,7 @@ pub struct InitArgs {
     #[arg(short, long)]
     pub force: bool,
 
-    /// Path for config file (default: ~/.config/gisa/gisa.config.toml)
+    /// Path for config file (default: ~/.config/git-same/config.toml)
     #[arg(short, long)]
     pub path: Option<PathBuf>,
 }

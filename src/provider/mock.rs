@@ -195,6 +195,7 @@ impl Provider for MockProvider {
         // Fetch org repos
         for org in filtered_orgs {
             progress.on_org_started(&org.login);
+            let mut org_count = 0usize;
 
             if let Some(org_repos) = self.org_repos.get(&org.login) {
                 let filtered: Vec<_> = org_repos
@@ -204,10 +205,11 @@ impl Provider for MockProvider {
 
                 for repo in filtered {
                     repos.push(OwnedRepo::new(&org.login, repo.clone()));
+                    org_count += 1;
                 }
             }
 
-            progress.on_org_complete(&org.login, repos.len());
+            progress.on_org_complete(&org.login, org_count);
         }
 
         // Fetch personal repos

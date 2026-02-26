@@ -206,10 +206,17 @@ impl GitOperations for ShellGit {
     fn fetch(&self, repo_path: &Path) -> Result<FetchResult, GitError> {
         debug!(repo = %repo_path.display(), "Starting git fetch");
 
-        // Get current HEAD before fetch
-        let before = self
-            .run_git_output(&["rev-parse", "HEAD"], Some(repo_path))
+        // Resolve upstream tracking ref and snapshot its commit before fetch.
+        let tracking_branch = self
+            .run_git_output(
+                &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                Some(repo_path),
+            )
             .ok();
+        let before_upstream = tracking_branch.as_ref().and_then(|tracking| {
+            self.run_git_output(&["rev-parse", tracking], Some(repo_path))
+                .ok()
+        });
 
         // Run fetch
         trace!(repo = %repo_path.display(), "Executing fetch --all --prune");
@@ -221,17 +228,12 @@ impl GitOperations for ShellGit {
             return Err(GitError::fetch_failed(repo_path, stderr));
         }
 
-        // Check if remote tracking branch has new commits
-        let tracking_branch = self
-            .run_git_output(
-                &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
-                Some(repo_path),
-            )
-            .ok();
-
-        let updated = if let (Some(before_ref), Some(tracking)) = (before, tracking_branch) {
+        // Compare upstream commit before/after fetch to determine whether remote changed.
+        let updated = if let (Some(before_ref), Some(tracking)) =
+            (before_upstream, tracking_branch.as_deref())
+        {
             let after = self
-                .run_git_output(&["rev-parse", &tracking], Some(repo_path))
+                .run_git_output(&["rev-parse", tracking], Some(repo_path))
                 .ok();
             after.map(|a| a != before_ref).unwrap_or(false)
         } else {

@@ -141,9 +141,28 @@ impl CacheManager {
             return Ok(None);
         }
 
-        let content = fs::read_to_string(&self.cache_path).context("Failed to read cache file")?;
-        let cache: DiscoveryCache =
-            serde_json::from_str(&content).context("Failed to parse cache file")?;
+        let content = match fs::read_to_string(&self.cache_path) {
+            Ok(content) => content,
+            Err(err) => {
+                warn!(
+                    path = %self.cache_path.display(),
+                    error = %err,
+                    "Cache file unreadable, ignoring cache"
+                );
+                return Ok(None);
+            }
+        };
+        let cache: DiscoveryCache = match serde_json::from_str(&content) {
+            Ok(cache) => cache,
+            Err(err) => {
+                warn!(
+                    path = %self.cache_path.display(),
+                    error = %err,
+                    "Cache file malformed, ignoring cache"
+                );
+                return Ok(None);
+            }
+        };
 
         if !cache.is_compatible() {
             warn!(

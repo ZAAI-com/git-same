@@ -3,6 +3,7 @@
 use crossterm::event::{self, Event as CtEvent, KeyEvent};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 use crate::types::{OpSummary, OwnedRepo};
 
@@ -95,7 +96,15 @@ pub fn spawn_event_loop(
     // Terminal event reader (crossterm is blocking)
     tokio::task::spawn_blocking(move || {
         loop {
-            if event::poll(tick_rate).unwrap_or(false) {
+            let has_event = match event::poll(tick_rate) {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!(error = %e, "Terminal poll failed; stopping event loop");
+                    break;
+                }
+            };
+
+            if has_event {
                 if let Ok(ev) = event::read() {
                     let app_event = match ev {
                         CtEvent::Key(key) => AppEvent::Terminal(key),

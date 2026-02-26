@@ -67,10 +67,7 @@ fn format_reset_time(reset_timestamp: &str) -> String {
 /// Calculate wait time until rate limit reset.
 fn calculate_wait_time(reset_timestamp: &str) -> Option<Duration> {
     if let Ok(reset_secs) = reset_timestamp.parse::<u64>() {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
 
         if reset_secs > now {
             return Some(Duration::from_secs(reset_secs - now));

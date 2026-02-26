@@ -270,3 +270,19 @@ async fn test_sync_repos_with_updates_pull_mode() {
     assert!(results[0].had_updates);
     assert_eq!(progress.pull_complete.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn test_sync_repos_zero_concurrency_is_clamped() {
+    let temp = TempDir::new().unwrap();
+
+    let git = MockGit::new();
+    let mut options = SyncManagerOptions::new().with_dry_run(true);
+    options.concurrency = 0; // bypass builder clamp on purpose
+    let manager = SyncManager::new(git, options);
+
+    let repos = vec![local_repo("repo", "org", temp.path())];
+    let progress: Arc<dyn SyncProgress> = Arc::new(NoSyncProgress);
+    let (summary, _results) = manager.sync_repos(repos, progress).await;
+
+    assert_eq!(summary.skipped, 1);
+}

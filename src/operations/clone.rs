@@ -171,7 +171,8 @@ pub struct CloneManager<G: GitOperations> {
 
 impl<G: GitOperations + 'static> CloneManager<G> {
     /// Creates a new clone manager.
-    pub fn new(git: G, options: CloneManagerOptions) -> Self {
+    pub fn new(git: G, mut options: CloneManagerOptions) -> Self {
+        options.concurrency = options.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
         Self {
             git: Arc::new(git),
             options,
@@ -204,7 +205,11 @@ impl<G: GitOperations + 'static> CloneManager<G> {
         progress: Arc<dyn CloneProgress>,
     ) -> (OpSummary, Vec<CloneResult>) {
         let total = repos.len();
-        let semaphore = Arc::new(Semaphore::new(self.options.concurrency));
+        let concurrency = self
+            .options
+            .concurrency
+            .clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
+        let semaphore = Arc::new(Semaphore::new(concurrency));
         let mut handles = Vec::with_capacity(total);
 
         for (index, repo) in repos.into_iter().enumerate() {

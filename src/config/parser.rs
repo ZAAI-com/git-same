@@ -1,10 +1,10 @@
 //! Configuration file parser.
 //!
-//! Handles loading and parsing of gisa.config.toml files.
+//! Handles loading and parsing of config.toml files.
 
 use super::provider_config::ProviderEntry;
 use crate::errors::AppError;
-use crate::operations::clone::DEFAULT_CONCURRENCY;
+use crate::operations::clone::{DEFAULT_CONCURRENCY, MAX_CONCURRENCY};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -153,7 +153,10 @@ impl Config {
             dir.config_dir().to_path_buf()
         } else {
             let home = std::env::var("HOME")
-                .map_err(|_| AppError::config("HOME environment variable not set"))?;
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .map_err(|_| {
+                    AppError::config("Neither HOME nor USERPROFILE environment variable is set")
+                })?;
             PathBuf::from(home).join(".config/git-same")
         };
 
@@ -186,8 +189,6 @@ impl Config {
 
     /// Validate the configuration.
     pub fn validate(&self) -> Result<(), AppError> {
-        const MAX_CONCURRENCY: usize = 32;
-
         // Validate concurrency
         if !(1..=MAX_CONCURRENCY).contains(&self.concurrency) {
             return Err(AppError::config(format!(
@@ -227,13 +228,13 @@ impl Config {
 # Placeholders: {{provider}}, {{org}}, {{repo}}
 structure = "{{org}}/{{repo}}"
 
-# Number of parallel clone/sync operations (1-32)
+# Number of parallel clone/sync operations (1-{})
 # Keeping this bounded helps avoid provider rate limits and local resource contention.
 concurrency = {}
 
 # Sync behavior: "fetch" (safe) or "pull" (updates working tree)
 sync_mode = "fetch""#,
-            DEFAULT_CONCURRENCY
+            MAX_CONCURRENCY, DEFAULT_CONCURRENCY
         ) + r#"
 
 [clone]

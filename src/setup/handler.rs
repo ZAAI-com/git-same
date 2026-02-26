@@ -18,7 +18,10 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         state.should_quit = true;
         return;
     }
-    if key.code == KeyCode::Char('q') {
+    if key.modifiers == KeyModifiers::NONE
+        && key.code == KeyCode::Char('q')
+        && !matches!(state.step, SetupStep::SelectPath)
+    {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
         return;
@@ -544,7 +547,13 @@ fn compute_completions(input: &str) -> Vec<String> {
     let (parent, prefix) = if expanded.ends_with('/') {
         (path.to_path_buf(), String::new())
     } else {
-        let parent = path.parent().unwrap_or(path).to_path_buf();
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| {
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+            });
         let prefix = path
             .file_name()
             .map(|f| f.to_string_lossy().to_string())

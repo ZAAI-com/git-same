@@ -17,6 +17,7 @@ use crate::types::{ActionPlan, OpSummary, OwnedRepo};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Request data used to prepare a workspace sync plan.
 pub struct SyncWorkspaceRequest<'a> {
@@ -90,10 +91,19 @@ pub async fn prepare_sync_workspace(
     if !request.refresh {
         if let Ok(cache_manager) = CacheManager::for_workspace(&request.workspace.name) {
             if let Ok(Some(cache)) = cache_manager.load() {
+                let discovery_options = orchestrator.to_discovery_options();
                 used_cache = true;
                 cache_age_secs = Some(cache.age_secs());
                 for provider_repos in cache.repos.values() {
-                    repos.extend(provider_repos.clone());
+                    repos.extend(
+                        provider_repos
+                            .iter()
+                            .filter(|owned| {
+                                discovery_options.should_include_org(&owned.owner)
+                                    && discovery_options.should_include(&owned.repo)
+                            })
+                            .cloned(),
+                    );
                 }
 
                 // Surface cached counts through the existing progress interface
@@ -130,7 +140,13 @@ pub async fn prepare_sync_workspace(
             repos_by_provider.insert(provider_label, repos.clone());
             let cache =
                 DiscoveryCache::new(auth.username.clone().unwrap_or_default(), repos_by_provider);
-            let _ = cache_manager.save(&cache);
+            if let Err(e) = cache_manager.save(&cache) {
+                warn!(
+                    workspace = %request.workspace.name,
+                    error = %e,
+                    "Failed to save discovery cache"
+                );
+            }
         }
     }
 
@@ -152,7 +168,7 @@ pub async fn prepare_sync_workspace(
         }
     }
 
-    let provider_name = provider_entry.kind.to_string().to_lowercase();
+    let provider_name = provider_entry.kind.slug().to_string();
     let git = ShellGit::new();
     let plan = orchestrator.plan_clone(&base_path, repos.clone(), &provider_name, &git);
     let (to_sync, skipped_sync) = orchestrator.plan_sync(

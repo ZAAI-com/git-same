@@ -21,6 +21,7 @@ fn test_scan_depth() {
         RepoPathTemplate::new("{provider}/{org}/{repo}").scan_depth(),
         3
     );
+    assert_eq!(RepoPathTemplate::new("code/{org}/{repo}").scan_depth(), 3);
 }
 
 #[test]
@@ -31,4 +32,19 @@ fn test_render_full_name() {
     assert!(template
         .render_full_name(Path::new("/x"), "github", "invalid")
         .is_none());
+}
+
+#[test]
+fn test_render_sanitizes_path_components() {
+    let template = RepoPathTemplate::new("{provider}/{org}/{repo}");
+    let path = template.render(
+        Path::new("/tmp/base"),
+        "github/enterprise",
+        "../acme",
+        "api\\v2",
+    );
+    assert_eq!(
+        path,
+        PathBuf::from("/tmp/base/github_enterprise/___acme/api_v2")
+    );
 }
