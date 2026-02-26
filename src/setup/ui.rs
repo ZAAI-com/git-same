@@ -78,8 +78,8 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
         SetupStep::Welcome => screens::welcome::render(state, frame, content_area),
         SetupStep::SelectProvider => screens::provider::render(state, frame, content_area),
         SetupStep::Authenticate => screens::auth::render(state, frame, content_area),
-        SetupStep::SelectPath => screens::path::render(state, frame, content_area),
         SetupStep::SelectOrgs => screens::orgs::render(state, frame, content_area),
+        SetupStep::SelectPath => screens::path::render(state, frame, content_area),
         SetupStep::Confirm => screens::confirm::render(state, frame, content_area),
         SetupStep::Complete => screens::complete::render(state, frame, content_area),
     }
@@ -90,7 +90,7 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
 
 /// Render the step progress indicator with nodes and connectors.
 fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let steps = ["Provider", "Auth", "Path", "Orgs", "Save"];
+    let steps = ["Provider", "Auth", "Orgs", "Path", "Save"];
     let current = state.step_number(); // 0 for Welcome, 1-5 for steps, 5 for Complete
 
     let green = Style::default().fg(Color::Rgb(21, 128, 61));
@@ -251,13 +251,32 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             )
         }
         SetupStep::SelectPath => {
-            if state.path_suggestions_mode {
+            if state.path_browse_mode {
+                (
+                    vec![
+                        Span::styled(" [Enter]", blue),
+                        Span::styled(" Use Folder  ", dim),
+                        Span::styled("[\u{2190}] [\u{2192}]", blue),
+                        Span::styled(" Parent/Open", dim),
+                    ],
+                    vec![
+                        Span::styled(" [\u{2191}] [\u{2193}]", blue),
+                        Span::styled(" Move  ", dim),
+                        Span::styled("[Esc]", blue),
+                        Span::styled(" Close  ", dim),
+                        Span::styled("[q]", blue),
+                        Span::styled(" Quit", dim),
+                    ],
+                )
+            } else if state.path_suggestions_mode {
                 (
                     vec![
                         Span::styled(" [Enter]", blue),
                         Span::styled(" Confirm  ", dim),
                         Span::styled("[Tab]", blue),
-                        Span::styled(" Edit", dim),
+                        Span::styled(" Edit  ", dim),
+                        Span::styled("[b]", blue),
+                        Span::styled(" Browse", dim),
                     ],
                     vec![
                         Span::styled(" [←] [↑] [↓] [→]", blue),
@@ -274,7 +293,9 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Span::styled(" [Enter]", blue),
                         Span::styled(" Confirm  ", dim),
                         Span::styled("[Tab]", blue),
-                        Span::styled(" Complete", dim),
+                        Span::styled(" Complete  ", dim),
+                        Span::styled("[Ctrl+b]", blue),
+                        Span::styled(" Browse", dim),
                     ],
                     vec![
                         Span::styled(" [Esc]", blue),

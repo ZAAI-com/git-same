@@ -15,7 +15,10 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         }
         Screen::Workspaces => screens::workspaces::render(app, frame),
         Screen::Dashboard => screens::dashboard::render(app, frame),
-        Screen::Sync => screens::sync::render(app, frame),
+        Screen::Sync => {
+            screens::dashboard::render(app, frame);
+            screens::sync::render(app, frame);
+        }
         Screen::Settings => screens::settings::render(app, frame),
     }
 }

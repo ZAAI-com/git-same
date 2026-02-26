@@ -1,4 +1,4 @@
-//! Step 4: Organization selection screen with summary and proportional bars.
+//! Step 3: Organization selection screen with summary and proportional bars.
 
 use crate::setup::state::SetupState;
 use ratatui::layout::Rect;

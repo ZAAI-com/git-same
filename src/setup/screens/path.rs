@@ -1,4 +1,4 @@
-//! Step 3: Base path input screen with suggestions, tab completion, and live preview.
+//! Step 4: Base path input screen with suggestions, tab completion, and live preview.
 
 use crate::setup::state::SetupState;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -8,7 +8,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let list_items = if state.path_suggestions_mode {
+    let list_items = if state.path_browse_mode {
+        state.path_browse_entries.len() + 2
+    } else if state.path_suggestions_mode {
         state.path_suggestions.len()
     } else {
         state.path_completions.len()
@@ -43,7 +45,9 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(title_lines), chunks[0]);
 
     // Path input with styled border
-    let input_style = if state.path_suggestions_mode {
+    let input_style = if state.path_browse_mode {
+        Style::default().fg(Color::Cyan)
+    } else if state.path_suggestions_mode {
         Style::default().fg(Color::DarkGray)
     } else {
         Style::default().fg(Color::Yellow)
@@ -54,12 +58,16 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         Span::styled("  ", Style::default()),
         Span::styled(&state.base_path, input_style),
     ]);
-    let border_type = if state.path_suggestions_mode {
+    let border_type = if state.path_browse_mode {
+        BorderType::Thick
+    } else if state.path_suggestions_mode {
         BorderType::Plain
     } else {
         BorderType::Thick
     };
-    let border_color = if state.path_suggestions_mode {
+    let border_color = if state.path_browse_mode {
+        Color::Cyan
+    } else if state.path_suggestions_mode {
         Color::DarkGray
     } else {
         Color::Cyan
@@ -74,14 +82,16 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     frame.render_widget(input, chunks[1]);
 
     // Show cursor in input mode
-    if !state.path_suggestions_mode {
+    if !state.path_suggestions_mode && !state.path_browse_mode {
         let cursor_x = chunks[1].x + 1 + 2 + cursor_pos as u16;
         let cursor_y = chunks[1].y + 1;
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 
     // Suggestions or completions list
-    if state.path_suggestions_mode && !state.path_suggestions.is_empty() {
+    if state.path_browse_mode {
+        render_browse(state, frame, chunks[2]);
+    } else if state.path_suggestions_mode && !state.path_suggestions.is_empty() {
         render_suggestions(state, frame, chunks[2]);
     } else if !state.path_suggestions_mode && !state.path_completions.is_empty() {
         render_completions(state, frame, chunks[2]);
@@ -89,13 +99,18 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     // Preview + error
     let mut preview_lines: Vec<Line> = Vec::new();
-    if !state.base_path.is_empty() {
+    let preview_path = if state.path_browse_mode {
+        &state.path_browse_current_dir
+    } else {
+        &state.base_path
+    };
+    if !preview_path.is_empty() {
         preview_lines.push(Line::from(Span::styled(
             "  Preview:",
             Style::default().fg(Color::DarkGray),
         )));
         preview_lines.push(Line::from(Span::styled(
-            format!("    {}/acme-corp/my-repo/", state.base_path),
+            format!("    {preview_path}/acme-corp/my-repo/"),
             Style::default().fg(Color::DarkGray),
         )));
     }
@@ -109,6 +124,54 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     }
 
     frame.render_widget(Paragraph::new(preview_lines), chunks[3]);
+}
+
+fn render_browse(state: &SetupState, frame: &mut Frame, area: Rect) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "  Folder Navigator:",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            format!("    {}", state.path_browse_current_dir),
+            Style::default().fg(Color::Cyan),
+        )),
+    ];
+
+    if state.path_browse_entries.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "    (No visible subfolders)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        let visible = area.height.saturating_sub(2) as usize;
+        let start = state
+            .path_browse_index
+            .saturating_sub(visible.saturating_sub(1));
+        for (i, entry) in state
+            .path_browse_entries
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(visible)
+        {
+            let is_selected = i == state.path_browse_index;
+            let marker = if is_selected { "  > " } else { "    " };
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(marker, style),
+                Span::styled(&entry.label, style),
+            ]));
+        }
+    }
+
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_suggestions(state: &SetupState, frame: &mut Frame, area: Rect) {

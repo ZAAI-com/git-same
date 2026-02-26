@@ -24,11 +24,10 @@ use crate::tui::event::AppEvent;
 pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
     match key.code {
         KeyCode::Char('s') => {
-            if should_open_sync_from_dashboard(app) {
-                open_sync_view(app);
-            } else {
-                start_operation(app, Operation::Sync, backend_tx);
-            }
+            start_sync_operation(app, backend_tx);
+        }
+        KeyCode::Char('p') => {
+            show_sync_progress(app);
         }
         KeyCode::Char('t') => {
             app.last_status_scan = None; // Force immediate refresh
@@ -115,7 +114,10 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
 }
 
 fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
-    if matches!(app.operation_state, OperationState::Running { .. }) {
+    if matches!(
+        app.operation_state,
+        OperationState::Discovering { .. } | OperationState::Running { .. }
+    ) {
         app.error_message = Some("An operation is already running".to_string());
         return;
     }
@@ -128,34 +130,29 @@ fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSe
     app.log_lines.clear();
     app.scroll_offset = 0;
 
-    if operation == Operation::Sync && !matches!(app.screen, Screen::Sync) {
-        app.navigate_to(Screen::Sync);
-    }
-
     crate::tui::backend::spawn_operation(operation, app, backend_tx.clone());
 }
 
-fn should_open_sync_from_dashboard(app: &App) -> bool {
-    match &app.operation_state {
-        OperationState::Discovering {
-            operation: Operation::Sync,
-            ..
-        }
-        | OperationState::Running {
-            operation: Operation::Sync,
-            ..
-        }
-        | OperationState::Finished {
-            operation: Operation::Sync,
-            ..
-        } => true,
-        _ => !app.sync_log_entries.is_empty(),
+pub(crate) fn start_sync_operation(app: &mut App, backend_tx: &UnboundedSender<AppEvent>) {
+    start_operation(app, Operation::Sync, backend_tx);
+}
+
+pub(crate) fn show_sync_progress(app: &mut App) {
+    if !matches!(app.screen, Screen::Sync) {
+        app.screen_stack.push(app.screen);
+        app.screen = Screen::Sync;
     }
 }
 
-fn open_sync_view(app: &mut App) {
+pub(crate) fn hide_sync_progress(app: &mut App) {
     if !matches!(app.screen, Screen::Sync) {
-        app.navigate_to(Screen::Sync);
+        return;
+    }
+
+    if app.screen_stack.is_empty() {
+        app.screen = Screen::Dashboard;
+    } else {
+        app.go_back();
     }
 }
 
@@ -943,7 +940,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
-    // Line 1: live sync status (centered full-width) + [s] action (right overlay)
+    // Line 1: live sync status (centered full-width) + action hints (right overlay)
     let sync_line = match &app.operation_state {
         OperationState::Discovering {
             operation: Operation::Sync,
@@ -955,7 +952,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("discovering", dim),
+            Span::styled("discovering in background", dim),
             Span::styled(": ", dim),
             Span::styled(message.clone(), dim),
         ])),
@@ -1013,7 +1010,7 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("running ", dim),
+                Span::styled("running in background ", dim),
                 Span::styled(format!("{}%", pct), Style::default().fg(Color::Cyan)),
                 Span::styled(format!(" ({}/{})", completed, total), dim),
             ];
@@ -1034,6 +1031,9 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                 format!("  |  workers {}/{}", active_repos.len(), concurrency),
                 Style::default().fg(Color::DarkGray),
             ));
+            spans.push(Span::styled("  |  show ", dim));
+            spans.push(Span::styled("[p]", key_style));
+            spans.push(Span::styled(" progress", dim));
             Some(Line::from(spans))
         }
         OperationState::Finished {
@@ -1071,6 +1071,8 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
                     format!("  |  {:.1}s", duration_secs),
                     Style::default().fg(Color::DarkGray),
                 ),
+                Span::styled("  |  details ", dim),
+                Span::styled("[p]", key_style),
             ]))
         }
         _ => app.active_workspace.as_ref().and_then(|ws| {
@@ -1098,14 +1100,12 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(Paragraph::new(vec![sync_line]).centered(), rows[0]);
     }
 
-    let sync_action_label = if should_open_sync_from_dashboard(app) {
-        " Open"
-    } else {
-        " Sync"
-    };
     let actions_right = Line::from(vec![
         Span::styled("[s]", key_style),
-        Span::styled(sync_action_label, dim),
+        Span::styled(" Start Sync", dim),
+        Span::raw("   "),
+        Span::styled("[p]", key_style),
+        Span::styled(" Show Sync Progress", dim),
         Span::raw(" "),
     ]);
     frame.render_widget(Paragraph::new(vec![actions_right]).right_aligned(), rows[0]);
@@ -1150,5 +1150,74 @@ fn format_duration_secs(secs: u64) -> String {
         format!("{}m{}s", secs / 60, secs % 60)
     } else {
         format!("{}s", secs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, WorkspaceConfig};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn build_app() -> App {
+        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+        let mut app = App::new(Config::default(), vec![ws]);
+        app.screen = Screen::Dashboard;
+        app.screen_stack.clear();
+        app
+    }
+
+    #[tokio::test]
+    async fn dashboard_s_starts_sync_without_opening_popup() {
+        let mut app = build_app();
+        let (tx, _rx) = unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.screen, Screen::Dashboard);
+        assert!(matches!(
+            app.operation_state,
+            OperationState::Discovering {
+                operation: Operation::Sync,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn dashboard_p_opens_sync_popup_when_idle() {
+        let mut app = build_app();
+        let (tx, _rx) = unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.screen, Screen::Sync);
+        assert_eq!(app.screen_stack, vec![Screen::Dashboard]);
+        assert!(matches!(app.operation_state, OperationState::Idle));
+    }
+
+    #[test]
+    fn hide_show_sync_progress_preserves_sync_state() {
+        let mut app = build_app();
+        app.scroll_offset = 9;
+        app.sync_log_index = 4;
+
+        show_sync_progress(&mut app);
+        hide_sync_progress(&mut app);
+
+        assert_eq!(app.screen, Screen::Dashboard);
+        assert_eq!(app.scroll_offset, 9);
+        assert_eq!(app.sync_log_index, 4);
     }
 }

@@ -1,6 +1,8 @@
 //! Setup wizard event handling.
 
-use super::state::{tilde_collapse, AuthStatus, OrgEntry, SetupOutcome, SetupState, SetupStep};
+use super::state::{
+    tilde_collapse, AuthStatus, OrgEntry, PathBrowseEntry, SetupOutcome, SetupState, SetupStep,
+};
 use crate::auth::{get_auth_for_provider, gh_cli};
 use crate::config::{WorkspaceConfig, WorkspaceManager};
 use crate::provider::{create_provider, Credentials};
@@ -108,7 +110,9 @@ async fn do_authenticate(state: &mut SetupState) {
 }
 
 fn handle_path(state: &mut SetupState, key: KeyEvent) {
-    if state.path_suggestions_mode {
+    if state.path_browse_mode {
+        handle_path_browse(state, key);
+    } else if state.path_suggestions_mode {
         handle_path_suggestions(state, key);
     } else {
         handle_path_input(state, key);
@@ -120,10 +124,128 @@ fn confirm_path(state: &mut SetupState) {
         state.error_message = Some("Base path cannot be empty".to_string());
     } else {
         state.error_message = None;
-        state.org_loading = true;
-        state.orgs.clear();
-        state.org_error = None;
         state.next_step();
+    }
+}
+
+fn open_path_browse_mode(state: &mut SetupState, seed_path: &str) {
+    let dir = resolve_browse_seed(seed_path);
+    set_browse_directory(state, dir);
+    state.path_browse_mode = true;
+}
+
+fn resolve_browse_seed(seed_path: &str) -> std::path::PathBuf {
+    if !seed_path.is_empty() {
+        let expanded = shellexpand::tilde(seed_path);
+        let candidate = std::path::PathBuf::from(expanded.as_ref());
+        if candidate.is_dir() {
+            return candidate;
+        }
+        if let Some(parent) = candidate.parent() {
+            if parent.is_dir() {
+                return parent.to_path_buf();
+            }
+        }
+    }
+
+    std::env::current_dir()
+        .or_else(|_| std::env::var("HOME").map(std::path::PathBuf::from))
+        .unwrap_or_else(|_| std::path::PathBuf::from("/"))
+}
+
+fn set_browse_directory(state: &mut SetupState, dir: std::path::PathBuf) {
+    state.path_browse_current_dir = tilde_collapse(&dir.to_string_lossy());
+    state.path_browse_entries = read_browse_entries(&dir);
+    state.path_browse_index = 0;
+}
+
+fn read_browse_entries(dir: &std::path::Path) -> Vec<PathBrowseEntry> {
+    let mut entries = Vec::new();
+
+    if let Some(parent) = dir.parent() {
+        entries.push(PathBrowseEntry {
+            label: ".. (parent)".to_string(),
+            path: tilde_collapse(&parent.to_string_lossy()),
+        });
+    }
+
+    let mut children = Vec::new();
+    if let Ok(dir_entries) = std::fs::read_dir(dir) {
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            children.push(PathBrowseEntry {
+                label: format!("{name}/"),
+                path: tilde_collapse(&path.to_string_lossy()),
+            });
+        }
+    }
+    children.sort_by_key(|entry| entry.label.to_lowercase());
+    entries.extend(children);
+    entries
+}
+
+fn close_path_browse_to_input(state: &mut SetupState) {
+    state.path_browse_mode = false;
+    state.path_suggestions_mode = false;
+    state.path_cursor = state.base_path.len();
+    state.path_completions = compute_completions(&state.base_path);
+    state.path_completion_index = 0;
+}
+
+fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => {
+            if state.path_browse_index > 0 {
+                state.path_browse_index -= 1;
+            }
+        }
+        KeyCode::Down => {
+            if state.path_browse_index + 1 < state.path_browse_entries.len() {
+                state.path_browse_index += 1;
+            }
+        }
+        KeyCode::Right => {
+            if let Some(path) = state
+                .path_browse_entries
+                .get(state.path_browse_index)
+                .map(|entry| entry.path.clone())
+            {
+                let expanded = shellexpand::tilde(&path);
+                let dir = std::path::PathBuf::from(expanded.as_ref());
+                if dir.is_dir() {
+                    set_browse_directory(state, dir);
+                }
+            }
+        }
+        KeyCode::Left => {
+            let current_dir = state.path_browse_current_dir.clone();
+            let expanded = shellexpand::tilde(&current_dir);
+            let current = std::path::Path::new(expanded.as_ref());
+            if let Some(parent) = current.parent() {
+                if parent.is_dir() {
+                    set_browse_directory(state, parent.to_path_buf());
+                }
+            }
+        }
+        KeyCode::Enter => {
+            if !state.path_browse_current_dir.is_empty() {
+                state.base_path = state.path_browse_current_dir.clone();
+                state.path_cursor = state.base_path.len();
+            }
+            close_path_browse_to_input(state);
+            confirm_path(state);
+        }
+        KeyCode::Esc => {
+            close_path_browse_to_input(state);
+        }
+        _ => {}
     }
 }
 
@@ -155,6 +277,14 @@ fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
             state.path_completions = compute_completions(&state.base_path);
             state.path_completion_index = 0;
         }
+        KeyCode::Char('b') => {
+            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
+                state.base_path = s.path.clone();
+                state.path_cursor = state.base_path.len();
+            }
+            let seed = state.base_path.clone();
+            open_path_browse_mode(state, &seed);
+        }
         KeyCode::Esc => {
             state.prev_step();
         }
@@ -180,6 +310,12 @@ fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
 }
 
 fn handle_path_input(state: &mut SetupState, key: KeyEvent) {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('b') {
+        let seed = state.base_path.clone();
+        open_path_browse_mode(state, &seed);
+        return;
+    }
+
     match key.code {
         KeyCode::Tab => {
             apply_tab_completion(state);
@@ -458,6 +594,7 @@ fn save_workspace(state: &SetupState) -> Result<(), crate::errors::AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::setup::state::SetupStep;
 
     #[tokio::test]
     async fn q_quits_setup_wizard() {
@@ -471,5 +608,78 @@ mod tests {
 
         assert!(state.should_quit);
         assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+    }
+
+    #[tokio::test]
+    async fn b_opens_path_browser_from_suggestions_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let child = temp.path().join("child");
+        std::fs::create_dir_all(&child).unwrap();
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.populate_path_suggestions();
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+        )
+        .await;
+
+        assert!(state.path_browse_mode);
+        assert_eq!(
+            state.path_browse_current_dir,
+            super::tilde_collapse(&temp.path().to_string_lossy())
+        );
+        assert!(state
+            .path_browse_entries
+            .iter()
+            .any(|entry| entry.path == super::tilde_collapse(&child.to_string_lossy())));
+    }
+
+    #[tokio::test]
+    async fn path_browser_enters_directory_and_confirms_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let alpha = temp.path().join("alpha");
+        std::fs::create_dir_all(&alpha).unwrap();
+        let expected = super::tilde_collapse(&alpha.to_string_lossy());
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+        assert!(state.path_browse_mode);
+
+        let alpha_index = state
+            .path_browse_entries
+            .iter()
+            .position(|entry| entry.path == expected)
+            .expect("alpha should be listed in path browser");
+        state.path_browse_index = alpha_index;
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+        )
+        .await;
+        assert_eq!(state.path_browse_current_dir, expected);
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        )
+        .await;
+        assert_eq!(state.base_path, expected);
+        assert_eq!(state.step, SetupStep::Confirm);
+        assert!(!state.path_browse_mode);
     }
 }

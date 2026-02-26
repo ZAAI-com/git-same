@@ -192,7 +192,7 @@ Configure a workspace (interactive wizard):
 gisa setup [--name <NAME>]
 ```
 
-Walks through provider selection, base path, org filters, and clone options.
+Walks through provider selection, authentication, org filters, and base path.
 
 ### `sync`
 

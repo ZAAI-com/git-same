@@ -23,18 +23,25 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
         AppEvent::Terminal(key) => handle_key(app, key, backend_tx).await,
         AppEvent::Backend(msg) => handle_backend_message(app, msg, backend_tx),
         AppEvent::Tick => {
-            // Increment animation tick counter on Sync screen during active ops
-            if app.screen == Screen::Sync
-                && matches!(
-                    &app.operation_state,
-                    OperationState::Discovering { .. } | OperationState::Running { .. }
-                )
-            {
+            let sync_in_progress = matches!(
+                &app.operation_state,
+                OperationState::Discovering {
+                    operation: Operation::Sync,
+                    ..
+                } | OperationState::Running {
+                    operation: Operation::Sync,
+                    ..
+                }
+            );
+
+            // Keep sync animation/throughput sampling active even when progress popup is hidden.
+            if sync_in_progress {
                 app.tick_count = app.tick_count.wrapping_add(1);
 
                 // Sample throughput every 10 ticks (1 second at 100ms tick rate)
                 if app.tick_count.is_multiple_of(10) {
                     if let OperationState::Running {
+                        operation: Operation::Sync,
                         completed,
                         ref mut throughput_samples,
                         ref mut last_sample_completed,
@@ -94,6 +101,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
             if app.screen == Screen::Dashboard
                 && app.active_workspace.is_some()
                 && !app.status_loading
+                && !sync_in_progress
                 && app
                     .last_status_scan
                     .is_none_or(|t| t.elapsed().as_secs() >= refresh_interval)

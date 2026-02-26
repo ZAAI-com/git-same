@@ -2,7 +2,7 @@
 //!
 //! This module provides a self-contained ratatui mini-app that guides
 //! the user through setting up a workspace: selecting a provider,
-//! authenticating, choosing a base path, and selecting organizations.
+//! authenticating, selecting organizations, and choosing a base path.
 
 pub mod handler;
 pub mod screens;

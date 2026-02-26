@@ -1,7 +1,7 @@
 //! Sync progress screen — real-time metrics during sync, enriched summary after.
 
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Gauge, List, ListItem, Paragraph},
@@ -13,7 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::tui::app::{App, LogFilter, OperationState, SyncLogEntry, SyncLogStatus};
 use crate::tui::event::AppEvent;
-use crate::tui::widgets::status_bar;
+use crate::tui::screens::dashboard::{hide_sync_progress, start_sync_operation};
 
 use crate::banner::render_animated_banner;
 
@@ -23,6 +23,12 @@ pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<App
     let is_finished = matches!(app.operation_state, OperationState::Finished { .. });
 
     match key.code {
+        KeyCode::Char('s') => {
+            start_sync_operation(app, backend_tx);
+        }
+        KeyCode::Char('p') => {
+            hide_sync_progress(app);
+        }
         // Scroll log
         KeyCode::Down => {
             if is_finished {
@@ -49,6 +55,20 @@ pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<App
                 app.scroll_offset = app.scroll_offset.saturating_sub(1);
             }
         }
+        KeyCode::Left => {
+            if is_finished {
+                cycle_filter(app, backend_tx, -1);
+            } else {
+                app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            }
+        }
+        KeyCode::Right => {
+            if is_finished {
+                cycle_filter(app, backend_tx, 1);
+            } else if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
+                app.scroll_offset += 1;
+            }
+        }
         // Expand/collapse commit deep dive
         KeyCode::Enter if is_finished => {
             // Extract data we need before mutating app
@@ -71,50 +91,19 @@ pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<App
         }
         // Post-sync log filters
         KeyCode::Char('a') if is_finished => {
-            app.log_filter = LogFilter::All;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
+            apply_log_filter(app, backend_tx, LogFilter::All);
         }
         KeyCode::Char('u') if is_finished => {
-            app.log_filter = LogFilter::Updated;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
+            apply_log_filter(app, backend_tx, LogFilter::Updated);
         }
         KeyCode::Char('f') if is_finished => {
-            app.log_filter = LogFilter::Failed;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
+            apply_log_filter(app, backend_tx, LogFilter::Failed);
         }
         KeyCode::Char('x') if is_finished => {
-            app.log_filter = LogFilter::Skipped;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
+            apply_log_filter(app, backend_tx, LogFilter::Skipped);
         }
         KeyCode::Char('c') if is_finished => {
-            app.log_filter = LogFilter::Changelog;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-            app.changelog_scroll = 0;
-
-            // Collect updated repos with paths for batch commit fetch
-            let updated_repos: Vec<(String, std::path::PathBuf)> = app
-                .sync_log_entries
-                .iter()
-                .filter(|e| e.had_updates)
-                .filter_map(|e| e.path.clone().map(|p| (e.repo_name.clone(), p)))
-                .collect();
-            app.changelog_total = updated_repos.len();
-            app.changelog_loaded = 0;
-            app.changelog_commits.clear();
-
-            if !updated_repos.is_empty() {
-                crate::tui::backend::spawn_changelog_fetch(updated_repos, backend_tx.clone());
-            }
+            apply_log_filter(app, backend_tx, LogFilter::Changelog);
         }
         // Sync history overlay toggle
         KeyCode::Char('h') if is_finished => {
@@ -122,6 +111,50 @@ pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<App
         }
         _ => {}
     }
+}
+
+fn apply_log_filter(app: &mut App, backend_tx: &UnboundedSender<AppEvent>, filter: LogFilter) {
+    app.log_filter = filter;
+    app.sync_log_index = 0;
+    app.expanded_repo = None;
+    app.repo_commits.clear();
+    app.changelog_scroll = 0;
+
+    if filter != LogFilter::Changelog {
+        return;
+    }
+
+    // Collect updated repos with paths for batch commit fetch.
+    let updated_repos: Vec<(String, std::path::PathBuf)> = app
+        .sync_log_entries
+        .iter()
+        .filter(|e| e.had_updates)
+        .filter_map(|e| e.path.clone().map(|p| (e.repo_name.clone(), p)))
+        .collect();
+    app.changelog_total = updated_repos.len();
+    app.changelog_loaded = 0;
+    app.changelog_commits.clear();
+
+    if !updated_repos.is_empty() {
+        crate::tui::backend::spawn_changelog_fetch(updated_repos, backend_tx.clone());
+    }
+}
+
+fn cycle_filter(app: &mut App, backend_tx: &UnboundedSender<AppEvent>, direction: i8) {
+    const FILTERS: [LogFilter; 5] = [
+        LogFilter::All,
+        LogFilter::Updated,
+        LogFilter::Failed,
+        LogFilter::Skipped,
+        LogFilter::Changelog,
+    ];
+
+    let idx = FILTERS
+        .iter()
+        .position(|f| *f == app.log_filter)
+        .unwrap_or(0) as i8;
+    let next = (idx + direction).rem_euclid(FILTERS.len() as i8) as usize;
+    apply_log_filter(app, backend_tx, FILTERS[next]);
 }
 
 /// Count of log entries matching the current filter.
@@ -180,6 +213,9 @@ fn filtered_log_entries(app: &App) -> Vec<&SyncLogEntry> {
 
 // ── Render ──────────────────────────────────────────────────────────────────
 
+const POPUP_WIDTH_PERCENT: u16 = 80;
+const POPUP_HEIGHT_PERCENT: u16 = 80;
+
 pub fn render(app: &App, frame: &mut Frame) {
     let is_finished = matches!(&app.operation_state, OperationState::Finished { .. });
 
@@ -191,33 +227,41 @@ pub fn render(app: &App, frame: &mut Frame) {
         _ => 0.0,
     };
 
-    if is_finished {
-        render_finished_layout(app, frame, phase);
-    } else {
-        render_running_layout(app, frame, phase);
-    }
+    let popup_area = centered_rect(frame.area(), POPUP_WIDTH_PERCENT, POPUP_HEIGHT_PERCENT);
+    dim_outside_popup(frame, popup_area);
+    frame.render_widget(Clear, popup_area);
 
-    // Sync history overlay (on top of everything)
+    let block = Block::default()
+        .title(" Sync Progress ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    render_running_layout(app, frame, inner, phase);
+
+    // Sync history overlay (on top of popup)
     if app.show_sync_history && is_finished {
-        render_sync_history_overlay(app, frame);
+        render_sync_history_overlay(app, frame, inner);
     }
 }
 
-// ── During-sync layout ──────────────────────────────────────────────────────
+// ── Popup layout ────────────────────────────────────────────────────────────
 
-fn render_running_layout(app: &App, frame: &mut Frame, phase: f64) {
+fn render_running_layout(app: &App, frame: &mut Frame, area: Rect, phase: f64) {
     let chunks = Layout::vertical([
         Constraint::Length(6), // Banner
         Constraint::Length(3), // Title
         Constraint::Length(3), // Progress bar
-        Constraint::Length(1), // Enriched counters
-        Constraint::Length(1), // Throughput/ETA
-        Constraint::Length(1), // Phase indicator
-        Constraint::Length(1), // Worker slots
-        Constraint::Min(5),    // Log
-        Constraint::Length(1), // Status bar
+        Constraint::Length(1), // Enriched counters / summary
+        Constraint::Length(1), // Throughput / performance
+        Constraint::Length(1), // Phase / filter
+        Constraint::Length(1), // Worker slots / status
+        Constraint::Min(5),    // Log (running or completed)
+        Constraint::Length(2), // Bottom actions + nav
     ])
-    .split(frame.area());
+    .split(area);
 
     render_animated_banner(frame, chunks[0], phase);
     render_title(app, frame, chunks[1]);
@@ -226,108 +270,134 @@ fn render_running_layout(app: &App, frame: &mut Frame, phase: f64) {
     render_throughput(app, frame, chunks[4]);
     render_phase_indicator(app, frame, chunks[5]);
     render_worker_slots(app, frame, chunks[6]);
-    render_running_log(app, frame, chunks[7]);
-
-    let hint = match &app.operation_state {
-        OperationState::Running { .. } => "Esc: Minimize  \u{2191}/\u{2193}: Scroll log  q: Quit",
-        _ => "Esc: Minimize  q: Quit",
-    };
-    status_bar::render(frame, chunks[8], hint);
+    render_main_log(app, frame, chunks[7]);
+    render_bottom_actions(app, frame, chunks[8]);
 }
 
-// ── Post-sync layout ────────────────────────────────────────────────────────
+fn render_main_log(app: &App, frame: &mut Frame, area: Rect) {
+    if matches!(app.operation_state, OperationState::Finished { .. }) {
+        render_filterable_log(app, frame, area);
+    } else {
+        render_running_log(app, frame, area);
+    }
+}
 
-fn render_finished_layout(app: &App, frame: &mut Frame, phase: f64) {
-    // Check if "nothing changed"
-    let is_empty = matches!(
-        &app.operation_state,
-        OperationState::Finished {
-            with_updates: 0,
-            cloned: 0,
-            ..
-        } if app.sync_log_entries.iter().all(|e| e.status != SyncLogStatus::Failed)
+fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
+    let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
+
+    let dim = Style::default().fg(Color::DarkGray);
+    let key_style = Style::default()
+        .fg(Color::Rgb(37, 99, 235))
+        .add_modifier(Modifier::BOLD);
+
+    let mut action_spans = vec![
+        Span::styled("[s]", key_style),
+        Span::styled(" Start Sync", dim),
+        Span::raw("   "),
+        Span::styled("[p]", key_style),
+        Span::styled(" Hide Sync Progress", dim),
+    ];
+
+    if matches!(app.operation_state, OperationState::Finished { .. }) {
+        action_spans.extend([
+            Span::raw("   "),
+            Span::styled("[a]", key_style),
+            Span::styled(" All", dim),
+            Span::raw(" "),
+            Span::styled("[u]", key_style),
+            Span::styled(" Updated", dim),
+            Span::raw(" "),
+            Span::styled("[f]", key_style),
+            Span::styled(" Failed", dim),
+            Span::raw(" "),
+            Span::styled("[x]", key_style),
+            Span::styled(" Skipped", dim),
+            Span::raw(" "),
+            Span::styled("[c]", key_style),
+            Span::styled(" Changelog", dim),
+            Span::raw(" "),
+            Span::styled("[h]", key_style),
+            Span::styled(" History", dim),
+        ]);
+    }
+    frame.render_widget(
+        Paragraph::new(vec![Line::from(action_spans)]).centered(),
+        rows[0],
     );
 
-    if is_empty {
-        render_nothing_changed_layout(app, frame, phase);
-        return;
-    }
+    let nav_cols =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).split(rows[1]);
 
-    let chunks = Layout::vertical([
-        Constraint::Length(6), // Banner
-        Constraint::Length(3), // Title
-        Constraint::Length(3), // Progress bar (done)
-        Constraint::Length(4), // Stat boxes
-        Constraint::Length(1), // Performance line
-        Constraint::Min(5),    // Filterable log
-        Constraint::Length(1), // Status bar
-    ])
-    .split(frame.area());
+    let left_spans = vec![
+        Span::raw(" "),
+        Span::styled("[q]", key_style),
+        Span::styled(" Quit", dim),
+        Span::raw("   "),
+        Span::styled("[Esc]", key_style),
+        Span::styled(" Back", dim),
+    ];
+    let right_spans = vec![
+        Span::styled("[←]", key_style),
+        Span::raw(" "),
+        Span::styled("[↑]", key_style),
+        Span::raw(" "),
+        Span::styled("[↓]", key_style),
+        Span::raw(" "),
+        Span::styled("[→]", key_style),
+        Span::styled(" Move", dim),
+        Span::raw("   "),
+        Span::styled("[Enter]", key_style),
+        Span::styled(" Select", dim),
+        Span::raw(" "),
+    ];
 
-    render_animated_banner(frame, chunks[0], phase);
-    render_title(app, frame, chunks[1]);
-    render_progress_bar(app, frame, chunks[2]);
-    render_summary_boxes(app, frame, chunks[3]);
-    render_performance_line(app, frame, chunks[4]);
-    render_filterable_log(app, frame, chunks[5]);
-    status_bar::render(
-        frame,
-        chunks[6],
-        "Esc: Back  q: Quit  Enter: Commits  a:All u:Upd f:Err x:Skip h:History",
+    frame.render_widget(Paragraph::new(vec![Line::from(left_spans)]), nav_cols[0]);
+    frame.render_widget(
+        Paragraph::new(vec![Line::from(right_spans)]).right_aligned(),
+        nav_cols[1],
     );
 }
 
-// ── "Nothing changed" layout ────────────────────────────────────────────────
+fn centered_rect(area: Rect, width_percent: u16, height_percent: u16) -> Rect {
+    let width = (area.width.saturating_mul(width_percent) / 100).max(1);
+    let height = (area.height.saturating_mul(height_percent) / 100).max(1);
+    let x = area.x + (area.width.saturating_sub(width) / 2);
+    let y = area.y + (area.height.saturating_sub(height) / 2);
+    Rect::new(x, y, width, height)
+}
 
-fn render_nothing_changed_layout(app: &App, frame: &mut Frame, phase: f64) {
-    let chunks = Layout::vertical([
-        Constraint::Length(6), // Banner
-        Constraint::Length(3), // Title
-        Constraint::Length(3), // Progress bar (done)
-        Constraint::Min(5),    // Empty state message
-        Constraint::Length(1), // Performance line
-        Constraint::Length(1), // Status bar
-    ])
-    .split(frame.area());
+fn dim_outside_popup(frame: &mut Frame, popup: Rect) {
+    let area = frame.area();
+    let popup_right = popup.x.saturating_add(popup.width);
+    let popup_bottom = popup.y.saturating_add(popup.height);
 
-    render_animated_banner(frame, chunks[0], phase);
-    render_title(app, frame, chunks[1]);
-    render_progress_bar(app, frame, chunks[2]);
-
-    // Friendly empty state
-    if let OperationState::Finished { summary, .. } = &app.operation_state {
-        let total = summary.success + summary.failed + summary.skipped;
-        let msg = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(""),
-            Line::from(Span::styled(
-                "Everything up to date",
-                Style::default()
-                    .fg(Color::Rgb(21, 128, 61))
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                format!("{} repositories synced, no changes found", total),
-                Style::default().fg(Color::DarkGray),
-            )),
-        ])
-        .centered();
-        frame.render_widget(msg, chunks[3]);
+    let buf = frame.buffer_mut();
+    for y in area.y..area.y.saturating_add(area.height) {
+        for x in area.x..area.x.saturating_add(area.width) {
+            let inside_popup = x >= popup.x && x < popup_right && y >= popup.y && y < popup_bottom;
+            if inside_popup {
+                continue;
+            }
+            if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                cell.set_style(
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::DIM),
+                );
+            }
+        }
     }
-
-    render_performance_line(app, frame, chunks[4]);
-    status_bar::render(frame, chunks[5], "Esc: Back  q: Quit  h: History");
 }
 
 // ── Shared render functions ─────────────────────────────────────────────────
 
 fn render_title(app: &App, frame: &mut Frame, area: Rect) {
     let title_text = match &app.operation_state {
-        OperationState::Idle => "Idle".to_string(),
-        OperationState::Discovering { message, .. } => message.clone(),
-        OperationState::Running { operation, .. } => format!("{}ing Repositories", operation),
-        OperationState::Finished { operation, .. } => format!("{} Complete", operation),
+        OperationState::Idle => "Sync Progress".to_string(),
+        OperationState::Discovering { .. } | OperationState::Running { .. } => {
+            "Sync Running".to_string()
+        }
+        OperationState::Finished { .. } => "Sync Completed".to_string(),
     };
 
     let style = match &app.operation_state {
@@ -363,8 +433,8 @@ fn render_progress_bar(app: &App, frame: &mut Frame, area: Rect) {
             (r, format!("{}/{} ({}%)", completed, total, pct))
         }
         OperationState::Finished { .. } => (1.0, "Done".to_string()),
-        OperationState::Discovering { .. } => (0.0, "Discovering...".to_string()),
-        OperationState::Idle => (0.0, String::new()),
+        OperationState::Discovering { .. } => (0.0, "Discovering repositories...".to_string()),
+        OperationState::Idle => (0.0, "Press [s] to start sync".to_string()),
     };
 
     let gauge = Gauge::default()
@@ -382,7 +452,7 @@ fn render_progress_bar(app: &App, frame: &mut Frame, area: Rect) {
 // ── During-sync specific renders ────────────────────────────────────────────
 
 fn render_enriched_counters(app: &App, frame: &mut Frame, area: Rect) {
-    let (updated, up_to_date, cloned, failed, skipped, current) = match &app.operation_state {
+    match &app.operation_state {
         OperationState::Running {
             completed,
             failed,
@@ -392,236 +462,430 @@ fn render_enriched_counters(app: &App, frame: &mut Frame, area: Rect) {
             current_repo,
             ..
         } => {
-            let up = completed
+            let up_to_date = completed
                 .saturating_sub(*failed)
                 .saturating_sub(*skipped)
                 .saturating_sub(*with_updates)
                 .saturating_sub(*cloned);
-            (
-                *with_updates,
-                up,
-                *cloned,
-                *failed,
-                *skipped,
-                current_repo.as_str(),
-            )
+
+            let mut spans = vec![
+                Span::raw("  "),
+                Span::styled("Updated: ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    with_updates.to_string(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                Span::styled("Current: ", Style::default().fg(Color::Rgb(21, 128, 61))),
+                Span::styled(
+                    up_to_date.to_string(),
+                    Style::default().fg(Color::Rgb(21, 128, 61)),
+                ),
+                Span::raw("  "),
+                Span::styled("Cloned: ", Style::default().fg(Color::Cyan)),
+                Span::styled(cloned.to_string(), Style::default().fg(Color::Cyan)),
+            ];
+
+            if *failed > 0 {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled("Failed: ", Style::default().fg(Color::Red)));
+                spans.push(Span::styled(
+                    failed.to_string(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ));
+            }
+
+            if *skipped > 0 {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    "Skipped: ",
+                    Style::default().fg(Color::DarkGray),
+                ));
+                spans.push(Span::styled(
+                    skipped.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            if !current_repo.is_empty() {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    current_repo.as_str(),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
         }
-        _ => (0, 0, 0, 0, 0, ""),
-    };
+        OperationState::Finished {
+            summary,
+            with_updates,
+            cloned,
+            ..
+        } => {
+            let current = summary
+                .success
+                .saturating_sub(*with_updates)
+                .saturating_sub(*cloned);
 
-    let mut spans = vec![
-        Span::raw("  "),
-        Span::styled("Updated: ", Style::default().fg(Color::Yellow)),
-        Span::styled(
-            updated.to_string(),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("  "),
-        Span::styled("Current: ", Style::default().fg(Color::Rgb(21, 128, 61))),
-        Span::styled(
-            up_to_date.to_string(),
-            Style::default().fg(Color::Rgb(21, 128, 61)),
-        ),
-        Span::raw("  "),
-        Span::styled("Cloned: ", Style::default().fg(Color::Cyan)),
-        Span::styled(cloned.to_string(), Style::default().fg(Color::Cyan)),
-    ];
-
-    if failed > 0 {
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled("Failed: ", Style::default().fg(Color::Red)));
-        spans.push(Span::styled(
-            failed.to_string(),
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-        ));
+            let spans = vec![
+                Span::raw("  "),
+                Span::styled("Updated: ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    with_updates.to_string(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                Span::styled("Current: ", Style::default().fg(Color::Rgb(21, 128, 61))),
+                Span::styled(
+                    current.to_string(),
+                    Style::default().fg(Color::Rgb(21, 128, 61)),
+                ),
+                Span::raw("  "),
+                Span::styled("Cloned: ", Style::default().fg(Color::Cyan)),
+                Span::styled(cloned.to_string(), Style::default().fg(Color::Cyan)),
+                Span::raw("  "),
+                Span::styled("Failed: ", Style::default().fg(Color::Red)),
+                Span::styled(
+                    summary.failed.to_string(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw("  "),
+                Span::styled("Skipped: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    summary.skipped.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ];
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        }
+        OperationState::Discovering { message, .. } => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled("Discovering: ", Style::default().fg(Color::Yellow)),
+                    Span::styled(message.as_str(), Style::default().fg(Color::DarkGray)),
+                ])),
+                area,
+            );
+        }
+        OperationState::Idle => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        "No sync activity yet.",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])),
+                area,
+            );
+        }
     }
-
-    if skipped > 0 {
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled(
-            "Skipped: ",
-            Style::default().fg(Color::DarkGray),
-        ));
-        spans.push(Span::styled(
-            skipped.to_string(),
-            Style::default().fg(Color::DarkGray),
-        ));
-    }
-
-    if !current.is_empty() {
-        spans.push(Span::raw("  "));
-        spans.push(Span::styled(current, Style::default().fg(Color::DarkGray)));
-    }
-
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 fn render_throughput(app: &App, frame: &mut Frame, area: Rect) {
-    if let OperationState::Running {
-        completed,
-        total,
-        started_at,
-        throughput_samples,
-        ..
-    } = &app.operation_state
-    {
-        let elapsed = started_at.elapsed();
-        let elapsed_secs = elapsed.as_secs_f64();
-        let repos_per_sec = if elapsed_secs > 1.0 {
-            *completed as f64 / elapsed_secs
-        } else {
-            0.0
-        };
-        let remaining = total.saturating_sub(*completed);
-        let eta_secs = if repos_per_sec > 0.1 {
-            (remaining as f64 / repos_per_sec).ceil() as u64
-        } else {
-            0
-        };
+    match &app.operation_state {
+        OperationState::Running {
+            completed,
+            total,
+            started_at,
+            throughput_samples,
+            ..
+        } => {
+            let elapsed = started_at.elapsed();
+            let elapsed_secs = elapsed.as_secs_f64();
+            let repos_per_sec = if elapsed_secs > 1.0 {
+                *completed as f64 / elapsed_secs
+            } else {
+                0.0
+            };
+            let remaining = total.saturating_sub(*completed);
+            let eta_secs = if repos_per_sec > 0.1 {
+                (remaining as f64 / repos_per_sec).ceil() as u64
+            } else {
+                0
+            };
 
-        let mut spans = vec![
-            Span::raw("  "),
-            Span::styled("Elapsed: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format_duration(elapsed), Style::default().fg(Color::Cyan)),
-        ];
+            let mut spans = vec![
+                Span::raw("  "),
+                Span::styled("Elapsed: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format_duration(elapsed), Style::default().fg(Color::Cyan)),
+            ];
 
-        if repos_per_sec > 0.0 {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled(
-                format!("~{:.1} repos/sec", repos_per_sec),
-                Style::default().fg(Color::DarkGray),
-            ));
+            if repos_per_sec > 0.0 {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(
+                    format!("~{:.1} repos/sec", repos_per_sec),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+
+            let has_eta_data = throughput_samples.iter().any(|&sample| sample > 0);
+            if has_eta_data && eta_secs > 0 && *completed > 0 {
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled("ETA: ", Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled(
+                    format!("~{}s", eta_secs),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
+
+            // Add sparkline inline if we have samples.
+            if !throughput_samples.is_empty() {
+                spans.push(Span::raw("  "));
+                let max_val = throughput_samples.iter().copied().max().unwrap_or(1).max(1);
+                let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+                let spark_str: String = throughput_samples
+                    .iter()
+                    .rev()
+                    .take(20)
+                    .collect::<Vec<_>>()
+                    .iter()
+                    .rev()
+                    .map(|&v| {
+                        let idx = ((*v as f64 / max_val as f64) * 7.0) as usize;
+                        bars[idx.min(7)]
+                    })
+                    .collect();
+                spans.push(Span::styled(spark_str, Style::default().fg(Color::Cyan)));
+            }
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
         }
-
-        let has_eta_data = throughput_samples.iter().any(|&sample| sample > 0);
-        if has_eta_data && eta_secs > 0 && *completed > 0 {
-            spans.push(Span::raw("  "));
-            spans.push(Span::styled("ETA: ", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(
-                format!("~{}s", eta_secs),
-                Style::default().fg(Color::Cyan),
-            ));
+        OperationState::Finished { .. } => {
+            render_performance_line(app, frame, area);
         }
-
-        // Add sparkline inline if we have samples
-        if !throughput_samples.is_empty() {
-            spans.push(Span::raw("  "));
-            // Render sparkline as unicode bars inline
-            let max_val = throughput_samples.iter().copied().max().unwrap_or(1).max(1);
-            let bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-            let spark_str: String = throughput_samples
-                .iter()
-                .rev()
-                .take(20)
-                .collect::<Vec<_>>()
-                .iter()
-                .rev()
-                .map(|&v| {
-                    let idx = ((*v as f64 / max_val as f64) * 7.0) as usize;
-                    bars[idx.min(7)]
-                })
-                .collect();
-            spans.push(Span::styled(spark_str, Style::default().fg(Color::Cyan)));
+        OperationState::Discovering { .. } => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        "Building sync plan...",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])),
+                area,
+            );
         }
-
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        OperationState::Idle => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        "Press [p] to hide, [s] to start.",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])),
+                area,
+            );
+        }
     }
 }
 
 fn render_phase_indicator(app: &App, frame: &mut Frame, area: Rect) {
-    if let OperationState::Running {
-        to_clone,
-        to_sync,
-        cloned,
-        synced,
-        ..
-    } = &app.operation_state
-    {
-        if *to_clone == 0 && *to_sync == 0 {
-            return;
+    match &app.operation_state {
+        OperationState::Running {
+            to_clone,
+            to_sync,
+            cloned,
+            synced,
+            ..
+        } => {
+            if *to_clone == 0 && *to_sync == 0 {
+                return;
+            }
+
+            let mut spans = vec![Span::raw("  Phase: ")];
+
+            if *to_clone > 0 {
+                let clone_pct = if *to_clone > 0 {
+                    *cloned as f64 / *to_clone as f64
+                } else {
+                    0.0
+                };
+                let bar_width: usize = 8;
+                let filled = (clone_pct * bar_width as f64).round() as usize;
+                spans.push(Span::styled(
+                    "\u{2588}".repeat(filled),
+                    Style::default().fg(Color::Cyan),
+                ));
+                spans.push(Span::styled(
+                    "\u{2591}".repeat(bar_width.saturating_sub(filled)),
+                    Style::default().fg(Color::DarkGray),
+                ));
+                spans.push(Span::styled(
+                    format!(" Clone {}/{}", cloned, to_clone),
+                    Style::default().fg(Color::Cyan),
+                ));
+                spans.push(Span::raw("  "));
+            }
+
+            if *to_sync > 0 {
+                let sync_pct = if *to_sync > 0 {
+                    *synced as f64 / *to_sync as f64
+                } else {
+                    0.0
+                };
+                let bar_width: usize = 12;
+                let filled = (sync_pct * bar_width as f64).round() as usize;
+                spans.push(Span::styled(
+                    "\u{2588}".repeat(filled),
+                    Style::default().fg(Color::Rgb(21, 128, 61)),
+                ));
+                spans.push(Span::styled(
+                    "\u{2591}".repeat(bar_width.saturating_sub(filled)),
+                    Style::default().fg(Color::DarkGray),
+                ));
+                spans.push(Span::styled(
+                    format!(" Sync {}/{}", synced, to_sync),
+                    Style::default().fg(Color::Rgb(21, 128, 61)),
+                ));
+            }
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
         }
-
-        let mut spans = vec![Span::raw("  Phase: ")];
-
-        if *to_clone > 0 {
-            let clone_pct = if *to_clone > 0 {
-                *cloned as f64 / *to_clone as f64
-            } else {
-                0.0
+        OperationState::Finished { .. } => {
+            let label = match app.log_filter {
+                LogFilter::All => "All",
+                LogFilter::Updated => "Updated",
+                LogFilter::Failed => "Failed",
+                LogFilter::Skipped => "Skipped",
+                LogFilter::Changelog => "Changelog",
             };
-            let bar_width: usize = 8;
-            let filled = (clone_pct * bar_width as f64).round() as usize;
-            spans.push(Span::styled(
-                "\u{2588}".repeat(filled),
-                Style::default().fg(Color::Cyan),
-            ));
-            spans.push(Span::styled(
-                "\u{2591}".repeat(bar_width.saturating_sub(filled)),
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" Clone {}/{}", cloned, to_clone),
-                Style::default().fg(Color::Cyan),
-            ));
-            spans.push(Span::raw("  "));
-        }
 
-        if *to_sync > 0 {
-            let sync_pct = if *to_sync > 0 {
-                *synced as f64 / *to_sync as f64
-            } else {
-                0.0
-            };
-            let bar_width: usize = 12;
-            let filled = (sync_pct * bar_width as f64).round() as usize;
-            spans.push(Span::styled(
-                "\u{2588}".repeat(filled),
-                Style::default().fg(Color::Rgb(21, 128, 61)),
-            ));
-            spans.push(Span::styled(
-                "\u{2591}".repeat(bar_width.saturating_sub(filled)),
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::styled(
-                format!(" Sync {}/{}", synced, to_sync),
-                Style::default().fg(Color::Rgb(21, 128, 61)),
-            ));
+            let spans = vec![
+                Span::raw("  "),
+                Span::styled("Filter: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(label, Style::default().fg(Color::Cyan)),
+                Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{} entries", filtered_log_count(app)),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
+                Span::styled("[←]/[→]", Style::default().fg(Color::Rgb(37, 99, 235))),
+                Span::styled(" filter", Style::default().fg(Color::DarkGray)),
+            ];
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
         }
-
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        _ => {}
     }
 }
 
 fn render_worker_slots(app: &App, frame: &mut Frame, area: Rect) {
-    if let OperationState::Running { active_repos, .. } = &app.operation_state {
-        if active_repos.is_empty() {
-            return;
-        }
-
-        let mut spans = vec![Span::raw("  ")];
-        for (i, repo) in active_repos.iter().enumerate() {
-            if i > 0 {
-                spans.push(Span::raw("  "));
+    match &app.operation_state {
+        OperationState::Running { active_repos, .. } => {
+            if active_repos.is_empty() {
+                frame.render_widget(
+                    Paragraph::new(Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled("Workers idle", Style::default().fg(Color::DarkGray)),
+                    ])),
+                    area,
+                );
+                return;
             }
-            spans.push(Span::styled(
-                format!("[{}]", i + 1),
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            ));
-            spans.push(Span::raw(" "));
-            // Show just the repo name (not org/) to save space
-            let short = repo.split('/').next_back().unwrap_or(repo);
-            spans.push(Span::styled(short, Style::default().fg(Color::Cyan)));
-        }
 
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+            let mut spans = vec![Span::raw("  ")];
+            for (i, repo) in active_repos.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw("  "));
+                }
+                spans.push(Span::styled(
+                    format!("[{}]", i + 1),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::raw(" "));
+                // Show just the repo name (not org/) to save space.
+                let short = repo.split('/').next_back().unwrap_or(repo);
+                spans.push(Span::styled(short, Style::default().fg(Color::Cyan)));
+            }
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        }
+        OperationState::Finished {
+            total_new_commits, ..
+        } => {
+            let mut spans = vec![
+                Span::raw("  "),
+                Span::styled(
+                    "Completed. ",
+                    Style::default()
+                        .fg(Color::Rgb(21, 128, 61))
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("[↑]/[↓] move", Style::default().fg(Color::Rgb(37, 99, 235))),
+                Span::styled("  ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "[Enter] commit details",
+                    Style::default().fg(Color::Rgb(37, 99, 235)),
+                ),
+            ];
+
+            if *total_new_commits > 0 {
+                spans.push(Span::styled(
+                    format!("  |  {} new commits", total_new_commits),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+
+            frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        }
+        OperationState::Discovering { .. } => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        "Waiting for workers...",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])),
+                area,
+            );
+        }
+        OperationState::Idle => {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        "Use [p] to close this popup.",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ])),
+                area,
+            );
+        }
     }
 }
 
 fn render_running_log(app: &App, frame: &mut Frame, area: Rect) {
+    if app.log_lines.is_empty() {
+        let message = match app.operation_state {
+            OperationState::Idle => "  No sync activity yet. Press [s] to start sync.",
+            OperationState::Discovering { .. } => "  Discovering repositories...",
+            _ => "  Waiting for log output...",
+        };
+        let empty = Paragraph::new(Line::from(Span::styled(
+            message,
+            Style::default().fg(Color::DarkGray),
+        )))
+        .block(
+            Block::default()
+                .title(" Log ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        frame.render_widget(empty, area);
+        return;
+    }
+
     let visible_height = area.height.saturating_sub(2) as usize;
     let total = app.log_lines.len();
     let max_start = total.saturating_sub(visible_height);
@@ -658,83 +922,6 @@ fn render_running_log(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 // ── Post-sync specific renders ──────────────────────────────────────────────
-
-fn render_summary_boxes(app: &App, frame: &mut Frame, area: Rect) {
-    if let OperationState::Finished {
-        summary,
-        with_updates,
-        cloned,
-        ..
-    } = &app.operation_state
-    {
-        let has_failures = summary.failed > 0;
-        let current_count = summary
-            .success
-            .saturating_sub(*with_updates)
-            .saturating_sub(*cloned);
-
-        let cols = Layout::horizontal([
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-        ])
-        .split(area);
-
-        render_summary_box(
-            frame,
-            cols[0],
-            &with_updates.to_string(),
-            "Updated",
-            Color::Yellow,
-        );
-
-        if has_failures {
-            render_summary_box(
-                frame,
-                cols[1],
-                &summary.failed.to_string(),
-                "Failed",
-                Color::Red,
-            );
-        } else {
-            render_summary_box(
-                frame,
-                cols[1],
-                &current_count.to_string(),
-                "Current",
-                Color::Rgb(21, 128, 61),
-            );
-        }
-
-        render_summary_box(frame, cols[2], &cloned.to_string(), "Cloned", Color::Cyan);
-
-        render_summary_box(
-            frame,
-            cols[3],
-            &summary.skipped.to_string(),
-            "Skipped",
-            Color::DarkGray,
-        );
-    }
-}
-
-fn render_summary_box(frame: &mut Frame, area: Rect, value: &str, label: &str, color: Color) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(color));
-    let content = Paragraph::new(vec![
-        Line::from(Span::styled(
-            value,
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(label, Style::default().fg(Color::DarkGray))),
-    ])
-    .centered()
-    .block(block);
-    frame.render_widget(content, area);
-}
 
 fn render_performance_line(app: &App, frame: &mut Frame, area: Rect) {
     if let OperationState::Finished {
@@ -1061,17 +1248,16 @@ fn render_changelog(app: &App, frame: &mut Frame, area: Rect) {
 
 // ── Sync history overlay ────────────────────────────────────────────────────
 
-fn render_sync_history_overlay(app: &App, frame: &mut Frame) {
+fn render_sync_history_overlay(app: &App, frame: &mut Frame, area: Rect) {
     if app.sync_history.is_empty() {
         return;
     }
 
-    let area = frame.area();
     let overlay_height = (app.sync_history.len() as u16 + 2).min(14);
     let overlay_width = 60u16.min(area.width.saturating_sub(4));
 
-    let x = area.width.saturating_sub(overlay_width) / 2;
-    let y = area.height.saturating_sub(overlay_height) / 2;
+    let x = area.x + area.width.saturating_sub(overlay_width) / 2;
+    let y = area.y + area.height.saturating_sub(overlay_height) / 2;
     let overlay_area = Rect::new(x, y, overlay_width, overlay_height);
 
     frame.render_widget(Clear, overlay_area);
@@ -1147,5 +1333,88 @@ fn format_duration(d: std::time::Duration) -> String {
         format!("{}m{}s", secs / 60, secs % 60)
     } else {
         format!("{}s", secs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, WorkspaceConfig};
+    use crate::tui::app::{Operation, Screen};
+    use crate::types::OpSummary;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn build_app() -> App {
+        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+        let mut app = App::new(Config::default(), vec![ws]);
+        app.screen = Screen::Sync;
+        app.screen_stack = vec![Screen::Dashboard];
+        app
+    }
+
+    #[test]
+    fn sync_key_p_hides_progress_popup() {
+        let mut app = build_app();
+        let (tx, _rx) = unbounded_channel();
+        app.scroll_offset = 5;
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+            &tx,
+        );
+
+        assert_eq!(app.screen, Screen::Dashboard);
+        assert_eq!(app.scroll_offset, 5);
+    }
+
+    #[tokio::test]
+    async fn sync_key_s_starts_sync() {
+        let mut app = build_app();
+        let (tx, _rx) = unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+            &tx,
+        );
+
+        assert_eq!(app.screen, Screen::Sync);
+        assert!(matches!(
+            app.operation_state,
+            OperationState::Discovering {
+                operation: Operation::Sync,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn right_arrow_cycles_finished_filter() {
+        let mut app = build_app();
+        let (tx, _rx) = unbounded_channel();
+        app.operation_state = OperationState::Finished {
+            operation: Operation::Sync,
+            summary: OpSummary {
+                success: 1,
+                failed: 0,
+                skipped: 0,
+            },
+            with_updates: 0,
+            cloned: 0,
+            synced: 1,
+            total_new_commits: 0,
+            duration_secs: 1.0,
+        };
+        app.log_filter = LogFilter::All;
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &tx,
+        );
+
+        assert_eq!(app.log_filter, LogFilter::Updated);
     }
 }

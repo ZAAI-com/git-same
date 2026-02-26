@@ -52,11 +52,11 @@ pub fn render(_state: &SetupState, frame: &mut Frame, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("    3. ", cyan),
-            Span::styled("Choose where to store repos", white),
+            Span::styled("Select which organizations to sync", white),
         ]),
         Line::from(vec![
             Span::styled("    4. ", cyan),
-            Span::styled("Select which organizations to sync", white),
+            Span::styled("Choose where to store repos", white),
         ]),
         Line::raw(""),
         Line::from(Span::styled(

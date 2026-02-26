@@ -12,10 +12,10 @@ pub enum SetupStep {
     SelectProvider,
     /// Step 2: Authenticate and detect username.
     Authenticate,
-    /// Step 3: Enter the base path.
-    SelectPath,
-    /// Step 4: Discover and select organizations.
+    /// Step 3: Discover and select organizations.
     SelectOrgs,
+    /// Step 4: Enter the base path.
+    SelectPath,
     /// Step 5: Review and save.
     Confirm,
     /// Step 6: Success / completion screen.
@@ -54,6 +54,13 @@ pub struct PathSuggestion {
     pub label: String,
 }
 
+/// A selectable directory entry in the inline path navigator.
+#[derive(Debug, Clone)]
+pub struct PathBrowseEntry {
+    pub label: String,
+    pub path: String,
+}
+
 /// The wizard state (model).
 pub struct SetupState {
     /// Current wizard step.
@@ -72,7 +79,13 @@ pub struct SetupState {
     pub username: Option<String>,
     pub auth_token: Option<String>,
 
-    // Step 3: Path
+    // Step 3: Org selection
+    pub orgs: Vec<OrgEntry>,
+    pub org_index: usize,
+    pub org_loading: bool,
+    pub org_error: Option<String>,
+
+    // Step 4: Path
     pub base_path: String,
     pub path_cursor: usize,
     pub path_suggestions_mode: bool,
@@ -80,12 +93,10 @@ pub struct SetupState {
     pub path_suggestion_index: usize,
     pub path_completions: Vec<String>,
     pub path_completion_index: usize,
-
-    // Step 4: Org selection
-    pub orgs: Vec<OrgEntry>,
-    pub org_index: usize,
-    pub org_loading: bool,
-    pub org_error: Option<String>,
+    pub path_browse_mode: bool,
+    pub path_browse_current_dir: String,
+    pub path_browse_entries: Vec<PathBrowseEntry>,
+    pub path_browse_index: usize,
 
     // Step 5: Confirm
     pub workspace_name: String,
@@ -182,6 +193,10 @@ impl SetupState {
             path_suggestion_index: 0,
             path_completions: Vec::new(),
             path_completion_index: 0,
+            path_browse_mode: false,
+            path_browse_current_dir: String::new(),
+            path_browse_entries: Vec::new(),
+            path_browse_index: 0,
             orgs: Vec::new(),
             org_index: 0,
             org_loading: false,
@@ -259,6 +274,10 @@ impl SetupState {
         self.path_suggestions = suggestions;
         self.path_suggestion_index = 0;
         self.path_suggestions_mode = true;
+        self.path_browse_mode = false;
+        self.path_browse_current_dir.clear();
+        self.path_browse_entries.clear();
+        self.path_browse_index = 0;
     }
 
     /// The 1-based step number for display (Welcome is not counted).
@@ -267,8 +286,8 @@ impl SetupState {
             SetupStep::Welcome => 0,
             SetupStep::SelectProvider => 1,
             SetupStep::Authenticate => 2,
-            SetupStep::SelectPath => 3,
-            SetupStep::SelectOrgs => 4,
+            SetupStep::SelectOrgs => 3,
+            SetupStep::SelectPath => 4,
             SetupStep::Confirm => 5,
             SetupStep::Complete => 5,
         }
@@ -284,6 +303,13 @@ impl SetupState {
             SetupStep::Welcome => SetupStep::SelectProvider,
             SetupStep::SelectProvider => SetupStep::Authenticate,
             SetupStep::Authenticate => {
+                self.org_loading = true;
+                self.orgs.clear();
+                self.org_index = 0;
+                self.org_error = None;
+                SetupStep::SelectOrgs
+            }
+            SetupStep::SelectOrgs => {
                 self.populate_path_suggestions();
                 SetupStep::SelectPath
             }
@@ -294,9 +320,8 @@ impl SetupState {
                     crate::config::WorkspaceManager::name_from_path(path, self.selected_provider());
                 self.workspace_name =
                     crate::config::WorkspaceManager::unique_name(&base).unwrap_or(base);
-                SetupStep::SelectOrgs
+                SetupStep::Confirm
             }
-            SetupStep::SelectOrgs => SetupStep::Confirm,
             SetupStep::Confirm => SetupStep::Complete,
             SetupStep::Complete => {
                 self.outcome = Some(SetupOutcome::Completed);
@@ -321,12 +346,9 @@ impl SetupState {
                 SetupStep::SelectProvider
             }
             SetupStep::Authenticate => SetupStep::SelectProvider,
-            SetupStep::SelectPath => SetupStep::Authenticate,
-            SetupStep::SelectOrgs => {
-                self.populate_path_suggestions();
-                SetupStep::SelectPath
-            }
-            SetupStep::Confirm => SetupStep::SelectOrgs,
+            SetupStep::SelectOrgs => SetupStep::Authenticate,
+            SetupStep::SelectPath => SetupStep::SelectOrgs,
+            SetupStep::Confirm => SetupStep::SelectPath,
             SetupStep::Complete => SetupStep::Confirm,
         };
     }
@@ -346,6 +368,8 @@ mod tests {
         assert!(state.provider_choices[0].available);
         assert!(!state.provider_choices[2].available); // GitLab
         assert!(state.path_suggestions_mode);
+        assert!(!state.path_browse_mode);
+        assert!(state.path_browse_entries.is_empty());
         assert!(state.path_suggestions.is_empty());
         assert_eq!(state.tick_count, 0);
         assert!(!state.is_first_setup);
@@ -397,7 +421,7 @@ mod tests {
         assert_eq!(state.step, SetupStep::Authenticate);
 
         state.next_step();
-        assert_eq!(state.step, SetupStep::SelectPath);
+        assert_eq!(state.step, SetupStep::SelectOrgs);
 
         state.prev_step();
         assert_eq!(state.step, SetupStep::Authenticate);
@@ -479,9 +503,9 @@ mod tests {
         assert_eq!(state.step_number(), 1);
         state.step = SetupStep::Authenticate;
         assert_eq!(state.step_number(), 2);
-        state.step = SetupStep::SelectPath;
-        assert_eq!(state.step_number(), 3);
         state.step = SetupStep::SelectOrgs;
+        assert_eq!(state.step_number(), 3);
+        state.step = SetupStep::SelectPath;
         assert_eq!(state.step_number(), 4);
         state.step = SetupStep::Confirm;
         assert_eq!(state.step_number(), 5);
