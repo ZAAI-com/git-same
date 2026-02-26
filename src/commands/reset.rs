@@ -89,8 +89,7 @@ fn discover_targets() -> Result<ResetTarget> {
         None
     };
 
-    let workspaces = WorkspaceManager::list()
-        .unwrap_or_default()
+    let workspaces = WorkspaceManager::list()?
         .iter()
         .map(build_workspace_detail)
         .collect::<Result<Vec<_>>>()?;
@@ -184,55 +183,76 @@ fn display_workspace_detail(ws: &WorkspaceDetail, output: &Output) {
 
 /// Execute the reset based on scope.
 fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> Result<()> {
+    let mut had_errors = false;
+
     match scope {
         ResetScope::Everything => {
             for ws in &target.workspaces {
-                remove_workspace_dir(ws, output);
+                had_errors |= !remove_workspace_dir(ws, output);
             }
             if let Some(ref path) = target.config_file {
-                remove_file(path, "config", output);
+                had_errors |= !remove_file(path, "config", output);
             }
             try_remove_empty_dir(&target.config_dir, output);
             output.success("Reset complete. Run 'gisa init' to start fresh.");
         }
         ResetScope::ConfigOnly => {
             if let Some(ref path) = target.config_file {
-                remove_file(path, "config", output);
+                had_errors |= !remove_file(path, "config", output);
             }
             output.success("Global config removed.");
         }
         ResetScope::AllWorkspaces => {
             for ws in &target.workspaces {
-                remove_workspace_dir(ws, output);
+                had_errors |= !remove_workspace_dir(ws, output);
             }
             output.success("All workspaces removed.");
         }
         ResetScope::Workspace(name) => {
             if let Some(ws) = target.workspaces.iter().find(|w| w.name == *name) {
-                remove_workspace_dir(ws, output);
+                had_errors |= !remove_workspace_dir(ws, output);
                 output.success(&format!("Workspace at {} removed.", ws.base_path));
             } else {
                 output.warn(&format!("Workspace '{}' not found.", name));
             }
         }
     }
-    Ok(())
-}
 
-fn remove_workspace_dir(ws: &WorkspaceDetail, output: &Output) {
-    match std::fs::remove_dir_all(&ws.dir) {
-        Ok(()) => output.success(&format!("Removed workspace at {}", ws.base_path)),
-        Err(e) => output.warn(&format!(
-            "Failed to remove workspace at {}: {}",
-            ws.base_path, e
-        )),
+    if had_errors {
+        Err(AppError::config(
+            "Reset completed with one or more removal errors.",
+        ))
+    } else {
+        Ok(())
     }
 }
 
-fn remove_file(path: &PathBuf, label: &str, output: &Output) {
+fn remove_workspace_dir(ws: &WorkspaceDetail, output: &Output) -> bool {
+    match std::fs::remove_dir_all(&ws.dir) {
+        Ok(()) => {
+            output.success(&format!("Removed workspace at {}", ws.base_path));
+            true
+        }
+        Err(e) => {
+            output.warn(&format!(
+                "Failed to remove workspace at {}: {}",
+                ws.base_path, e
+            ));
+            false
+        }
+    }
+}
+
+fn remove_file(path: &PathBuf, label: &str, output: &Output) -> bool {
     match std::fs::remove_file(path) {
-        Ok(()) => output.success(&format!("Removed {}: {}", label, path.display())),
-        Err(e) => output.warn(&format!("Failed to remove {}: {}", label, e)),
+        Ok(()) => {
+            output.success(&format!("Removed {}: {}", label, path.display()));
+            true
+        }
+        Err(e) => {
+            output.warn(&format!("Failed to remove {}: {}", label, e));
+            false
+        }
     }
 }
 

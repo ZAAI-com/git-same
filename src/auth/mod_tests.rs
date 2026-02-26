@@ -1,4 +1,7 @@
 use super::*;
+use std::sync::{LazyLock, Mutex};
+
+static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[test]
 fn test_resolved_auth_method_display() {
@@ -57,6 +60,8 @@ fn test_extract_host_with_port() {
 
 #[test]
 fn test_get_auth_with_config_token() {
+    let _env_guard = ENV_LOCK.lock().unwrap();
+
     // Clear env vars temporarily for this test
     let saved_github_token = std::env::var("GITHUB_TOKEN").ok();
     let saved_gh_token = std::env::var("GH_TOKEN").ok();
@@ -90,6 +95,8 @@ fn test_get_auth_with_config_token() {
 
 #[test]
 fn test_get_auth_for_provider_env() {
+    let _env_guard = ENV_LOCK.lock().unwrap();
+
     let unique_var = "GISA_TEST_PROVIDER_TOKEN";
     std::env::set_var(unique_var, "test_provider_token");
 
@@ -142,6 +149,8 @@ fn test_get_auth_for_provider_missing_token() {
 
 #[test]
 fn test_get_auth_for_provider_missing_env() {
+    let _env_guard = ENV_LOCK.lock().unwrap();
+
     let provider = ProviderEntry {
         auth: AuthMethod::Env,
         token_env: Some("NONEXISTENT_VAR_XXXXX".to_string()),

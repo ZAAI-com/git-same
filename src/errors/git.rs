@@ -149,7 +149,7 @@ impl GitError {
                 "Add your SSH key to the git hosting service, or use HTTPS authentication"
             }
             GitError::SshAuthFailed { .. } => {
-                "Check your SSH key configuration with 'ssh -T git@github.com'"
+                "Check your SSH key configuration with your git host (e.g. 'ssh -T git@<host>')"
             }
             GitError::CommandFailed(_) => "Check the error message and try again",
             GitError::Timeout { .. } => {

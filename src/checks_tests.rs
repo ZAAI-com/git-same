@@ -12,7 +12,7 @@ fn test_check_git_installed_runs() {
 fn test_check_gh_installed_runs() {
     let result = check_gh_installed();
     assert_eq!(result.name, "GitHub CLI");
-    assert!(result.critical);
+    assert!(!result.critical);
 }
 
 #[test]

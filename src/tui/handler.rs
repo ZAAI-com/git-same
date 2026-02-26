@@ -201,13 +201,24 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
     if setup.should_quit {
         if matches!(setup.outcome, Some(SetupOutcome::Completed)) {
             // Reload workspaces and go to dashboard
-            app.workspaces = WorkspaceManager::list().unwrap_or_default();
-            if let Some(ws) = app.workspaces.first().cloned() {
-                app.base_path = Some(ws.expanded_base_path());
-                app.sync_history = SyncHistoryManager::for_workspace(&ws.name)
-                    .and_then(|m| m.load())
-                    .unwrap_or_default();
-                app.active_workspace = Some(ws);
+            match WorkspaceManager::list() {
+                Ok(workspaces) => {
+                    app.workspaces = workspaces;
+                    if let Some(ws) = app.workspaces.first().cloned() {
+                        app.base_path = Some(ws.expanded_base_path());
+                        app.sync_history = SyncHistoryManager::for_workspace(&ws.name)
+                            .and_then(|m| m.load())
+                            .unwrap_or_default();
+                        app.active_workspace = Some(ws);
+                    }
+                }
+                Err(e) => {
+                    app.error_message = Some(format!("Failed to load workspaces: {}", e));
+                    app.workspaces.clear();
+                    app.base_path = None;
+                    app.active_workspace = None;
+                    app.sync_history.clear();
+                }
             }
             app.setup_state = None;
             app.screen = Screen::Dashboard;
@@ -233,7 +244,7 @@ fn compute_repo_path(app: &App, repo_name: &str) -> Option<std::path::PathBuf> {
         .structure
         .clone()
         .unwrap_or_else(|| app.config.structure.clone());
-    let provider_name = ws.provider.kind.to_string().to_lowercase();
+    let provider_name = ws.provider.kind.slug().to_string();
 
     RepoPathTemplate::new(template).render_full_name(&base_path, &provider_name, repo_name)
 }

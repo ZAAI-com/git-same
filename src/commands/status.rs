@@ -41,13 +41,6 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
                 let is_uncommitted = s.is_uncommitted || s.has_untracked;
                 let is_behind = s.behind > 0;
 
-                if is_uncommitted {
-                    uncommitted_count += 1;
-                }
-                if is_behind {
-                    behind_count += 1;
-                }
-
                 // Apply filters
                 if args.uncommitted && !is_uncommitted {
                     continue;
@@ -57,6 +50,13 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
                 }
                 if !args.org.is_empty() && !args.org.contains(org) {
                     continue;
+                }
+
+                if is_uncommitted {
+                    uncommitted_count += 1;
+                }
+                if is_behind {
+                    behind_count += 1;
                 }
 
                 // Print status

@@ -29,7 +29,13 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
             // Open config directory in Finder / file manager
             if let Ok(path) = crate::config::Config::default_path() {
                 if let Some(parent) = path.parent() {
-                    let _ = std::process::Command::new("open").arg(parent).spawn();
+                    if let Err(e) = open_directory(parent) {
+                        app.error_message = Some(format!(
+                            "Failed to open config directory '{}': {}",
+                            parent.display(),
+                            e
+                        ));
+                    }
                 }
             }
         }
@@ -41,6 +47,24 @@ pub fn handle_key(app: &mut App, key: KeyEvent) {
         }
         _ => {}
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("open").arg(path).spawn()?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("explorer").arg(path).spawn()?;
+    Ok(())
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn open_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open").arg(path).spawn()?;
+    Ok(())
 }
 
 pub fn render(app: &App, frame: &mut Frame) {

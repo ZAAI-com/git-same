@@ -82,7 +82,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
                 prepared.plan.to_clone.len()
             ));
             for repo in &prepared.plan.to_clone {
-                println!("  + {}", repo.full_name());
+                output.info(&format!("  + {}", repo.full_name()));
             }
         }
 
@@ -98,7 +98,7 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
                 prepared.to_sync.len()
             ));
             for repo in &prepared.to_sync {
-                println!("  ~ {}", repo.repo.full_name());
+                output.info(&format!("  ~ {}", repo.repo.full_name()));
             }
         } else if !had_clones {
             output.success("All repositories are up to date");

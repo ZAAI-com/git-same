@@ -6,7 +6,7 @@
 //!
 //! ## Features
 //!
-//! - **Multi-Provider Support**: Works with GitHub, GitHub Enterprise, GitLab, and Bitbucket
+//! - **Multi-Provider Support**: Works with GitHub and GitHub Enterprise (GitLab and Bitbucket coming soon)
 //! - **Parallel Operations**: Clones and syncs repositories concurrently
 //! - **Smart Filtering**: Filter by archived status, forks, organizations
 //! - **Incremental Sync**: Only fetches/pulls what has changed

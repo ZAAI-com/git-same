@@ -30,6 +30,15 @@ fn test_server_error_is_retryable() {
 }
 
 #[test]
+fn test_429_is_retryable() {
+    let err = ProviderError::Api {
+        status: 429,
+        message: "Too Many Requests".to_string(),
+    };
+    assert!(err.is_retryable());
+}
+
+#[test]
 fn test_auth_error_is_not_retryable() {
     let err = ProviderError::Authentication("bad token".to_string());
     assert!(!err.is_retryable());

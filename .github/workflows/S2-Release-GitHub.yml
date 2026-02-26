@@ -73,8 +73,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  release:
-    name: Release (${{ matrix.target }})
+  build-release-assets:
+    name: Build Release Asset (${{ matrix.target }})
     needs: [test, coverage, audit]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -135,10 +135,26 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: ${{ matrix.asset_name }}
 
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-release-assets]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
         with:
-          files: ${{ matrix.asset_name }}
+          path: artifacts
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -exec cp {} release-assets/ \;
+
+      - name: Create/update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

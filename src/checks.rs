@@ -26,6 +26,20 @@ pub struct CheckResult {
 /// Returns a list of check results for: git, gh CLI, gh authentication,
 /// SSH keys, and SSH GitHub access.
 pub async fn check_requirements() -> Vec<CheckResult> {
+    match tokio::task::spawn_blocking(check_requirements_sync).await {
+        Ok(results) => results,
+        Err(e) => vec![CheckResult {
+            name: "System checks".to_string(),
+            passed: false,
+            message: format!("failed to run checks: {}", e),
+            suggestion: Some("Try running checks again".to_string()),
+            critical: false,
+        }],
+    }
+}
+
+/// Run all requirement checks synchronously.
+pub fn check_requirements_sync() -> Vec<CheckResult> {
     vec![
         check_git_installed(),
         check_gh_installed(),
@@ -79,7 +93,7 @@ fn check_gh_installed() -> CheckResult {
             passed: true,
             message: version,
             suggestion: None,
-            critical: true,
+            critical: false,
         }
     } else {
         CheckResult {
@@ -87,7 +101,7 @@ fn check_gh_installed() -> CheckResult {
             passed: false,
             message: "not found".to_string(),
             suggestion: Some("Install from https://cli.github.com/".to_string()),
-            critical: true,
+            critical: false,
         }
     }
 }
@@ -100,7 +114,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: false,
             message: "gh CLI not installed".to_string(),
             suggestion: Some("Install gh CLI first, then run: gh auth login".to_string()),
-            critical: true,
+            critical: false,
         };
     }
 
@@ -111,7 +125,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: true,
             message: format!("logged in as {}", username),
             suggestion: None,
-            critical: true,
+            critical: false,
         }
     } else {
         CheckResult {
@@ -119,7 +133,7 @@ fn check_gh_authenticated() -> CheckResult {
             passed: false,
             message: "not authenticated".to_string(),
             suggestion: Some("Run: gh auth login".to_string()),
-            critical: true,
+            critical: false,
         }
     }
 }

@@ -59,12 +59,14 @@ impl ProviderError {
     /// Retryable errors include:
     /// - Network errors (transient connectivity issues)
     /// - Rate limiting (will succeed after waiting)
+    /// - HTTP 429 responses
     /// - Server errors (5xx status codes)
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
             ProviderError::Network(_)
                 | ProviderError::RateLimited { .. }
+                | ProviderError::Api { status: 429, .. }
                 | ProviderError::Api {
                     status: 500..=599,
                     ..
@@ -83,7 +85,7 @@ impl ProviderError {
             }
             ProviderError::Network(_) => "Check your internet connection and try again",
             ProviderError::Api { status: 403, .. } => {
-                "Check that your token has the required scopes (repo, read:org)"
+                "Check that your token has the required permissions for this operation"
             }
             ProviderError::Api { status: 404, .. } | ProviderError::NotFound(_) => {
                 "The resource may have been deleted or you may have lost access"
