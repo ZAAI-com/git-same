@@ -120,7 +120,7 @@ impl AppError {
             AppError::Config(_) => {
                 "Check your config file for syntax errors, or run 'gisa init' to create one"
             }
-            AppError::Auth(_) => "Run 'gh auth login' or set GITHUB_TOKEN environment variable",
+            AppError::Auth(_) => "Run 'gh auth login' to authenticate with GitHub CLI",
             AppError::Provider(e) => e.suggested_action(),
             AppError::Git(e) => e.suggested_action(),
             AppError::Io(_) => "Check file permissions and disk space",

@@ -4,6 +4,13 @@ fn test_credentials() -> Credentials {
     Credentials::new("test-token", GITHUB_API_URL)
 }
 
+fn real_github_token_from_gh() -> Option<String> {
+    if !crate::auth::gh_cli::is_installed() || !crate::auth::gh_cli::is_authenticated() {
+        return None;
+    }
+    crate::auth::gh_cli::get_token().ok()
+}
+
 #[test]
 fn test_provider_creation() {
     let result = GitHubProvider::new(test_credentials(), "Test GitHub");
@@ -45,12 +52,14 @@ fn test_kind_detection() {
     assert_eq!(provider.kind(), ProviderKind::GitHubEnterprise);
 }
 
-// Integration tests that require a real GitHub token
+// Integration tests that require gh CLI to be installed and authenticated
 // These are ignored by default
 #[tokio::test]
 #[ignore]
 async fn test_get_username_real() {
-    let token = std::env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN not set");
+    let Some(token) = real_github_token_from_gh() else {
+        return;
+    };
     let credentials = Credentials::new(token, GITHUB_API_URL);
     let provider = GitHubProvider::new(credentials, "GitHub").unwrap();
 
@@ -61,7 +70,9 @@ async fn test_get_username_real() {
 #[tokio::test]
 #[ignore]
 async fn test_get_rate_limit_real() {
-    let token = std::env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN not set");
+    let Some(token) = real_github_token_from_gh() else {
+        return;
+    };
     let credentials = Credentials::new(token, GITHUB_API_URL);
     let provider = GitHubProvider::new(credentials, "GitHub").unwrap();
 

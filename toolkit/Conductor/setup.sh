@@ -32,7 +32,8 @@ echo "--- Checking GitHub CLI ---"
 if ! command -v gh &> /dev/null; then
     echo "WARNING: GitHub CLI (gh) not found."
     echo "Install with: brew install gh"
-    echo "The CLI can still work with GITHUB_TOKEN environment variable."
+    echo "Git-Same requires GitHub CLI for authentication."
+    echo "Install gh first, then run: gh auth login"
     echo ""
 else
     echo "gh: $(gh --version | head -1)"

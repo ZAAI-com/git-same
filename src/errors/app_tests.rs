@@ -81,5 +81,8 @@ fn test_error_display() {
 fn test_suggested_action_returns_useful_text() {
     let err = AppError::auth("no token found");
     let suggestion = err.suggested_action();
-    assert!(suggestion.contains("gh auth login") || suggestion.contains("GITHUB_TOKEN"));
+    assert_eq!(
+        suggestion,
+        "Run 'gh auth login' to authenticate with GitHub CLI"
+    );
 }
