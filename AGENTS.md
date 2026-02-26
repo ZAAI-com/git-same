@@ -32,7 +32,7 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 ### Core modules
 
-- **`auth/`** — Multi-strategy auth: GitHub CLI (`gh`) → env token (`GITHUB_TOKEN`) → config token, with SSH support
+- **`auth/`** — GitHub CLI (`gh`) authentication only (`gh auth token`), with SSH clone support
 - **`config/`** — TOML config parser. Default location: `~/.config/git-same/config.toml`. Sections: `[clone]`, `[filters]`, `[[providers]]`
 - **`discovery/`** — `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
 - **`operations/clone/`** — `CloneManager` handles concurrent cloning (configurable 1–32, default 4)

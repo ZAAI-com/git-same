@@ -84,7 +84,7 @@ gisa status --behind
 
 ## Authentication
 
-Git-Same uses GitHub CLI (`gh`) for authentication by default:
+Git-Same uses GitHub CLI (`gh`) for authentication:
 
 ```bash
 # Install GitHub CLI
@@ -95,13 +95,6 @@ brew install gh  # macOS
 gh auth login
 
 # Git-Same will now use your gh credentials
-gisa sync
-```
-
-Alternatively, use a personal access token:
-
-```bash
-export GITHUB_TOKEN=ghp_your_token_here
 gisa sync
 ```
 
@@ -165,11 +158,16 @@ enabled = true
 kind = "github-enterprise"
 name = "Work GitHub"
 api_url = "https://github.company.com/api/v3"
-auth = "env"
-token_env = "WORK_GITHUB_TOKEN"
+auth = "gh-cli"
 prefer_ssh = true
 enabled = true
 base_path = "~/work/code"
+```
+
+Authenticate GitHub Enterprise once with:
+
+```bash
+gh auth login --hostname github.company.com
 ```
 
 ## Commands
