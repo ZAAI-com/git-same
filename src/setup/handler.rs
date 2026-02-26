@@ -18,6 +18,21 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         state.should_quit = true;
         return;
     }
+    let path_popup_active = state.step == SetupStep::SelectPath && state.path_browse_mode;
+    if path_popup_active && key.modifiers == KeyModifiers::NONE {
+        match key.code {
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Enter
+            | KeyCode::Esc => {
+                handle_path(state, key);
+                return;
+            }
+            _ => {}
+        }
+    }
     if key.modifiers == KeyModifiers::NONE
         && key.code == KeyCode::Char('q')
         && !matches!(state.step, SetupStep::SelectPath)
@@ -26,12 +41,12 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
         state.should_quit = true;
         return;
     }
-    if key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Esc {
+    if !path_popup_active && key.modifiers == KeyModifiers::NONE && key.code == KeyCode::Esc {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
         return;
     }
-    if key.modifiers == KeyModifiers::NONE {
+    if !path_popup_active && key.modifiers == KeyModifiers::NONE {
         match key.code {
             KeyCode::Left => {
                 state.prev_step();
@@ -209,55 +224,74 @@ fn confirm_path(state: &mut SetupState) {
     }
 }
 
-fn open_path_browse_mode(state: &mut SetupState, seed_path: &str) {
-    let dir = resolve_browse_seed(seed_path);
+fn open_path_browse_mode(state: &mut SetupState) {
+    let dir = resolve_browse_root();
     state.path_browse_info = None;
-    set_browse_directory(state, dir);
+    set_browse_root(state, dir);
+    state.path_suggestions_mode = false;
     state.path_browse_mode = true;
 }
 
-fn resolve_browse_seed(seed_path: &str) -> std::path::PathBuf {
-    if !seed_path.is_empty() {
-        let expanded = shellexpand::tilde(seed_path);
-        let candidate = std::path::PathBuf::from(expanded.as_ref());
-        if candidate.is_dir() {
-            return candidate;
-        }
-        if let Some(parent) = candidate.parent() {
-            if parent.is_dir() {
-                return parent.to_path_buf();
-            }
-        }
-    }
-
+fn resolve_browse_root() -> std::path::PathBuf {
     std::env::current_dir()
         .or_else(|_| std::env::var("HOME").map(std::path::PathBuf::from))
         .unwrap_or_else(|_| std::path::PathBuf::from("/"))
 }
 
-fn set_browse_directory(state: &mut SetupState, dir: std::path::PathBuf) {
-    state.path_browse_current_dir = tilde_collapse(&dir.to_string_lossy());
-    let (entries, browse_error) = read_browse_entries(&dir, state.path_browse_show_hidden);
+fn set_browse_root(state: &mut SetupState, dir: std::path::PathBuf) {
+    let root_path = tilde_collapse(&dir.to_string_lossy());
+    let (children, browse_error) = read_child_directories(&dir, 1);
+    let root = PathBrowseEntry {
+        label: browse_label_for_path(&dir),
+        path: root_path.clone(),
+        depth: 0,
+        expanded: true,
+        has_children: !children.is_empty(),
+    };
+
+    let mut entries = Vec::with_capacity(children.len() + 1);
+    entries.push(root);
+    entries.extend(children);
+
+    state.path_browse_current_dir = root_path;
     state.path_browse_entries = entries;
     state.path_browse_error = browse_error;
     state.path_browse_index = 0;
 }
 
-fn read_browse_entries(
+fn browse_label_for_path(path: &std::path::Path) -> String {
+    if path.parent().is_none() {
+        "/".to_string()
+    } else {
+        let name = path
+            .file_name()
+            .map(|part| part.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string());
+        format!("{name}/")
+    }
+}
+
+fn has_visible_child_directory(dir: &std::path::Path) -> bool {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => entries.flatten().any(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return false;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            !name.starts_with('.')
+        }),
+        Err(_) => false,
+    }
+}
+
+fn read_child_directories(
     dir: &std::path::Path,
-    show_hidden: bool,
+    depth: u16,
 ) -> (Vec<PathBrowseEntry>, Option<String>) {
-    let mut entries = Vec::new();
+    let mut children = Vec::new();
     let mut browse_error = None;
 
-    if let Some(parent) = dir.parent() {
-        entries.push(PathBrowseEntry {
-            label: ".. (parent)".to_string(),
-            path: tilde_collapse(&parent.to_string_lossy()),
-        });
-    }
-
-    let mut children = Vec::new();
     match std::fs::read_dir(dir) {
         Ok(dir_entries) => {
             for entry_result in dir_entries {
@@ -268,12 +302,15 @@ fn read_browse_entries(
                             continue;
                         }
                         let name = entry.file_name().to_string_lossy().to_string();
-                        if !show_hidden && name.starts_with('.') {
+                        if name.starts_with('.') {
                             continue;
                         }
                         children.push(PathBrowseEntry {
                             label: format!("{name}/"),
                             path: tilde_collapse(&path.to_string_lossy()),
+                            depth,
+                            expanded: false,
+                            has_children: has_visible_child_directory(&path),
                         });
                     }
                     Err(e) => {
@@ -291,9 +328,9 @@ fn read_browse_entries(
             ));
         }
     }
+
     children.sort_by_key(|entry| entry.label.to_lowercase());
-    entries.extend(children);
-    (entries, browse_error)
+    (children, browse_error)
 }
 
 fn close_path_browse_to_input(state: &mut SetupState) {
@@ -306,144 +343,129 @@ fn close_path_browse_to_input(state: &mut SetupState) {
     state.path_completion_index = 0;
 }
 
-fn current_browse_dir(state: &SetupState) -> Option<std::path::PathBuf> {
-    if state.path_browse_current_dir.is_empty() {
-        return None;
+fn sync_browse_current_dir(state: &mut SetupState) {
+    if let Some(entry) = state.path_browse_entries.get(state.path_browse_index) {
+        state.path_browse_current_dir = entry.path.clone();
     }
-    let expanded = shellexpand::tilde(&state.path_browse_current_dir);
-    let dir = std::path::PathBuf::from(expanded.as_ref());
-    if dir.is_dir() {
-        Some(dir)
-    } else {
-        None
+}
+
+fn selected_browse_dir(state: &SetupState) -> Option<std::path::PathBuf> {
+    state
+        .path_browse_entries
+        .get(state.path_browse_index)
+        .map(|entry| std::path::PathBuf::from(shellexpand::tilde(&entry.path).as_ref()))
+}
+
+fn collapse_selected_entry(state: &mut SetupState) {
+    let Some(entry) = state
+        .path_browse_entries
+        .get(state.path_browse_index)
+        .cloned()
+    else {
+        return;
+    };
+    if !entry.expanded {
+        return;
     }
+    let start = state.path_browse_index + 1;
+    let mut end = start;
+    while end < state.path_browse_entries.len()
+        && state.path_browse_entries[end].depth > entry.depth
+    {
+        end += 1;
+    }
+    if start < end {
+        state.path_browse_entries.drain(start..end);
+    }
+    if let Some(selected) = state.path_browse_entries.get_mut(state.path_browse_index) {
+        selected.expanded = false;
+    }
+}
+
+fn expand_selected_entry(state: &mut SetupState) {
+    let index = state.path_browse_index;
+    let Some(dir) = selected_browse_dir(state) else {
+        return;
+    };
+    let Some(selected) = state.path_browse_entries.get(index) else {
+        return;
+    };
+    let depth = selected.depth;
+
+    let (children, browse_error) = read_child_directories(&dir, depth + 1);
+    state.path_browse_error = browse_error;
+    if children.is_empty() {
+        if let Some(entry) = state.path_browse_entries.get_mut(index) {
+            entry.has_children = false;
+            entry.expanded = false;
+        }
+        return;
+    }
+
+    if let Some(entry) = state.path_browse_entries.get_mut(index) {
+        entry.expanded = true;
+        entry.has_children = true;
+    }
+    state
+        .path_browse_entries
+        .splice(index + 1..index + 1, children);
 }
 
 fn open_selected_browse_entry(state: &mut SetupState) {
-    if let Some(path) = state
+    let Some(selected) = state
         .path_browse_entries
         .get(state.path_browse_index)
-        .map(|entry| entry.path.clone())
-    {
-        let expanded = shellexpand::tilde(&path);
-        let dir = std::path::PathBuf::from(expanded.as_ref());
-        if dir.is_dir() {
-            state.path_browse_info = None;
-            set_browse_directory(state, dir);
-        } else {
-            state.path_browse_error = Some(format!("Directory no longer exists: {path}"));
-        }
-    }
-}
-
-fn use_current_browse_folder(state: &mut SetupState) {
-    if !state.path_browse_current_dir.is_empty() {
-        state.base_path = state.path_browse_current_dir.clone();
-        state.path_cursor = state.base_path.len();
-        close_path_browse_to_input(state);
-    }
-}
-
-fn jump_to_home_directory(state: &mut SetupState) {
-    match std::env::var("HOME") {
-        Ok(home) => {
-            let dir = std::path::PathBuf::from(home);
-            if dir.is_dir() {
-                state.path_browse_info = Some("Jumped to home directory".to_string());
-                set_browse_directory(state, dir);
-            } else {
-                state.path_browse_error = Some("Home directory is not accessible".to_string());
-            }
-        }
-        Err(_) => {
-            state.path_browse_error = Some("HOME environment variable is not set".to_string());
-        }
-    }
-}
-
-fn jump_to_current_directory(state: &mut SetupState) {
-    match std::env::current_dir() {
-        Ok(dir) => {
-            state.path_browse_info = Some("Jumped to current directory".to_string());
-            set_browse_directory(state, dir);
-        }
-        Err(e) => {
-            state.path_browse_error = Some(format!("Cannot read current directory: {e}"));
-        }
-    }
-}
-
-fn jump_to_root_directory(state: &mut SetupState) {
-    let Some(current) = current_browse_dir(state) else {
-        state.path_browse_error = Some("Cannot resolve current browse directory".to_string());
+        .cloned()
+    else {
         return;
     };
-    let root = current
-        .ancestors()
-        .last()
-        .unwrap_or(current.as_path())
-        .to_path_buf();
-    state.path_browse_info = Some("Jumped to filesystem root".to_string());
-    set_browse_directory(state, root);
-}
-
-fn toggle_hidden_directories(state: &mut SetupState) {
-    state.path_browse_show_hidden = !state.path_browse_show_hidden;
-    let message = if state.path_browse_show_hidden {
-        "Showing hidden folders"
-    } else {
-        "Hiding hidden folders"
-    };
-
-    if let Some(current) = current_browse_dir(state) {
-        set_browse_directory(state, current);
-        state.path_browse_info = Some(message.to_string());
-    } else {
-        state.path_browse_error = Some("Cannot refresh browse list".to_string());
-    }
-}
-
-fn create_folder_in_current_directory(state: &mut SetupState) {
-    let Some(current) = current_browse_dir(state) else {
-        state.path_browse_error = Some("Cannot resolve current browse directory".to_string());
+    if !selected.has_children {
         return;
-    };
-
-    let mut selected_path = None;
-    for idx in 1..=999 {
-        let name = if idx == 1 {
-            "new-folder".to_string()
-        } else {
-            format!("new-folder-{idx}")
-        };
-        let candidate = current.join(&name);
-        if !candidate.exists() {
-            match std::fs::create_dir(&candidate) {
-                Ok(()) => {
-                    selected_path = Some(tilde_collapse(&candidate.to_string_lossy()));
-                    state.path_browse_info = Some(format!("Created '{name}'"));
-                    state.path_browse_error = None;
-                }
-                Err(e) => {
-                    state.path_browse_error = Some(format!("Cannot create folder: {e}"));
-                }
-            }
-            break;
-        }
     }
-
-    set_browse_directory(state, current);
-    if let Some(path) = selected_path {
-        if let Some(index) = state
-            .path_browse_entries
-            .iter()
-            .position(|entry| entry.path == path)
+    if selected.expanded {
+        let child_index = state.path_browse_index + 1;
+        if child_index < state.path_browse_entries.len()
+            && state.path_browse_entries[child_index].depth == selected.depth + 1
         {
-            state.path_browse_index = index;
+            state.path_browse_index = child_index;
         }
-    } else if state.path_browse_error.is_none() {
-        state.path_browse_error = Some("Could not allocate a new folder name".to_string());
+    } else {
+        expand_selected_entry(state);
     }
+    sync_browse_current_dir(state);
+}
+
+fn move_to_parent_or_collapse_selected_entry(state: &mut SetupState) {
+    let Some(selected) = state
+        .path_browse_entries
+        .get(state.path_browse_index)
+        .cloned()
+    else {
+        return;
+    };
+    if selected.expanded {
+        collapse_selected_entry(state);
+        sync_browse_current_dir(state);
+        return;
+    }
+    if selected.depth == 0 {
+        return;
+    }
+    for idx in (0..state.path_browse_index).rev() {
+        if state.path_browse_entries[idx].depth + 1 == selected.depth {
+            state.path_browse_index = idx;
+            sync_browse_current_dir(state);
+            return;
+        }
+    }
+}
+
+fn select_current_browse_folder(state: &mut SetupState) {
+    if let Some(entry) = state.path_browse_entries.get(state.path_browse_index) {
+        state.base_path = entry.path.clone();
+        state.path_cursor = state.base_path.len();
+    }
+    close_path_browse_to_input(state);
 }
 
 fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
@@ -451,43 +473,23 @@ fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
         KeyCode::Up => {
             if state.path_browse_index > 0 {
                 state.path_browse_index -= 1;
+                sync_browse_current_dir(state);
             }
         }
         KeyCode::Down => {
             if state.path_browse_index + 1 < state.path_browse_entries.len() {
                 state.path_browse_index += 1;
+                sync_browse_current_dir(state);
             }
         }
-        KeyCode::Right | KeyCode::Enter => {
+        KeyCode::Right => {
             open_selected_browse_entry(state);
         }
         KeyCode::Left => {
-            if let Some(current) = current_browse_dir(state) {
-                if let Some(parent) = current.parent() {
-                    if parent.is_dir() {
-                        state.path_browse_info = None;
-                        set_browse_directory(state, parent.to_path_buf());
-                    }
-                }
-            }
+            move_to_parent_or_collapse_selected_entry(state);
         }
-        KeyCode::Char('u') => {
-            use_current_browse_folder(state);
-        }
-        KeyCode::Char('h') => {
-            jump_to_home_directory(state);
-        }
-        KeyCode::Char('c') => {
-            jump_to_current_directory(state);
-        }
-        KeyCode::Char('r') => {
-            jump_to_root_directory(state);
-        }
-        KeyCode::Char('.') => {
-            toggle_hidden_directories(state);
-        }
-        KeyCode::Char('n') => {
-            create_folder_in_current_directory(state);
+        KeyCode::Enter => {
+            select_current_browse_folder(state);
         }
         KeyCode::Esc => {
             close_path_browse_to_input(state);
@@ -525,12 +527,7 @@ fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
             state.path_completion_index = 0;
         }
         KeyCode::Char('b') => {
-            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
-                state.base_path = s.path.clone();
-                state.path_cursor = state.base_path.len();
-            }
-            let seed = state.base_path.clone();
-            open_path_browse_mode(state, &seed);
+            open_path_browse_mode(state);
         }
         KeyCode::Esc => {
             state.prev_step();
@@ -558,8 +555,7 @@ fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
 
 fn handle_path_input(state: &mut SetupState, key: KeyEvent) {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('b') {
-        let seed = state.base_path.clone();
-        open_path_browse_mode(state, &seed);
+        open_path_browse_mode(state);
         return;
     }
 

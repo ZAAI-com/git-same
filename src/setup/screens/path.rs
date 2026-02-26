@@ -1,15 +1,16 @@
 //! Step 4: Base path input screen with suggestions, tab completion, and live preview.
 
 use crate::setup::state::SetupState;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let list_items = if state.path_browse_mode {
-        state.path_browse_entries.len() + 5
+    let popup_open = state.path_browse_mode;
+    let list_items = if popup_open {
+        0
     } else if state.path_suggestions_mode {
         state.path_suggestions.len()
     } else {
@@ -29,29 +30,35 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     ])
     .split(area);
 
+    let accent = if popup_open {
+        Color::DarkGray
+    } else {
+        Color::Cyan
+    };
+    let muted = Color::DarkGray;
+    let input_text_color = if popup_open {
+        Color::DarkGray
+    } else if state.path_suggestions_mode {
+        Color::DarkGray
+    } else {
+        Color::Yellow
+    };
+
     // Title and info (above input)
     let title_lines = vec![
         Line::from(Span::styled(
             "  Where should repositories be cloned?",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
             "  Repos will be organized as: <path>/<org>/<repo>",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(muted),
         )),
     ];
     frame.render_widget(Paragraph::new(title_lines), chunks[0]);
 
     // Path input with styled border
-    let input_style = if state.path_browse_mode {
-        Style::default().fg(Color::Cyan)
-    } else if state.path_suggestions_mode {
-        Style::default().fg(Color::DarkGray)
-    } else {
-        Style::default().fg(Color::Yellow)
-    };
+    let input_style = Style::default().fg(input_text_color);
     let cursor_pos = state.path_cursor.min(state.base_path.len());
 
     let input_line = Line::from(vec![
@@ -65,12 +72,10 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     } else {
         BorderType::Thick
     };
-    let border_color = if state.path_browse_mode {
-        Color::Cyan
-    } else if state.path_suggestions_mode {
+    let border_color = if state.path_suggestions_mode {
         Color::DarkGray
     } else {
-        Color::Cyan
+        accent
     };
     let input = Paragraph::new(input_line).block(
         Block::default()
@@ -89,9 +94,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     }
 
     // Suggestions or completions list
-    if state.path_browse_mode {
-        render_browse(state, frame, chunks[2]);
-    } else if state.path_suggestions_mode && !state.path_suggestions.is_empty() {
+    if state.path_suggestions_mode && !state.path_suggestions.is_empty() {
         render_suggestions(state, frame, chunks[2]);
     } else if !state.path_suggestions_mode && !state.path_completions.is_empty() {
         render_completions(state, frame, chunks[2]);
@@ -99,19 +102,15 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     // Preview + error
     let mut preview_lines: Vec<Line> = Vec::new();
-    let preview_path = if state.path_browse_mode {
-        &state.path_browse_current_dir
-    } else {
-        &state.base_path
-    };
+    let preview_path = &state.base_path;
     if !preview_path.is_empty() {
         preview_lines.push(Line::from(Span::styled(
             "  Preview:",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(muted),
         )));
         preview_lines.push(Line::from(Span::styled(
             format!("    {preview_path}/acme-corp/my-repo/"),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(muted),
         )));
     }
 
@@ -119,83 +118,195 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         preview_lines.push(Line::raw(""));
         preview_lines.push(Line::from(Span::styled(
             format!("  {}", err),
-            Style::default().fg(Color::Red),
+            Style::default().fg(muted),
         )));
     }
 
     frame.render_widget(Paragraph::new(preview_lines), chunks[3]);
+    if popup_open {
+        render_browse_popup(state, frame, area);
+    }
 }
 
-fn render_browse(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let hidden_state = if state.path_browse_show_hidden {
-        "on"
-    } else {
-        "off"
-    };
+fn render_browse_popup(state: &SetupState, frame: &mut Frame, area: Rect) {
+    let popup_area = centered_area(area, 80, 80);
+    frame.render_widget(Clear, popup_area);
 
-    let mut lines: Vec<Line> = vec![
-        Line::from(Span::styled(
-            "  Folder Navigator:",
-            Style::default().fg(Color::DarkGray),
-        )),
-        Line::from(Span::styled(
-            format!("    {}", state.path_browse_current_dir),
-            Style::default().fg(Color::Cyan),
-        )),
-        Line::from(Span::styled(
-            format!("    Hidden folders: {hidden_state}  (press . to toggle)"),
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
+    let popup = Block::default()
+        .title(" Folder Navigator ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = popup.inner(popup_area);
+    frame.render_widget(popup, popup_area);
 
-    if let Some(ref info) = state.path_browse_info {
-        lines.push(Line::from(Span::styled(
-            format!("    {}", info),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
+    let show_message = state.path_browse_error.is_some() || state.path_browse_info.is_some();
+    let rows = Layout::vertical([
+        Constraint::Length(1), // path
+        Constraint::Min(3),    // tree
+        Constraint::Length(if show_message { 1 } else { 0 }),
+        Constraint::Length(1), // footer
+    ])
+    .split(inner);
 
-    if let Some(ref err) = state.path_browse_error {
-        lines.push(Line::from(Span::styled(
-            format!("    {}", err),
-            Style::default().fg(Color::Red),
-        )));
-    }
+    let path_line = Line::from(vec![
+        Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            &state.path_browse_current_dir,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(path_line), rows[0]);
 
-    if state.path_browse_entries.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "    (No folders available)",
-            Style::default().fg(Color::DarkGray),
-        )));
-    } else {
-        let visible = area.height.saturating_sub(lines.len() as u16) as usize;
-        let start = state
-            .path_browse_index
-            .saturating_sub(visible.saturating_sub(1));
-        for (i, entry) in state
-            .path_browse_entries
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(visible)
-        {
-            let is_selected = i == state.path_browse_index;
-            let marker = if is_selected { "  > " } else { "    " };
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(marker, style),
-                Span::styled(&entry.label, style),
-            ]));
+    render_browse_tree(state, frame, rows[1]);
+
+    if show_message {
+        let message = state
+            .path_browse_error
+            .as_ref()
+            .map(|msg| {
+                (
+                    msg.as_str(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )
+            })
+            .or_else(|| {
+                state
+                    .path_browse_info
+                    .as_ref()
+                    .map(|msg| (msg.as_str(), Style::default().fg(Color::DarkGray)))
+            });
+        if let Some((msg, style)) = message {
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(msg, style))),
+                rows[2],
+            );
         }
     }
 
+    render_popup_footer(frame, rows[3]);
+}
+
+fn render_browse_tree(state: &SetupState, frame: &mut Frame, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+    let mut lines: Vec<Line> = Vec::new();
+    if state.path_browse_entries.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (No folders available)",
+            Style::default().fg(Color::DarkGray),
+        )));
+        frame.render_widget(Paragraph::new(lines), area);
+        return;
+    }
+
+    let visible = area.height as usize;
+    let selection = state
+        .path_browse_index
+        .min(state.path_browse_entries.len().saturating_sub(1));
+    let half = visible / 2;
+    let mut start = selection.saturating_sub(half);
+    if start + visible > state.path_browse_entries.len() {
+        start = state.path_browse_entries.len().saturating_sub(visible);
+    }
+
+    for (i, entry) in state
+        .path_browse_entries
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible)
+    {
+        let is_selected = i == selection;
+        let pointer = if is_selected { "› " } else { "  " };
+        let icon = if entry.has_children {
+            if entry.expanded {
+                "▾ "
+            } else {
+                "▸ "
+            }
+        } else {
+            "  "
+        };
+        let style = if is_selected {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(pointer, style),
+            Span::styled(
+                "  ".repeat(entry.depth as usize),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(icon, style),
+            Span::styled(&entry.label, style),
+        ]));
+    }
+
     frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_popup_footer(frame: &mut Frame, area: Rect) {
+    let left = "[Esc] Close";
+    let center = "[←] Parent [↑/↓] Move [→] Open";
+    let right = "[Enter] Select";
+    let cols = Layout::horizontal([
+        Constraint::Length(left.chars().count() as u16),
+        Constraint::Min(0),
+        Constraint::Length(right.chars().count() as u16),
+    ])
+    .split(area);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            left,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        cols[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            center,
+            Style::default().fg(Color::Cyan),
+        )))
+        .alignment(Alignment::Center),
+        cols[1],
+    );
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            right,
+            Style::default().fg(Color::DarkGray),
+        )))
+        .alignment(Alignment::Right),
+        cols[2],
+    );
+}
+
+fn centered_area(area: Rect, width_pct: u16, height_pct: u16) -> Rect {
+    let top = (100 - height_pct) / 2;
+    let bottom = 100 - height_pct - top;
+    let left = (100 - width_pct) / 2;
+    let right = 100 - width_pct - left;
+
+    let vertical = Layout::vertical([
+        Constraint::Percentage(top),
+        Constraint::Percentage(height_pct),
+        Constraint::Percentage(bottom),
+    ])
+    .split(area);
+    let horizontal = Layout::horizontal([
+        Constraint::Percentage(left),
+        Constraint::Percentage(width_pct),
+        Constraint::Percentage(right),
+    ])
+    .split(vertical[1]);
+    horizontal[1]
 }
 
 fn render_suggestions(state: &SetupState, frame: &mut Frame, area: Rect) {

@@ -13,9 +13,10 @@ use ratatui::Frame;
 pub fn render(state: &SetupState, frame: &mut Frame) {
     let area = frame.area();
     let height = area.height;
+    let path_popup_active = state.step == SetupStep::SelectPath && state.path_browse_mode;
 
     // Graceful degradation for small terminals
-    let show_banner = height >= 30;
+    let show_banner = height >= 30 && !path_popup_active;
     let show_progress = height >= 20;
 
     let mut constraints = Vec::new();
@@ -56,7 +57,11 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
         let title = Paragraph::new(title_text)
             .style(
                 Style::default()
-                    .fg(Color::White)
+                    .fg(if path_popup_active {
+                        Color::DarkGray
+                    } else {
+                        Color::White
+                    })
                     .add_modifier(Modifier::BOLD),
             )
             .alignment(Alignment::Center);
@@ -71,7 +76,7 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
             .border_style(Style::default().fg(Color::DarkGray));
         let progress_inner = progress_block.inner(chunks[idx]);
         frame.render_widget(progress_block, chunks[idx]);
-        render_step_progress(state, frame, progress_inner);
+        render_step_progress(state, frame, progress_inner, path_popup_active);
         idx += 1;
     }
 
@@ -99,15 +104,25 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
 }
 
 /// Render the step progress indicator with nodes and connectors.
-fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect) {
+fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect, dimmed: bool) {
     let steps = ["Provider", "Auth", "Orgs", "Path", "Save"];
     let current = state.step_number(); // 0 for Welcome, 1-5 for steps, 5 for Complete
 
-    let green = Style::default().fg(Color::Rgb(21, 128, 61));
+    let green = if dimmed {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Rgb(21, 128, 61))
+    };
     let green_bold = green.add_modifier(Modifier::BOLD);
-    let cyan_bold = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
+    let cyan_bold = if dimmed {
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    };
     let dim = Style::default().fg(Color::DarkGray);
 
     let segments = Layout::horizontal([
@@ -211,11 +226,22 @@ fn connector_cell(width: usize, completed: bool) -> String {
 
 /// Render the 2-line status bar with actions and navigation hints.
 fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let blue = Style::default()
-        .fg(Color::Rgb(37, 99, 235))
-        .add_modifier(Modifier::BOLD);
+    let path_popup_active = state.step == SetupStep::SelectPath && state.path_browse_mode;
+    let blue = if path_popup_active {
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Rgb(37, 99, 235))
+            .add_modifier(Modifier::BOLD)
+    };
     let dim = Style::default().fg(Color::DarkGray);
-    let yellow = Style::default().fg(Color::Yellow);
+    let yellow = if path_popup_active {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
 
     let top_center = match state.step {
         SetupStep::Welcome => vec![
@@ -243,16 +269,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         }
         SetupStep::SelectPath => {
             if state.path_browse_mode {
-                vec![
-                    Span::styled("[u]", blue),
-                    Span::styled(" Use Folder  ", dim),
-                    Span::styled("[n]", blue),
-                    Span::styled(" New Folder  ", dim),
-                    Span::styled("[h] [c] [r]", blue),
-                    Span::styled(" Jump  ", dim),
-                    Span::styled("[.]", blue),
-                    Span::styled(" Hidden", dim),
-                ]
+                vec![Span::styled("Folder popup active", dim)]
             } else if state.path_suggestions_mode {
                 vec![
                     Span::styled("[Tab]", blue),
@@ -295,12 +312,19 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         ],
     };
 
-    let bottom_left = vec![
-        Span::styled("[q]", blue),
-        Span::styled(" Quit  ", dim),
-        Span::styled("[Esc]", blue),
-        Span::styled(" Back", dim),
-    ];
+    let bottom_left = if path_popup_active {
+        vec![
+            Span::styled("[Esc]", blue),
+            Span::styled(" Close Popup", dim),
+        ]
+    } else {
+        vec![
+            Span::styled("[q]", blue),
+            Span::styled(" Quit  ", dim),
+            Span::styled("[Esc]", blue),
+            Span::styled(" Back", dim),
+        ]
+    };
 
     let bottom_right = match state.step {
         SetupStep::SelectProvider | SetupStep::SelectOrgs => vec![
@@ -312,7 +336,9 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             Span::styled(" Next Step", dim),
         ],
         SetupStep::SelectPath => {
-            if state.path_browse_mode || state.path_suggestions_mode {
+            if state.path_browse_mode {
+                vec![Span::styled("Use popup arrows and Enter", dim)]
+            } else if state.path_suggestions_mode {
                 vec![
                     Span::styled("[↑] [↓]", blue),
                     Span::styled(" Move  ", dim),

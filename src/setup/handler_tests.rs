@@ -1,6 +1,27 @@
 use super::*;
 use crate::setup::state::SetupStep;
 
+fn cwd_collapsed() -> String {
+    super::tilde_collapse(&std::env::current_dir().unwrap().to_string_lossy())
+}
+
+fn tempdir_in_cwd(prefix: &str) -> tempfile::TempDir {
+    let cwd = std::env::current_dir().unwrap();
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(cwd)
+        .unwrap()
+}
+
+fn find_entry_index(state: &SetupState, path: &std::path::Path) -> usize {
+    let wanted = super::tilde_collapse(&path.to_string_lossy());
+    state
+        .path_browse_entries
+        .iter()
+        .position(|entry| entry.path == wanted)
+        .expect("expected path to be listed in popup tree")
+}
+
 #[tokio::test]
 async fn q_quits_setup_wizard() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
@@ -53,33 +74,9 @@ async fn right_advances_from_provider_step() {
 }
 
 #[tokio::test]
-async fn right_in_path_browse_mode_advances_step() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = super::tilde_collapse(&temp.path().to_string_lossy());
-
-    let mut state = SetupState::new("~/Git-Same/GitHub");
-    state.step = SetupStep::SelectPath;
-    state.path_browse_mode = true;
-    state.path_suggestions_mode = false;
-    state.path_browse_current_dir = path.clone();
-    state.base_path = "~/Git-Same/GitHub".to_string();
-    state.path_cursor = state.base_path.len();
-
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
-    )
-    .await;
-
-    assert_eq!(state.step, SetupStep::Confirm);
-    assert_eq!(state.base_path, path);
-}
-
-#[tokio::test]
 async fn b_opens_path_browser_from_suggestions_mode() {
-    let temp = tempfile::tempdir().unwrap();
-    let child = temp.path().join("child");
-    std::fs::create_dir_all(&child).unwrap();
+    let temp = tempdir_in_cwd("gisa-path-browse-");
+    std::fs::create_dir_all(temp.path().join("child")).unwrap();
 
     let mut state = SetupState::new(&temp.path().to_string_lossy());
     state.step = SetupStep::SelectPath;
@@ -94,19 +91,18 @@ async fn b_opens_path_browser_from_suggestions_mode() {
     .await;
 
     assert!(state.path_browse_mode);
-    assert_eq!(
-        state.path_browse_current_dir,
-        super::tilde_collapse(&temp.path().to_string_lossy())
-    );
-    assert!(state
-        .path_browse_entries
-        .iter()
-        .any(|entry| entry.path == super::tilde_collapse(&child.to_string_lossy())));
+    assert_eq!(state.step, SetupStep::SelectPath);
+    assert_eq!(state.path_browse_index, 0);
+    assert_eq!(state.path_browse_current_dir, cwd_collapsed());
+    assert_eq!(state.path_browse_entries[0].depth, 0);
+    assert!(state.path_browse_entries.iter().any(|entry| entry.path
+        == super::tilde_collapse(&temp.path().to_string_lossy())
+        && entry.depth == 1));
 }
 
 #[tokio::test]
-async fn enter_opens_selected_directory_without_confirming_step() {
-    let temp = tempfile::tempdir().unwrap();
+async fn right_in_path_browse_mode_navigates_tree_without_advancing_step() {
+    let temp = tempdir_in_cwd("gisa-path-nav-");
     let alpha = temp.path().join("alpha");
     std::fs::create_dir_all(&alpha).unwrap();
     let expected = super::tilde_collapse(&alpha.to_string_lossy());
@@ -123,28 +119,32 @@ async fn enter_opens_selected_directory_without_confirming_step() {
     )
     .await;
     assert!(state.path_browse_mode);
-
-    let alpha_index = state
-        .path_browse_entries
-        .iter()
-        .position(|entry| entry.path == expected)
-        .expect("alpha should be listed in path browser");
-    state.path_browse_index = alpha_index;
+    state.path_browse_index = find_entry_index(&state, temp.path());
 
     handle_key(
         &mut state,
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
+    assert!(state.path_browse_entries[state.path_browse_index].expanded);
+
+    assert_eq!(state.step, SetupStep::SelectPath);
+    assert!(state.path_browse_mode);
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
     )
     .await;
     assert_eq!(state.path_browse_current_dir, expected);
-    assert_eq!(state.step, SetupStep::SelectPath);
-    assert!(state.path_browse_mode);
 }
 
 #[tokio::test]
-async fn using_current_folder_returns_to_input_and_requires_second_confirm() {
-    let temp = tempfile::tempdir().unwrap();
-    let expected = super::tilde_collapse(&temp.path().to_string_lossy());
+async fn enter_in_browse_mode_sets_path_and_closes_popup() {
+    let temp = tempdir_in_cwd("gisa-path-enter-");
+    let alpha = temp.path().join("alpha");
+    std::fs::create_dir_all(&alpha).unwrap();
+    let expected = super::tilde_collapse(&alpha.to_string_lossy());
 
     let mut state = SetupState::new(&temp.path().to_string_lossy());
     state.step = SetupStep::SelectPath;
@@ -157,17 +157,27 @@ async fn using_current_folder_returns_to_input_and_requires_second_confirm() {
         KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
     )
     .await;
-    assert!(state.path_browse_mode);
-
+    state.path_browse_index = find_entry_index(&state, temp.path());
     handle_key(
         &mut state,
-        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
     )
     .await;
 
-    assert_eq!(state.base_path, expected);
-    assert_eq!(state.step, SetupStep::SelectPath);
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
     assert!(!state.path_browse_mode);
+    assert_eq!(state.step, SetupStep::SelectPath);
+    assert_eq!(state.base_path, expected);
 
     handle_key(
         &mut state,
@@ -178,13 +188,8 @@ async fn using_current_folder_returns_to_input_and_requires_second_confirm() {
 }
 
 #[tokio::test]
-async fn quick_jumps_and_hidden_toggle_work() {
+async fn esc_in_popup_only_closes_popup() {
     let temp = tempfile::tempdir().unwrap();
-    let hidden = temp.path().join(".hidden-folder");
-    let visible = temp.path().join("visible-folder");
-    std::fs::create_dir_all(&hidden).unwrap();
-    std::fs::create_dir_all(&visible).unwrap();
-
     let mut state = SetupState::new(&temp.path().to_string_lossy());
     state.step = SetupStep::SelectPath;
     state.path_suggestions_mode = false;
@@ -196,70 +201,22 @@ async fn quick_jumps_and_hidden_toggle_work() {
         KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
     )
     .await;
+    assert!(state.path_browse_mode);
 
-    assert!(!state.path_browse_show_hidden);
-    assert!(state
-        .path_browse_entries
-        .iter()
-        .all(|entry| !entry.label.starts_with(".hidden-folder")));
+    handle_key(&mut state, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
 
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
-    )
-    .await;
-    assert!(state.path_browse_show_hidden);
-    assert!(state
-        .path_browse_entries
-        .iter()
-        .any(|entry| entry.label.starts_with(".hidden-folder")));
-
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
-    )
-    .await;
-    assert!(!state.path_browse_show_hidden);
-    assert!(state
-        .path_browse_entries
-        .iter()
-        .all(|entry| !entry.label.starts_with(".hidden-folder")));
-
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
-    )
-    .await;
-    let cwd = std::env::current_dir().unwrap();
-    assert_eq!(
-        state.path_browse_current_dir,
-        super::tilde_collapse(&cwd.to_string_lossy())
-    );
-
-    if let Ok(home) = std::env::var("HOME") {
-        handle_key(
-            &mut state,
-            KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
-        )
-        .await;
-        assert_eq!(state.path_browse_current_dir, super::tilde_collapse(&home));
-    }
-
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
-    )
-    .await;
-    let root = cwd.ancestors().last().unwrap();
-    assert_eq!(
-        state.path_browse_current_dir,
-        super::tilde_collapse(&root.to_string_lossy())
-    );
+    assert!(!state.path_browse_mode);
+    assert_eq!(state.step, SetupStep::SelectPath);
+    assert!(!state.should_quit);
 }
 
 #[tokio::test]
-async fn create_folder_creates_incrementing_names() {
-    let temp = tempfile::tempdir().unwrap();
+async fn left_moves_to_parent_and_then_collapses() {
+    let temp = tempdir_in_cwd("gisa-path-left-");
+    let alpha = temp.path().join("alpha");
+    let nested = alpha.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    let parent = super::tilde_collapse(&temp.path().to_string_lossy());
 
     let mut state = SetupState::new(&temp.path().to_string_lossy());
     state.step = SetupStep::SelectPath;
@@ -272,35 +229,41 @@ async fn create_folder_creates_incrementing_names() {
         KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
     )
     .await;
-
+    state.path_browse_index = find_entry_index(&state, temp.path());
     handle_key(
         &mut state,
-        KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
     )
     .await;
-    assert!(temp.path().join("new-folder").is_dir());
-
     handle_key(
         &mut state,
-        KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
     )
     .await;
-    assert!(temp.path().join("new-folder-2").is_dir());
-    assert!(state
-        .path_browse_info
-        .as_deref()
-        .unwrap_or("")
-        .contains("Created"));
+    assert_eq!(
+        state.path_browse_current_dir,
+        super::tilde_collapse(&alpha.to_string_lossy())
+    );
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+    assert_eq!(state.path_browse_current_dir, parent);
+
+    let before = state.path_browse_entries.len();
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+    assert!(state.path_browse_entries.len() < before);
+    let parent_index = find_entry_index(&state, temp.path());
+    assert!(!state.path_browse_entries[parent_index].expanded);
 }
 
 #[tokio::test]
-async fn empty_directory_renders_without_error() {
-    let temp = tempfile::tempdir().unwrap();
+async fn right_on_leaf_does_not_change_selection_until_enter() {
+    let leaf_temp = tempdir_in_cwd("gisa-path-leaf-");
+    let expected = super::tilde_collapse(&leaf_temp.path().to_string_lossy());
 
-    let mut state = SetupState::new(&temp.path().to_string_lossy());
+    let mut state = SetupState::new(&leaf_temp.path().to_string_lossy());
     state.step = SetupStep::SelectPath;
     state.path_suggestions_mode = false;
-    state.base_path = temp.path().to_string_lossy().to_string();
+    state.base_path = leaf_temp.path().to_string_lossy().to_string();
     state.path_cursor = state.base_path.len();
 
     handle_key(
@@ -308,19 +271,24 @@ async fn empty_directory_renders_without_error() {
         KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
     )
     .await;
-    assert!(state.path_browse_error.is_none());
+    state.path_browse_index = find_entry_index(&state, leaf_temp.path());
+    state.path_browse_current_dir = expected.clone();
+    assert_eq!(state.path_browse_current_dir, expected);
 
-    let children = state
-        .path_browse_entries
-        .iter()
-        .filter(|entry| entry.label != ".. (parent)")
-        .count();
-    assert_eq!(children, 0);
+    let selected_before = state.path_browse_index;
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
+    assert_eq!(state.path_browse_index, selected_before);
+    assert_eq!(state.path_browse_current_dir, expected);
+    assert!(state.path_browse_mode);
 }
 
 #[tokio::test]
 async fn very_large_directory_list_is_loaded() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempdir_in_cwd("gisa-path-many-");
     for i in 0..150 {
         std::fs::create_dir_all(temp.path().join(format!("d{i:03}"))).unwrap();
     }
@@ -337,11 +305,23 @@ async fn very_large_directory_list_is_loaded() {
     )
     .await;
     assert!(state.path_browse_error.is_none());
+    state.path_browse_index = find_entry_index(&state, temp.path());
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    )
+    .await;
 
     let children: Vec<_> = state
         .path_browse_entries
         .iter()
-        .filter(|entry| entry.label.ends_with('/'))
+        .filter(|entry| {
+            entry.depth == 2
+                && entry.path.starts_with(&format!(
+                    "{}/",
+                    super::tilde_collapse(&temp.path().to_string_lossy())
+                ))
+        })
         .map(|entry| entry.label.clone())
         .collect();
     assert_eq!(children.len(), 150);
@@ -361,7 +341,6 @@ async fn unreadable_directory_surfaces_inline_error() {
     perms.set_mode(0o000);
     std::fs::set_permissions(&locked, perms).unwrap();
 
-    // If current runtime user can still read, skip this check.
     if std::fs::read_dir(&locked).is_ok() {
         let mut reset = std::fs::metadata(&locked).unwrap().permissions();
         reset.set_mode(0o700);
@@ -369,17 +348,8 @@ async fn unreadable_directory_surfaces_inline_error() {
         return;
     }
 
-    let mut state = SetupState::new(&locked.to_string_lossy());
-    state.step = SetupStep::SelectPath;
-    state.path_suggestions_mode = false;
-    state.base_path = locked.to_string_lossy().to_string();
-    state.path_cursor = state.base_path.len();
-
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
-    )
-    .await;
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    set_browse_root(&mut state, locked.clone());
     assert!(state.path_browse_error.is_some());
 
     let mut reset = std::fs::metadata(&locked).unwrap().permissions();

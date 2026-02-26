@@ -53,24 +53,31 @@ fn render_browse_mode_shows_folder_navigator_context() {
     state.path_suggestions_mode = false;
     state.path_browse_mode = true;
     state.path_browse_current_dir = "~/Projects".to_string();
-    state.path_browse_show_hidden = false;
     state.path_browse_entries = vec![
         PathBrowseEntry {
-            label: ".. (parent)".to_string(),
-            path: "~".to_string(),
+            label: "Projects/".to_string(),
+            path: "~/Projects".to_string(),
+            depth: 0,
+            expanded: true,
+            has_children: true,
         },
         PathBrowseEntry {
-            label: "client".to_string(),
+            label: "client/".to_string(),
             path: "~/Projects/client".to_string(),
+            depth: 1,
+            expanded: false,
+            has_children: false,
         },
     ];
     state.path_browse_index = 1;
 
     let output = render_output(&state);
-    assert!(output.contains("Folder Navigator:"));
+    assert!(output.contains("Folder Navigator"));
+    assert!(output.contains("Path:"));
     assert!(output.contains("~/Projects"));
-    assert!(output.contains("Hidden folders: off"));
     assert!(output.contains("client"));
+    assert!(output.contains("[Esc] Close"));
+    assert!(output.contains("[Enter] Select"));
 }
 
 #[test]

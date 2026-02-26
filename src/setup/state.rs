@@ -59,6 +59,9 @@ pub struct PathSuggestion {
 pub struct PathBrowseEntry {
     pub label: String,
     pub path: String,
+    pub depth: u16,
+    pub expanded: bool,
+    pub has_children: bool,
 }
 
 /// The wizard state (model).
