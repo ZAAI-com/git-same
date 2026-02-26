@@ -1,8 +1,8 @@
 use super::*;
 use crate::output::{Output, Verbosity};
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
-static HOME_LOCK: Mutex<()> = Mutex::new(());
+static HOME_LOCK: Mutex<()> = Mutex::const_new(());
 
 fn default_args() -> SyncCmdArgs {
     SyncCmdArgs {
@@ -17,7 +17,7 @@ fn default_args() -> SyncCmdArgs {
 
 #[tokio::test]
 async fn run_returns_error_when_no_workspace_is_configured() {
-    let _lock = HOME_LOCK.lock().expect("HOME lock poisoned");
+    let _lock = HOME_LOCK.lock().await;
     let original_home = std::env::var("HOME").ok();
     let temp = tempfile::tempdir().unwrap();
     std::env::set_var("HOME", temp.path());
@@ -40,7 +40,7 @@ async fn run_returns_error_when_no_workspace_is_configured() {
 
 #[tokio::test]
 async fn run_returns_error_for_unknown_workspace_name() {
-    let _lock = HOME_LOCK.lock().expect("HOME lock poisoned");
+    let _lock = HOME_LOCK.lock().await;
     let original_home = std::env::var("HOME").ok();
     let temp = tempfile::tempdir().unwrap();
     std::env::set_var("HOME", temp.path());
