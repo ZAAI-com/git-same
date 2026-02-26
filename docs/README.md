@@ -320,6 +320,10 @@ cargo test -- --ignored
 cargo test -- --nocapture
 ```
 
+### Test file organization
+
+Unit tests use colocated test files — each `foo.rs` has a companion `foo_tests.rs` in the same directory, linked via `#[path]` attribute. Integration tests live in `tests/`.
+
 ### Linting and formatting
 
 ```bash

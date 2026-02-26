@@ -77,6 +77,23 @@ Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
 `rustfmt.toml`: `max_width = 100`, `tab_spaces = 4`, edition 2021.
 
+## Testing
+
+**Convention:** Colocated test files using `#[path]` attribute. Every source file `foo.rs` has a companion `foo_tests.rs` in the same directory.
+
+In the source file:
+```rust
+#[cfg(test)]
+#[path = "foo_tests.rs"]
+mod tests;
+```
+
+The test file contains `use super::*;` and all `#[test]` / `#[tokio::test]` functions.
+
+**Do not** write inline `#[cfg(test)] mod tests { ... }` blocks — always use separate `_tests.rs` files.
+
+**Integration tests** remain in `tests/integration_test.rs`.
+
 ## CI/CD Workflows
 
 All workflows are `workflow_dispatch` (manual trigger) in `.github/workflows/`:
