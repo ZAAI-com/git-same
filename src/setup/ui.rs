@@ -255,13 +255,19 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
                 (
                     vec![
                         Span::styled(" [Enter]", blue),
+                        Span::styled(" Open  ", dim),
+                        Span::styled("[u]", blue),
                         Span::styled(" Use Folder  ", dim),
-                        Span::styled("[\u{2190}] [\u{2192}]", blue),
-                        Span::styled(" Parent/Open", dim),
+                        Span::styled("[n]", blue),
+                        Span::styled(" New Folder", dim),
                     ],
                     vec![
-                        Span::styled(" [\u{2191}] [\u{2193}]", blue),
-                        Span::styled(" Move  ", dim),
+                        Span::styled(" [\u{2190}] [\u{2191}] [\u{2193}] [\u{2192}]", blue),
+                        Span::styled(" Move/Open  ", dim),
+                        Span::styled("[h] [c] [r]", blue),
+                        Span::styled(" Jump  ", dim),
+                        Span::styled("[.]", blue),
+                        Span::styled(" Hidden  ", dim),
                         Span::styled("[Esc]", blue),
                         Span::styled(" Close  ", dim),
                         Span::styled("[q]", blue),

@@ -130,6 +130,7 @@ fn confirm_path(state: &mut SetupState) {
 
 fn open_path_browse_mode(state: &mut SetupState, seed_path: &str) {
     let dir = resolve_browse_seed(seed_path);
+    state.path_browse_info = None;
     set_browse_directory(state, dir);
     state.path_browse_mode = true;
 }
@@ -155,12 +156,18 @@ fn resolve_browse_seed(seed_path: &str) -> std::path::PathBuf {
 
 fn set_browse_directory(state: &mut SetupState, dir: std::path::PathBuf) {
     state.path_browse_current_dir = tilde_collapse(&dir.to_string_lossy());
-    state.path_browse_entries = read_browse_entries(&dir);
+    let (entries, browse_error) = read_browse_entries(&dir, state.path_browse_show_hidden);
+    state.path_browse_entries = entries;
+    state.path_browse_error = browse_error;
     state.path_browse_index = 0;
 }
 
-fn read_browse_entries(dir: &std::path::Path) -> Vec<PathBrowseEntry> {
+fn read_browse_entries(
+    dir: &std::path::Path,
+    show_hidden: bool,
+) -> (Vec<PathBrowseEntry>, Option<String>) {
     let mut entries = Vec::new();
+    let mut browse_error = None;
 
     if let Some(parent) = dir.parent() {
         entries.push(PathBrowseEntry {
@@ -170,33 +177,192 @@ fn read_browse_entries(dir: &std::path::Path) -> Vec<PathBrowseEntry> {
     }
 
     let mut children = Vec::new();
-    if let Ok(dir_entries) = std::fs::read_dir(dir) {
-        for entry in dir_entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
+    match std::fs::read_dir(dir) {
+        Ok(dir_entries) => {
+            for entry_result in dir_entries {
+                match entry_result {
+                    Ok(entry) => {
+                        let path = entry.path();
+                        if !path.is_dir() {
+                            continue;
+                        }
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if !show_hidden && name.starts_with('.') {
+                            continue;
+                        }
+                        children.push(PathBrowseEntry {
+                            label: format!("{name}/"),
+                            path: tilde_collapse(&path.to_string_lossy()),
+                        });
+                    }
+                    Err(e) => {
+                        if browse_error.is_none() {
+                            browse_error = Some(format!("Some entries could not be read: {e}"));
+                        }
+                    }
+                }
             }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue;
-            }
-            children.push(PathBrowseEntry {
-                label: format!("{name}/"),
-                path: tilde_collapse(&path.to_string_lossy()),
-            });
+        }
+        Err(e) => {
+            browse_error = Some(format!(
+                "Cannot read '{}': {e}",
+                tilde_collapse(&dir.to_string_lossy())
+            ));
         }
     }
     children.sort_by_key(|entry| entry.label.to_lowercase());
     entries.extend(children);
-    entries
+    (entries, browse_error)
 }
 
 fn close_path_browse_to_input(state: &mut SetupState) {
     state.path_browse_mode = false;
     state.path_suggestions_mode = false;
+    state.path_browse_error = None;
+    state.path_browse_info = None;
     state.path_cursor = state.base_path.len();
     state.path_completions = compute_completions(&state.base_path);
     state.path_completion_index = 0;
+}
+
+fn current_browse_dir(state: &SetupState) -> Option<std::path::PathBuf> {
+    if state.path_browse_current_dir.is_empty() {
+        return None;
+    }
+    let expanded = shellexpand::tilde(&state.path_browse_current_dir);
+    let dir = std::path::PathBuf::from(expanded.as_ref());
+    if dir.is_dir() {
+        Some(dir)
+    } else {
+        None
+    }
+}
+
+fn open_selected_browse_entry(state: &mut SetupState) {
+    if let Some(path) = state
+        .path_browse_entries
+        .get(state.path_browse_index)
+        .map(|entry| entry.path.clone())
+    {
+        let expanded = shellexpand::tilde(&path);
+        let dir = std::path::PathBuf::from(expanded.as_ref());
+        if dir.is_dir() {
+            state.path_browse_info = None;
+            set_browse_directory(state, dir);
+        } else {
+            state.path_browse_error = Some(format!("Directory no longer exists: {path}"));
+        }
+    }
+}
+
+fn use_current_browse_folder(state: &mut SetupState) {
+    if !state.path_browse_current_dir.is_empty() {
+        state.base_path = state.path_browse_current_dir.clone();
+        state.path_cursor = state.base_path.len();
+        close_path_browse_to_input(state);
+    }
+}
+
+fn jump_to_home_directory(state: &mut SetupState) {
+    match std::env::var("HOME") {
+        Ok(home) => {
+            let dir = std::path::PathBuf::from(home);
+            if dir.is_dir() {
+                state.path_browse_info = Some("Jumped to home directory".to_string());
+                set_browse_directory(state, dir);
+            } else {
+                state.path_browse_error = Some("Home directory is not accessible".to_string());
+            }
+        }
+        Err(_) => {
+            state.path_browse_error = Some("HOME environment variable is not set".to_string());
+        }
+    }
+}
+
+fn jump_to_current_directory(state: &mut SetupState) {
+    match std::env::current_dir() {
+        Ok(dir) => {
+            state.path_browse_info = Some("Jumped to current directory".to_string());
+            set_browse_directory(state, dir);
+        }
+        Err(e) => {
+            state.path_browse_error = Some(format!("Cannot read current directory: {e}"));
+        }
+    }
+}
+
+fn jump_to_root_directory(state: &mut SetupState) {
+    let Some(current) = current_browse_dir(state) else {
+        state.path_browse_error = Some("Cannot resolve current browse directory".to_string());
+        return;
+    };
+    let root = current
+        .ancestors()
+        .last()
+        .unwrap_or(current.as_path())
+        .to_path_buf();
+    state.path_browse_info = Some("Jumped to filesystem root".to_string());
+    set_browse_directory(state, root);
+}
+
+fn toggle_hidden_directories(state: &mut SetupState) {
+    state.path_browse_show_hidden = !state.path_browse_show_hidden;
+    let message = if state.path_browse_show_hidden {
+        "Showing hidden folders"
+    } else {
+        "Hiding hidden folders"
+    };
+
+    if let Some(current) = current_browse_dir(state) {
+        set_browse_directory(state, current);
+        state.path_browse_info = Some(message.to_string());
+    } else {
+        state.path_browse_error = Some("Cannot refresh browse list".to_string());
+    }
+}
+
+fn create_folder_in_current_directory(state: &mut SetupState) {
+    let Some(current) = current_browse_dir(state) else {
+        state.path_browse_error = Some("Cannot resolve current browse directory".to_string());
+        return;
+    };
+
+    let mut selected_path = None;
+    for idx in 1..=999 {
+        let name = if idx == 1 {
+            "new-folder".to_string()
+        } else {
+            format!("new-folder-{idx}")
+        };
+        let candidate = current.join(&name);
+        if !candidate.exists() {
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => {
+                    selected_path = Some(tilde_collapse(&candidate.to_string_lossy()));
+                    state.path_browse_info = Some(format!("Created '{name}'"));
+                    state.path_browse_error = None;
+                }
+                Err(e) => {
+                    state.path_browse_error = Some(format!("Cannot create folder: {e}"));
+                }
+            }
+            break;
+        }
+    }
+
+    set_browse_directory(state, current);
+    if let Some(path) = selected_path {
+        if let Some(index) = state
+            .path_browse_entries
+            .iter()
+            .position(|entry| entry.path == path)
+        {
+            state.path_browse_index = index;
+        }
+    } else if state.path_browse_error.is_none() {
+        state.path_browse_error = Some("Could not allocate a new folder name".to_string());
+    }
 }
 
 fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
@@ -211,36 +377,36 @@ fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
                 state.path_browse_index += 1;
             }
         }
-        KeyCode::Right => {
-            if let Some(path) = state
-                .path_browse_entries
-                .get(state.path_browse_index)
-                .map(|entry| entry.path.clone())
-            {
-                let expanded = shellexpand::tilde(&path);
-                let dir = std::path::PathBuf::from(expanded.as_ref());
-                if dir.is_dir() {
-                    set_browse_directory(state, dir);
-                }
-            }
+        KeyCode::Right | KeyCode::Enter => {
+            open_selected_browse_entry(state);
         }
         KeyCode::Left => {
-            let current_dir = state.path_browse_current_dir.clone();
-            let expanded = shellexpand::tilde(&current_dir);
-            let current = std::path::Path::new(expanded.as_ref());
-            if let Some(parent) = current.parent() {
-                if parent.is_dir() {
-                    set_browse_directory(state, parent.to_path_buf());
+            if let Some(current) = current_browse_dir(state) {
+                if let Some(parent) = current.parent() {
+                    if parent.is_dir() {
+                        state.path_browse_info = None;
+                        set_browse_directory(state, parent.to_path_buf());
+                    }
                 }
             }
         }
-        KeyCode::Enter => {
-            if !state.path_browse_current_dir.is_empty() {
-                state.base_path = state.path_browse_current_dir.clone();
-                state.path_cursor = state.base_path.len();
-            }
-            close_path_browse_to_input(state);
-            confirm_path(state);
+        KeyCode::Char('u') => {
+            use_current_browse_folder(state);
+        }
+        KeyCode::Char('h') => {
+            jump_to_home_directory(state);
+        }
+        KeyCode::Char('c') => {
+            jump_to_current_directory(state);
+        }
+        KeyCode::Char('r') => {
+            jump_to_root_directory(state);
+        }
+        KeyCode::Char('.') => {
+            toggle_hidden_directories(state);
+        }
+        KeyCode::Char('n') => {
+            create_folder_in_current_directory(state);
         }
         KeyCode::Esc => {
             close_path_browse_to_input(state);
@@ -640,7 +806,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn path_browser_enters_directory_and_confirms_path() {
+    async fn enter_opens_selected_directory_without_confirming_step() {
         let temp = tempfile::tempdir().unwrap();
         let alpha = temp.path().join("alpha");
         std::fs::create_dir_all(&alpha).unwrap();
@@ -668,18 +834,257 @@ mod tests {
 
         handle_key(
             &mut state,
-            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
         )
         .await;
         assert_eq!(state.path_browse_current_dir, expected);
+        assert_eq!(state.step, SetupStep::SelectPath);
+        assert!(state.path_browse_mode);
+    }
+
+    #[tokio::test]
+    async fn using_current_folder_returns_to_input_and_requires_second_confirm() {
+        let temp = tempfile::tempdir().unwrap();
+        let expected = super::tilde_collapse(&temp.path().to_string_lossy());
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+        assert!(state.path_browse_mode);
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::NONE),
+        )
+        .await;
+
+        assert_eq!(state.base_path, expected);
+        assert_eq!(state.step, SetupStep::SelectPath);
+        assert!(!state.path_browse_mode);
 
         handle_key(
             &mut state,
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
         )
         .await;
-        assert_eq!(state.base_path, expected);
         assert_eq!(state.step, SetupStep::Confirm);
-        assert!(!state.path_browse_mode);
+    }
+
+    #[tokio::test]
+    async fn quick_jumps_and_hidden_toggle_work() {
+        let temp = tempfile::tempdir().unwrap();
+        let hidden = temp.path().join(".hidden-folder");
+        let visible = temp.path().join("visible-folder");
+        std::fs::create_dir_all(&hidden).unwrap();
+        std::fs::create_dir_all(&visible).unwrap();
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+
+        assert!(!state.path_browse_show_hidden);
+        assert!(state
+            .path_browse_entries
+            .iter()
+            .all(|entry| !entry.label.starts_with(".hidden-folder")));
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
+        )
+        .await;
+        assert!(state.path_browse_show_hidden);
+        assert!(state
+            .path_browse_entries
+            .iter()
+            .any(|entry| entry.label.starts_with(".hidden-folder")));
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
+        )
+        .await;
+        assert!(!state.path_browse_show_hidden);
+        assert!(state
+            .path_browse_entries
+            .iter()
+            .all(|entry| !entry.label.starts_with(".hidden-folder")));
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+        )
+        .await;
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            state.path_browse_current_dir,
+            super::tilde_collapse(&cwd.to_string_lossy())
+        );
+
+        if let Ok(home) = std::env::var("HOME") {
+            handle_key(
+                &mut state,
+                KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+            )
+            .await;
+            assert_eq!(state.path_browse_current_dir, super::tilde_collapse(&home));
+        }
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+        )
+        .await;
+        let root = cwd.ancestors().last().unwrap();
+        assert_eq!(
+            state.path_browse_current_dir,
+            super::tilde_collapse(&root.to_string_lossy())
+        );
+    }
+
+    #[tokio::test]
+    async fn create_folder_creates_incrementing_names() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        )
+        .await;
+        assert!(temp.path().join("new-folder").is_dir());
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        )
+        .await;
+        assert!(temp.path().join("new-folder-2").is_dir());
+        assert!(state
+            .path_browse_info
+            .as_deref()
+            .unwrap_or("")
+            .contains("Created"));
+    }
+
+    #[tokio::test]
+    async fn empty_directory_renders_without_error() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+        assert!(state.path_browse_error.is_none());
+
+        let children = state
+            .path_browse_entries
+            .iter()
+            .filter(|entry| entry.label != ".. (parent)")
+            .count();
+        assert_eq!(children, 0);
+    }
+
+    #[tokio::test]
+    async fn very_large_directory_list_is_loaded() {
+        let temp = tempfile::tempdir().unwrap();
+        for i in 0..150 {
+            std::fs::create_dir_all(temp.path().join(format!("d{i:03}"))).unwrap();
+        }
+
+        let mut state = SetupState::new(&temp.path().to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = temp.path().to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+        assert!(state.path_browse_error.is_none());
+
+        let children: Vec<_> = state
+            .path_browse_entries
+            .iter()
+            .filter(|entry| entry.label.ends_with('/'))
+            .map(|entry| entry.label.clone())
+            .collect();
+        assert_eq!(children.len(), 150);
+        assert_eq!(children.first().map(String::as_str), Some("d000/"));
+        assert_eq!(children.last().map(String::as_str), Some("d149/"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unreadable_directory_surfaces_inline_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let locked = temp.path().join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+        let mut perms = std::fs::metadata(&locked).unwrap().permissions();
+        perms.set_mode(0o000);
+        std::fs::set_permissions(&locked, perms).unwrap();
+
+        // If current runtime user can still read, skip this check.
+        if std::fs::read_dir(&locked).is_ok() {
+            let mut reset = std::fs::metadata(&locked).unwrap().permissions();
+            reset.set_mode(0o700);
+            std::fs::set_permissions(&locked, reset).unwrap();
+            return;
+        }
+
+        let mut state = SetupState::new(&locked.to_string_lossy());
+        state.step = SetupStep::SelectPath;
+        state.path_suggestions_mode = false;
+        state.base_path = locked.to_string_lossy().to_string();
+        state.path_cursor = state.base_path.len();
+
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+        )
+        .await;
+        assert!(state.path_browse_error.is_some());
+
+        let mut reset = std::fs::metadata(&locked).unwrap().permissions();
+        reset.set_mode(0o700);
+        std::fs::set_permissions(&locked, reset).unwrap();
     }
 }

@@ -97,6 +97,9 @@ pub struct SetupState {
     pub path_browse_current_dir: String,
     pub path_browse_entries: Vec<PathBrowseEntry>,
     pub path_browse_index: usize,
+    pub path_browse_show_hidden: bool,
+    pub path_browse_error: Option<String>,
+    pub path_browse_info: Option<String>,
 
     // Step 5: Confirm
     pub workspace_name: String,
@@ -197,6 +200,9 @@ impl SetupState {
             path_browse_current_dir: String::new(),
             path_browse_entries: Vec::new(),
             path_browse_index: 0,
+            path_browse_show_hidden: false,
+            path_browse_error: None,
+            path_browse_info: None,
             orgs: Vec::new(),
             org_index: 0,
             org_loading: false,
@@ -278,6 +284,9 @@ impl SetupState {
         self.path_browse_current_dir.clear();
         self.path_browse_entries.clear();
         self.path_browse_index = 0;
+        self.path_browse_show_hidden = false;
+        self.path_browse_error = None;
+        self.path_browse_info = None;
     }
 
     /// The 1-based step number for display (Welcome is not counted).
@@ -370,6 +379,9 @@ mod tests {
         assert!(state.path_suggestions_mode);
         assert!(!state.path_browse_mode);
         assert!(state.path_browse_entries.is_empty());
+        assert!(!state.path_browse_show_hidden);
+        assert!(state.path_browse_error.is_none());
+        assert!(state.path_browse_info.is_none());
         assert!(state.path_suggestions.is_empty());
         assert_eq!(state.tick_count, 0);
         assert!(!state.is_first_setup);

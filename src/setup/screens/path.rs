@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let list_items = if state.path_browse_mode {
-        state.path_browse_entries.len() + 2
+        state.path_browse_entries.len() + 5
     } else if state.path_suggestions_mode {
         state.path_suggestions.len()
     } else {
@@ -127,7 +127,13 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 }
 
 fn render_browse(state: &SetupState, frame: &mut Frame, area: Rect) {
-    let mut lines = vec![
+    let hidden_state = if state.path_browse_show_hidden {
+        "on"
+    } else {
+        "off"
+    };
+
+    let mut lines: Vec<Line> = vec![
         Line::from(Span::styled(
             "  Folder Navigator:",
             Style::default().fg(Color::DarkGray),
@@ -136,15 +142,33 @@ fn render_browse(state: &SetupState, frame: &mut Frame, area: Rect) {
             format!("    {}", state.path_browse_current_dir),
             Style::default().fg(Color::Cyan),
         )),
+        Line::from(Span::styled(
+            format!("    Hidden folders: {hidden_state}  (press . to toggle)"),
+            Style::default().fg(Color::DarkGray),
+        )),
     ];
+
+    if let Some(ref info) = state.path_browse_info {
+        lines.push(Line::from(Span::styled(
+            format!("    {}", info),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    if let Some(ref err) = state.path_browse_error {
+        lines.push(Line::from(Span::styled(
+            format!("    {}", err),
+            Style::default().fg(Color::Red),
+        )));
+    }
 
     if state.path_browse_entries.is_empty() {
         lines.push(Line::from(Span::styled(
-            "    (No visible subfolders)",
+            "    (No folders available)",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        let visible = area.height.saturating_sub(2) as usize;
+        let visible = area.height.saturating_sub(lines.len() as u16) as usize;
         let start = state
             .path_browse_index
             .saturating_sub(visible.saturating_sub(1));
