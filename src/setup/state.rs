@@ -86,6 +86,7 @@ pub struct SetupState {
     pub orgs: Vec<OrgEntry>,
     pub org_index: usize,
     pub org_loading: bool,
+    pub org_discovery_in_progress: bool,
     pub org_error: Option<String>,
 
     // Step 4: Path
@@ -204,7 +205,7 @@ impl SetupState {
             auth_token: None,
             base_path,
             path_cursor,
-            path_suggestions_mode: true,
+            path_suggestions_mode: false,
             path_suggestions: Vec::new(),
             path_suggestion_index: 0,
             path_completions: Vec::new(),
@@ -219,6 +220,7 @@ impl SetupState {
             orgs: Vec::new(),
             org_index: 0,
             org_loading: false,
+            org_discovery_in_progress: false,
             org_error: None,
             workspace_name: String::new(),
             name_editing: false,
@@ -254,49 +256,14 @@ impl SetupState {
 
     /// Populate the path suggestions list for the SelectPath step.
     pub fn populate_path_suggestions(&mut self) {
-        let mut suggestions = Vec::new();
-
-        // 1. Current path (always first — this is the default)
-        suggestions.push(PathSuggestion {
+        // Keep step 4 path fixed unless the user explicitly selects a folder
+        // from the folder navigator popup.
+        self.path_suggestions = vec![PathSuggestion {
             path: self.base_path.clone(),
-            label: "current directory".to_string(),
-        });
-
-        // 2. Common developer directories (only if they exist and differ)
-        for candidate in &[
-            "~/Git-Same/GitHub",
-            "~/Developer",
-            "~/Projects",
-            "~/repos",
-            "~/code",
-        ] {
-            let expanded = shellexpand::tilde(candidate);
-            let path = std::path::Path::new(expanded.as_ref());
-            let expanded_candidate = expanded.as_ref().to_string();
-            if path.is_dir()
-                && !suggestions.iter().any(|s| {
-                    s.path == *candidate
-                        || shellexpand::tilde(&s.path).as_ref() == expanded_candidate
-                })
-            {
-                suggestions.push(PathSuggestion {
-                    path: candidate.to_string(),
-                    label: String::new(),
-                });
-            }
-        }
-
-        // 3. Home directory (always last)
-        if !suggestions.iter().any(|s| s.path == "~") {
-            suggestions.push(PathSuggestion {
-                path: "~".to_string(),
-                label: "home".to_string(),
-            });
-        }
-
-        self.path_suggestions = suggestions;
+            label: "terminal folder".to_string(),
+        }];
         self.path_suggestion_index = 0;
-        self.path_suggestions_mode = true;
+        self.path_suggestions_mode = false;
         self.path_browse_mode = false;
         self.path_browse_current_dir.clear();
         self.path_browse_entries.clear();
@@ -304,6 +271,9 @@ impl SetupState {
         self.path_browse_show_hidden = false;
         self.path_browse_error = None;
         self.path_browse_info = None;
+        self.path_completions.clear();
+        self.path_completion_index = 0;
+        self.path_cursor = self.base_path.len();
     }
 
     /// The 1-based step number for display (Welcome is not counted).
@@ -330,6 +300,7 @@ impl SetupState {
             SetupStep::SelectProvider => SetupStep::Authenticate,
             SetupStep::Authenticate => {
                 self.org_loading = true;
+                self.org_discovery_in_progress = false;
                 self.orgs.clear();
                 self.org_index = 0;
                 self.org_error = None;

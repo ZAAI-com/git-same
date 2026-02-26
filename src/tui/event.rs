@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::warn;
 
+use crate::setup::state::OrgEntry;
 use crate::types::{OpSummary, OwnedRepo};
 
 use super::app::{CheckEntry, Operation, RepoEntry};
@@ -35,6 +36,10 @@ pub enum BackendMessage {
     DiscoveryComplete(Vec<OwnedRepo>),
     /// Discovery failed.
     DiscoveryError(String),
+    /// Setup wizard org discovery complete.
+    SetupOrgsDiscovered(Vec<OrgEntry>),
+    /// Setup wizard org discovery failed.
+    SetupOrgsError(String),
     /// Operation phase started with total and per-phase breakdown.
     OperationStarted {
         operation: Operation,

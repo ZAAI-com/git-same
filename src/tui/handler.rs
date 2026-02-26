@@ -62,12 +62,24 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
             if app.screen == Screen::WorkspaceSetup {
                 if let Some(ref mut setup) = app.setup_state {
                     setup.tick_count = setup.tick_count.wrapping_add(1);
-                    if setup.step == SetupStep::SelectOrgs && setup.org_loading {
-                        crate::setup::handler::handle_key(
-                            setup,
-                            KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-                        )
-                        .await;
+                    if setup.step == SetupStep::SelectOrgs
+                        && setup.org_loading
+                        && !setup.org_discovery_in_progress
+                    {
+                        if let Some(token) = setup.auth_token.clone() {
+                            setup.org_discovery_in_progress = true;
+                            let provider_entry =
+                                setup.build_workspace_provider().to_provider_entry();
+                            super::backend::spawn_setup_org_discovery(
+                                provider_entry,
+                                token,
+                                backend_tx.clone(),
+                            );
+                        } else {
+                            setup.org_error = Some("Not authenticated".to_string());
+                            setup.org_loading = false;
+                            setup.org_discovery_in_progress = false;
+                        }
                     }
                 }
             }
@@ -290,6 +302,26 @@ fn handle_backend_message(
         BackendMessage::DiscoveryError(msg) => {
             app.operation_state = OperationState::Idle;
             app.error_message = Some(msg);
+        }
+        BackendMessage::SetupOrgsDiscovered(orgs) => {
+            if let Some(setup) = app.setup_state.as_mut() {
+                setup.org_discovery_in_progress = false;
+                if setup.step == SetupStep::SelectOrgs {
+                    setup.orgs = orgs;
+                    setup.org_index = 0;
+                    setup.org_loading = false;
+                    setup.org_error = None;
+                }
+            }
+        }
+        BackendMessage::SetupOrgsError(msg) => {
+            if let Some(setup) = app.setup_state.as_mut() {
+                setup.org_discovery_in_progress = false;
+                if setup.step == SetupStep::SelectOrgs {
+                    setup.org_loading = false;
+                    setup.org_error = Some(msg);
+                }
+            }
         }
         BackendMessage::OperationStarted {
             operation,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::setup::state::OrgEntry;
 use crate::tui::app::{CheckEntry, Operation, RepoEntry};
 use crate::types::OpSummary;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -57,6 +58,12 @@ fn backend_message_variants_construct_and_clone() {
         BackendMessage::OrgComplete("acme".to_string(), 2),
         BackendMessage::DiscoveryComplete(vec![repo.clone()]),
         BackendMessage::DiscoveryError("err".to_string()),
+        BackendMessage::SetupOrgsDiscovered(vec![OrgEntry {
+            name: "acme".to_string(),
+            repo_count: 2,
+            selected: true,
+        }]),
+        BackendMessage::SetupOrgsError("err".to_string()),
         BackendMessage::OperationStarted {
             operation: Operation::Sync,
             total: 3,

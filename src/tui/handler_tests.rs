@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::{Config, WorkspaceConfig};
-use crate::setup::state::{SetupState, SetupStep};
+use crate::setup::state::{OrgEntry, SetupState, SetupStep};
+use crate::tui::event::{AppEvent, BackendMessage};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -63,4 +64,35 @@ async fn setup_right_moves_to_next_step() {
         app.setup_state.as_ref().map(|s| s.step),
         Some(SetupStep::Authenticate)
     );
+}
+
+#[tokio::test]
+async fn setup_org_discovery_backend_message_populates_state() {
+    let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+    let mut app = App::new(Config::default(), vec![ws]);
+    let (tx, _rx) = unbounded_channel();
+    app.screen = Screen::WorkspaceSetup;
+    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+    let setup = app.setup_state.as_mut().expect("setup state");
+    setup.step = SetupStep::SelectOrgs;
+    setup.org_loading = true;
+    setup.org_discovery_in_progress = true;
+
+    handle_event(
+        &mut app,
+        AppEvent::Backend(BackendMessage::SetupOrgsDiscovered(vec![OrgEntry {
+            name: "acme".to_string(),
+            repo_count: 3,
+            selected: true,
+        }])),
+        &tx,
+    )
+    .await;
+
+    let setup = app.setup_state.as_ref().expect("setup state");
+    assert!(!setup.org_loading);
+    assert!(!setup.org_discovery_in_progress);
+    assert!(setup.org_error.is_none());
+    assert_eq!(setup.orgs.len(), 1);
+    assert_eq!(setup.orgs[0].name, "acme");
 }

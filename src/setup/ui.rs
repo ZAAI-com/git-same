@@ -16,7 +16,7 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
     let path_popup_active = state.step == SetupStep::SelectPath && state.path_browse_mode;
 
     // Graceful degradation for small terminals
-    let show_banner = height >= 30 && !path_popup_active;
+    let show_banner = height >= 30;
     let show_progress = height >= 20;
 
     let mut constraints = Vec::new();
@@ -270,19 +270,10 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         SetupStep::SelectPath => {
             if state.path_browse_mode {
                 vec![Span::styled("Folder popup active", dim)]
-            } else if state.path_suggestions_mode {
-                vec![
-                    Span::styled("[Tab]", blue),
-                    Span::styled(" Edit  ", dim),
-                    Span::styled("[b]", blue),
-                    Span::styled(" Browse", dim),
-                ]
             } else {
                 vec![
-                    Span::styled("[Tab]", blue),
-                    Span::styled(" Complete  ", dim),
-                    Span::styled("[Ctrl+b]", blue),
-                    Span::styled(" Browse", dim),
+                    Span::styled("[b]", blue),
+                    Span::styled(" Open Folder Navigator", dim),
                 ]
             }
         }
@@ -338,21 +329,14 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         SetupStep::SelectPath => {
             if state.path_browse_mode {
                 vec![Span::styled("Use popup arrows and Enter", dim)]
-            } else if state.path_suggestions_mode {
-                vec![
-                    Span::styled("[↑] [↓]", blue),
-                    Span::styled(" Move  ", dim),
-                    Span::styled("[←] [→]", blue),
-                    Span::styled(" Step  ", dim),
-                    Span::styled("[Enter]", blue),
-                    Span::styled(" Next Step", dim),
-                ]
             } else {
                 vec![
-                    Span::styled("[←] [→]", blue),
-                    Span::styled(" Step  ", dim),
+                    Span::styled("[←]", blue),
+                    Span::styled(" Back Step  ", dim),
                     Span::styled("[Enter]", blue),
-                    Span::styled(" Next Step", dim),
+                    Span::styled(" Next Step  ", dim),
+                    Span::styled("[b]", blue),
+                    Span::styled(" Browse folders", dim),
                 ]
             }
         }

@@ -9,7 +9,7 @@ fn test_new_state() {
     assert_eq!(state.provider_choices.len(), 6);
     assert!(state.provider_choices[0].available);
     assert!(!state.provider_choices[2].available); // GitLab
-    assert!(state.path_suggestions_mode);
+    assert!(!state.path_suggestions_mode);
     assert!(!state.path_browse_mode);
     assert!(state.path_browse_entries.is_empty());
     assert!(!state.path_browse_show_hidden);
@@ -38,14 +38,10 @@ fn test_non_first_setup_starts_with_provider() {
 fn test_populate_path_suggestions() {
     let mut state = SetupState::new("~/test-path");
     state.populate_path_suggestions();
-    // First suggestion is always the current directory (default)
-    assert!(!state.path_suggestions.is_empty());
+    assert_eq!(state.path_suggestions.len(), 1);
     assert_eq!(state.path_suggestions[0].path, "~/test-path");
-    assert_eq!(state.path_suggestions[0].label, "current directory");
-    // Last suggestion is always home
-    let last = state.path_suggestions.last().unwrap();
-    assert_eq!(last.path, "~");
-    assert_eq!(last.label, "home");
+    assert_eq!(state.path_suggestions[0].label, "terminal folder");
+    assert!(!state.path_suggestions_mode);
 }
 
 #[test]
