@@ -12,9 +12,152 @@ use ratatui::{
     Frame,
 };
 
+use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc::UnboundedSender;
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::banner::render_banner;
-use crate::config::{WorkspaceConfig, WorkspaceManager};
-use crate::tui::app::App;
+use crate::config::{Config, WorkspaceConfig, WorkspaceManager};
+use crate::setup::state::SetupState;
+use crate::tui::app::{App, Screen};
+use crate::tui::event::{AppEvent, BackendMessage};
+
+#[cfg(test)]
+static OPEN_WORKSPACE_FOLDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+// ── Key handler ─────────────────────────────────────────────────────────────
+
+pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
+    let num_ws = app.workspaces.len();
+    let total_entries = num_ws + 1; // workspaces + "Create Workspace"
+
+    match key.code {
+        // Arrows: scroll detail pane when config is expanded, navigate sidebar otherwise
+        KeyCode::Down if app.settings_config_expanded => {
+            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_add(1);
+        }
+        KeyCode::Up if app.settings_config_expanded => {
+            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_sub(1);
+        }
+        // Tab/arrows navigate the sidebar
+        KeyCode::Down | KeyCode::Right | KeyCode::Tab if total_entries > 0 => {
+            app.workspace_index = (app.workspace_index + 1) % total_entries;
+            app.settings_config_expanded = false;
+            app.workspace_detail_scroll = 0;
+        }
+        KeyCode::Up | KeyCode::Left if total_entries > 0 => {
+            app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
+            app.settings_config_expanded = false;
+            app.workspace_detail_scroll = 0;
+        }
+        KeyCode::Enter => {
+            if app.workspace_index < num_ws {
+                // On a workspace entry
+                let is_active = app
+                    .active_workspace
+                    .as_ref()
+                    .map(|aw| aw.name == app.workspaces[app.workspace_index].name)
+                    .unwrap_or(false);
+                if is_active {
+                    // Toggle config expansion
+                    app.settings_config_expanded = !app.settings_config_expanded;
+                    app.workspace_detail_scroll = 0;
+                } else {
+                    // Switch active workspace and go to dashboard
+                    app.select_workspace(app.workspace_index);
+                    app.screen = Screen::Dashboard;
+                    app.screen_stack.clear();
+                }
+            } else {
+                // "Create Workspace" entry
+                let default_path = std::env::current_dir()
+                    .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                    .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+                app.setup_state = Some(SetupState::new(&default_path));
+                app.navigate_to(Screen::WorkspaceSetup);
+            }
+        }
+        KeyCode::Char('n') => {
+            // Shortcut to create workspace
+            let default_path = std::env::current_dir()
+                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+            app.setup_state = Some(SetupState::new(&default_path));
+            app.navigate_to(Screen::WorkspaceSetup);
+        }
+        KeyCode::Char('d') if app.workspace_index < num_ws => {
+            // Set default workspace
+            if let Some(ws) = app.workspaces.get(app.workspace_index) {
+                let ws_name = ws.name.clone();
+                let new_default_name = match next_default_workspace_name(
+                    app.config.default_workspace.as_deref(),
+                    &ws_name,
+                ) {
+                    Some(name) => name,
+                    None => {
+                        return;
+                    }
+                };
+
+                let new_default = Some(new_default_name);
+                let tx = backend_tx.clone();
+                let default_clone = new_default.clone();
+                tokio::spawn(async move {
+                    match Config::save_default_workspace(default_clone.as_deref()) {
+                        Ok(()) => {
+                            let _ = tx.send(AppEvent::Backend(
+                                BackendMessage::DefaultWorkspaceUpdated(default_clone),
+                            ));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppEvent::Backend(
+                                BackendMessage::DefaultWorkspaceError(format!("{}", e)),
+                            ));
+                        }
+                    }
+                });
+            }
+        }
+        KeyCode::Char('f') if app.workspace_index < num_ws => {
+            // Open workspace folder
+            if let Some(ws) = app.workspaces.get(app.workspace_index) {
+                let path = ws.expanded_base_path();
+                open_workspace_folder(&path);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn next_default_workspace_name(
+    current_default: Option<&str>,
+    selected_workspace: &str,
+) -> Option<String> {
+    if current_default == Some(selected_workspace) {
+        None
+    } else {
+        Some(selected_workspace.to_string())
+    }
+}
+
+#[cfg(not(test))]
+fn open_workspace_folder(path: &std::path::Path) {
+    let _ = std::process::Command::new("open").arg(path).spawn();
+}
+
+#[cfg(test)]
+fn open_workspace_folder(_path: &std::path::Path) {
+    OPEN_WORKSPACE_FOLDER_CALLS.fetch_add(1, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+fn take_open_workspace_folder_call_count() -> usize {
+    OPEN_WORKSPACE_FOLDER_CALLS.swap(0, Ordering::SeqCst)
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
@@ -532,6 +675,8 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tokio::sync::mpsc::error::TryRecvError;
 
     #[test]
     fn wrap_comma_separated_values_wraps_and_preserves_order() {
@@ -551,5 +696,83 @@ mod tests {
     fn wrap_comma_separated_values_empty_means_all() {
         let lines = wrap_comma_separated_values(&[], 20);
         assert_eq!(lines, vec!["all".to_string()]);
+    }
+
+    fn build_workspace_app(default_workspace: Option<&str>) -> App {
+        let mut config = Config::default();
+        config.default_workspace = default_workspace.map(ToString::to_string);
+
+        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
+        let mut app = App::new(config, vec![ws.clone()]);
+        app.screen = Screen::Workspaces;
+        app.workspace_index = 0;
+        app.active_workspace = Some(ws);
+        app
+    }
+
+    #[tokio::test]
+    async fn workspace_key_f_opens_folder_for_selected_workspace() {
+        let mut app = build_workspace_app(None);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = take_open_workspace_folder_call_count();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(take_open_workspace_folder_call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn workspace_key_o_is_noop() {
+        let mut app = build_workspace_app(None);
+        let before_index = app.workspace_index;
+        let before_scroll = app.workspace_detail_scroll;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _ = take_open_workspace_folder_call_count();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.workspace_index, before_index);
+        assert_eq!(app.workspace_detail_scroll, before_scroll);
+        assert_eq!(take_open_workspace_folder_call_count(), 0);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[tokio::test]
+    async fn workspace_key_d_does_not_clear_when_already_default() {
+        let mut app = build_workspace_app(Some("test-ws"));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            &tx,
+        )
+        .await;
+
+        assert_eq!(app.config.default_workspace.as_deref(), Some("test-ws"));
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+    }
+
+    #[test]
+    fn next_default_workspace_name_is_set_only() {
+        assert_eq!(
+            next_default_workspace_name(Some("current"), "next"),
+            Some("next".to_string())
+        );
+        assert_eq!(next_default_workspace_name(Some("same"), "same"), None);
+        assert_eq!(
+            next_default_workspace_name(None, "selected"),
+            Some("selected".to_string())
+        );
     }
 }

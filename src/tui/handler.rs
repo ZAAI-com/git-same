@@ -8,15 +8,13 @@ use super::app::{
     SyncLogStatus,
 };
 use super::event::{AppEvent, BackendMessage};
+use super::screens;
 use crate::cache::SyncHistoryManager;
-use crate::config::{Config, WorkspaceManager};
-use crate::setup::state::{SetupOutcome, SetupState, SetupStep};
+use crate::config::WorkspaceManager;
+use crate::setup::state::{SetupOutcome, SetupStep};
 
-#[cfg(test)]
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-#[cfg(test)]
-static OPEN_WORKSPACE_FOLDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+const MAX_THROUGHPUT_SAMPLES: usize = 240;
+const MAX_LOG_LINES: usize = 5_000;
 
 /// Handle an incoming event, updating app state and optionally spawning backend work.
 pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &UnboundedSender<AppEvent>) {
@@ -24,8 +22,8 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
         AppEvent::Terminal(key) => handle_key(app, key, backend_tx).await,
         AppEvent::Backend(msg) => handle_backend_message(app, msg, backend_tx),
         AppEvent::Tick => {
-            // Increment animation tick counter on Progress screen during active ops
-            if app.screen == Screen::Progress
+            // Increment animation tick counter on Sync screen during active ops
+            if app.screen == Screen::Sync
                 && matches!(
                     &app.operation_state,
                     OperationState::Discovering { .. } | OperationState::Running { .. }
@@ -44,12 +42,16 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                     {
                         let delta = completed.saturating_sub(*last_sample_completed) as u64;
                         throughput_samples.push(delta);
+                        if throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
+                            let drop_count = throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
+                            throughput_samples.drain(0..drop_count);
+                        }
                         *last_sample_completed = completed;
                     }
                 }
             }
             // Drive setup wizard tick and org discovery on tick
-            if app.screen == Screen::SetupWizard {
+            if app.screen == Screen::WorkspaceSetup {
                 if let Some(ref mut setup) = app.setup_state {
                     setup.tick_count = setup.tick_count.wrapping_add(1);
                     if setup.step == SetupStep::SelectOrgs && setup.org_loading {
@@ -128,8 +130,8 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
         return;
     }
 
-    // SetupWizard handles its own keys (q is valid in path input, Esc navigates steps)
-    if app.screen == Screen::SetupWizard {
+    // WorkspaceSetup handles its own keys (q is valid in path input, Esc navigates steps)
+    if app.screen == Screen::WorkspaceSetup {
         // Only Ctrl+C quits the whole app from setup
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             app.should_quit = true;
@@ -156,18 +158,23 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
     app.quit_pending = false;
 
     if key.code == KeyCode::Esc {
-        // On Progress screen, collapse expanded entry before navigating back
-        if app.screen == Screen::Progress && app.expanded_repo.is_some() {
+        // On Sync screen, collapse expanded entry before navigating back
+        if app.screen == Screen::Sync && app.expanded_repo.is_some() {
             app.expanded_repo = None;
             app.repo_commits.clear();
             return;
         }
+        // Ensure Sync can always minimize back to Dashboard.
+        if app.screen == Screen::Sync && app.screen_stack.is_empty() {
+            app.screen = Screen::Dashboard;
+            return;
+        }
         // Don't go back from entry points (no screen stack)
-        if app.screen == Screen::InitCheck {
+        if app.screen == Screen::SystemCheck {
             return;
         }
         // Workspace screen: only go back if navigated to (has screen stack)
-        if app.screen == Screen::Workspace && app.screen_stack.is_empty() {
+        if app.screen == Screen::Workspaces && app.screen_stack.is_empty() {
             return;
         }
         app.go_back();
@@ -176,95 +183,12 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
 
     // Screen-specific keybindings
     match app.screen {
-        Screen::InitCheck => handle_init_check_key(app, key, backend_tx).await,
-        Screen::SetupWizard => unreachable!(), // handled above
-        Screen::Workspace => {
-            handle_workspace_key(app, key, backend_tx).await;
-        }
-        Screen::Dashboard => handle_dashboard_key(app, key, backend_tx).await,
-        Screen::Progress => handle_progress_key(app, key, backend_tx),
-        Screen::Settings => handle_settings_key(app, key),
-    }
-}
-
-async fn handle_init_check_key(
-    app: &mut App,
-    key: KeyEvent,
-    backend_tx: &UnboundedSender<AppEvent>,
-) {
-    match key.code {
-        KeyCode::Enter if !app.checks_loading => {
-            // Run requirement checks
-            app.checks_loading = true;
-            let results = crate::checks::check_requirements().await;
-            app.check_results = results
-                .into_iter()
-                .map(|r| CheckEntry {
-                    name: r.name,
-                    passed: r.passed,
-                    message: r.message,
-                    critical: r.critical,
-                })
-                .collect();
-            app.checks_loading = false;
-        }
-        KeyCode::Char('c') if !app.check_results.is_empty() && !app.config_created => {
-            // Create config file
-            let tx = backend_tx.clone();
-            tokio::spawn(async move {
-                match Config::default_path() {
-                    Ok(config_path) => {
-                        if config_path.exists() {
-                            let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
-                                format!(
-                                    "Config already exists at {}. Delete it first to recreate.",
-                                    config_path.display()
-                                ),
-                            )));
-                            return;
-                        }
-                        if let Some(parent) = config_path.parent() {
-                            if let Err(e) = std::fs::create_dir_all(parent) {
-                                let _ =
-                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
-                                        format!("Failed to create config directory: {}", e),
-                                    )));
-                                return;
-                            }
-                        }
-                        let default_config = Config::default_toml();
-                        match std::fs::write(&config_path, default_config) {
-                            Ok(()) => {
-                                let _ =
-                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigCreated(
-                                        config_path.display().to_string(),
-                                    )));
-                            }
-                            Err(e) => {
-                                let _ =
-                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
-                                        format!("Failed to write config: {}", e),
-                                    )));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
-                            format!("Cannot determine config path: {}", e),
-                        )));
-                    }
-                }
-            });
-        }
-        KeyCode::Char('s') => {
-            // Launch setup wizard
-            let default_path = std::env::current_dir()
-                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
-                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-            app.setup_state = Some(SetupState::new(&default_path));
-            app.navigate_to(Screen::SetupWizard);
-        }
-        _ => {}
+        Screen::SystemCheck => screens::system_check::handle_key(app, key, backend_tx).await,
+        Screen::WorkspaceSetup => unreachable!(), // handled above
+        Screen::Workspaces => screens::workspaces::handle_key(app, key, backend_tx).await,
+        Screen::Dashboard => screens::dashboard::handle_key(app, key, backend_tx).await,
+        Screen::Sync => screens::sync::handle_key(app, key, backend_tx),
+        Screen::Settings => screens::settings::handle_key(app, key),
     }
 }
 
@@ -290,422 +214,11 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
             app.screen = Screen::Dashboard;
             app.screen_stack.clear();
         } else {
-            // Cancelled — go to InitCheck
+            // Cancelled — go to SystemCheck
             app.setup_state = None;
-            app.screen = Screen::InitCheck;
+            app.screen = Screen::SystemCheck;
             app.screen_stack.clear();
         }
-    }
-}
-
-async fn handle_workspace_key(
-    app: &mut App,
-    key: KeyEvent,
-    backend_tx: &UnboundedSender<AppEvent>,
-) {
-    let num_ws = app.workspaces.len();
-    let total_entries = num_ws + 1; // workspaces + "Create Workspace"
-
-    match key.code {
-        // Arrows: scroll detail pane when config is expanded, navigate sidebar otherwise
-        KeyCode::Down if app.settings_config_expanded => {
-            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_add(1);
-        }
-        KeyCode::Up if app.settings_config_expanded => {
-            app.workspace_detail_scroll = app.workspace_detail_scroll.saturating_sub(1);
-        }
-        // Tab/arrows navigate the sidebar
-        KeyCode::Down | KeyCode::Right | KeyCode::Tab if total_entries > 0 => {
-            app.workspace_index = (app.workspace_index + 1) % total_entries;
-            app.settings_config_expanded = false;
-            app.workspace_detail_scroll = 0;
-        }
-        KeyCode::Up | KeyCode::Left if total_entries > 0 => {
-            app.workspace_index = (app.workspace_index + total_entries - 1) % total_entries;
-            app.settings_config_expanded = false;
-            app.workspace_detail_scroll = 0;
-        }
-        KeyCode::Enter => {
-            if app.workspace_index < num_ws {
-                // On a workspace entry
-                let is_active = app
-                    .active_workspace
-                    .as_ref()
-                    .map(|aw| aw.name == app.workspaces[app.workspace_index].name)
-                    .unwrap_or(false);
-                if is_active {
-                    // Toggle config expansion
-                    app.settings_config_expanded = !app.settings_config_expanded;
-                    app.workspace_detail_scroll = 0;
-                } else {
-                    // Switch active workspace and go to dashboard
-                    app.select_workspace(app.workspace_index);
-                    app.screen = Screen::Dashboard;
-                    app.screen_stack.clear();
-                }
-            } else {
-                // "Create Workspace" entry
-                let default_path = std::env::current_dir()
-                    .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
-                    .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-                app.setup_state = Some(SetupState::new(&default_path));
-                app.navigate_to(Screen::SetupWizard);
-            }
-        }
-        KeyCode::Char('n') => {
-            // Shortcut to create workspace
-            let default_path = std::env::current_dir()
-                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
-                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-            app.setup_state = Some(SetupState::new(&default_path));
-            app.navigate_to(Screen::SetupWizard);
-        }
-        KeyCode::Char('d') if app.workspace_index < num_ws => {
-            // Set default workspace
-            if let Some(ws) = app.workspaces.get(app.workspace_index) {
-                let ws_name = ws.name.clone();
-                let new_default_name = match next_default_workspace_name(
-                    app.config.default_workspace.as_deref(),
-                    &ws_name,
-                ) {
-                    Some(name) => name,
-                    None => {
-                        return;
-                    }
-                };
-
-                let new_default = Some(new_default_name);
-                let tx = backend_tx.clone();
-                let default_clone = new_default.clone();
-                tokio::spawn(async move {
-                    match Config::save_default_workspace(default_clone.as_deref()) {
-                        Ok(()) => {
-                            let _ = tx.send(AppEvent::Backend(
-                                BackendMessage::DefaultWorkspaceUpdated(default_clone),
-                            ));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(AppEvent::Backend(
-                                BackendMessage::DefaultWorkspaceError(format!("{}", e)),
-                            ));
-                        }
-                    }
-                });
-            }
-        }
-        KeyCode::Char('f') if app.workspace_index < num_ws => {
-            // Open workspace folder
-            if let Some(ws) = app.workspaces.get(app.workspace_index) {
-                let path = ws.expanded_base_path();
-                open_workspace_folder(&path);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn next_default_workspace_name(
-    current_default: Option<&str>,
-    selected_workspace: &str,
-) -> Option<String> {
-    if current_default == Some(selected_workspace) {
-        None
-    } else {
-        Some(selected_workspace.to_string())
-    }
-}
-
-#[cfg(not(test))]
-fn open_workspace_folder(path: &std::path::Path) {
-    let _ = std::process::Command::new("open").arg(path).spawn();
-}
-
-#[cfg(test)]
-fn open_workspace_folder(_path: &std::path::Path) {
-    OPEN_WORKSPACE_FOLDER_CALLS.fetch_add(1, Ordering::SeqCst);
-}
-
-#[cfg(test)]
-fn take_open_workspace_folder_call_count() -> usize {
-    OPEN_WORKSPACE_FOLDER_CALLS.swap(0, Ordering::SeqCst)
-}
-
-async fn handle_dashboard_key(
-    app: &mut App,
-    key: KeyEvent,
-    backend_tx: &UnboundedSender<AppEvent>,
-) {
-    match key.code {
-        KeyCode::Char('s') => {
-            start_operation(app, Operation::Sync, backend_tx);
-        }
-        KeyCode::Char('t') => {
-            app.last_status_scan = None; // Force immediate refresh
-            app.status_loading = true;
-            start_operation(app, Operation::Status, backend_tx);
-        }
-        // Tab shortcuts
-        KeyCode::Char('o') => {
-            app.stat_index = 0;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('r') => {
-            app.stat_index = 1;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('c') => {
-            app.stat_index = 2;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('b') => {
-            app.stat_index = 3;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('a') => {
-            app.stat_index = 4;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('u') => {
-            app.stat_index = 5;
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Char('e') => {
-            app.navigate_to(Screen::Settings);
-        }
-        KeyCode::Char('w') => {
-            app.navigate_to(Screen::Workspace);
-        }
-        KeyCode::Char('i') => {
-            app.navigate_to(Screen::InitCheck);
-        }
-        KeyCode::Char('/') => {
-            app.filter_active = true;
-            app.filter_text.clear();
-            app.stat_index = 1;
-            app.dashboard_table_state.select(Some(0));
-        }
-        // Tab navigation (left/right between stat boxes)
-        KeyCode::Left => {
-            app.stat_index = app.stat_index.saturating_sub(1);
-            app.dashboard_table_state.select(Some(0));
-        }
-        KeyCode::Right => {
-            if app.stat_index < 5 {
-                app.stat_index += 1;
-                app.dashboard_table_state.select(Some(0));
-            }
-        }
-        // List navigation (up/down within tab content)
-        KeyCode::Down => {
-            let count = dashboard_tab_item_count(app);
-            if count > 0 {
-                let current = app.dashboard_table_state.selected().unwrap_or(0);
-                if current + 1 < count {
-                    app.dashboard_table_state.select(Some(current + 1));
-                }
-            }
-        }
-        KeyCode::Up => {
-            let count = dashboard_tab_item_count(app);
-            if count > 0 {
-                let current = app.dashboard_table_state.selected().unwrap_or(0);
-                app.dashboard_table_state
-                    .select(Some(current.saturating_sub(1)));
-            }
-        }
-        KeyCode::Enter => {
-            // Open the selected repo's folder
-            if let Some(path) = dashboard_selected_repo_path(app) {
-                let _ = std::process::Command::new("open").arg(&path).spawn();
-            }
-        }
-        _ => {}
-    }
-}
-
-fn handle_settings_key(app: &mut App, key: KeyEvent) {
-    let num_items = 2; // Requirements, Options
-    match key.code {
-        KeyCode::Tab | KeyCode::Down => {
-            app.settings_index = (app.settings_index + 1) % num_items;
-        }
-        KeyCode::Up => {
-            app.settings_index = (app.settings_index + num_items - 1) % num_items;
-        }
-        KeyCode::Char('c') => {
-            // Open config directory in Finder / file manager
-            if let Ok(path) = crate::config::Config::default_path() {
-                if let Some(parent) = path.parent() {
-                    let _ = std::process::Command::new("open").arg(parent).spawn();
-                }
-            }
-        }
-        KeyCode::Char('d') => {
-            app.dry_run = !app.dry_run;
-        }
-        KeyCode::Char('m') => {
-            app.sync_pull = !app.sync_pull;
-        }
-        _ => {}
-    }
-}
-
-fn handle_progress_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
-    let is_finished = matches!(app.operation_state, OperationState::Finished { .. });
-
-    match key.code {
-        // Scroll log
-        KeyCode::Down => {
-            if is_finished {
-                if app.log_filter == LogFilter::Changelog {
-                    app.changelog_scroll += 1;
-                } else {
-                    let count = filtered_log_count(app);
-                    if count > 0 && app.sync_log_index < count.saturating_sub(1) {
-                        app.sync_log_index += 1;
-                    }
-                }
-            } else if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
-                app.scroll_offset += 1;
-            }
-        }
-        KeyCode::Up => {
-            if is_finished {
-                if app.log_filter == LogFilter::Changelog {
-                    app.changelog_scroll = app.changelog_scroll.saturating_sub(1);
-                } else {
-                    app.sync_log_index = app.sync_log_index.saturating_sub(1);
-                }
-            } else {
-                app.scroll_offset = app.scroll_offset.saturating_sub(1);
-            }
-        }
-        // Expand/collapse commit deep dive
-        KeyCode::Enter if is_finished => {
-            // Extract data we need before mutating app
-            let selected = filtered_log_entries(app)
-                .get(app.sync_log_index)
-                .map(|e| (e.repo_name.clone(), e.path.clone()));
-
-            if let Some((repo_name, path)) = selected {
-                if app.expanded_repo.as_deref() == Some(&repo_name) {
-                    // Toggle off: collapse
-                    app.expanded_repo = None;
-                    app.repo_commits.clear();
-                } else if let Some(path) = path {
-                    // Expand: fetch commits
-                    app.expanded_repo = Some(repo_name.clone());
-                    app.repo_commits.clear();
-                    super::backend::spawn_commit_fetch(path, repo_name, backend_tx.clone());
-                }
-            }
-        }
-        // Post-sync log filters
-        KeyCode::Char('a') if is_finished => {
-            app.log_filter = LogFilter::All;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-        }
-        KeyCode::Char('u') if is_finished => {
-            app.log_filter = LogFilter::Updated;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-        }
-        KeyCode::Char('f') if is_finished => {
-            app.log_filter = LogFilter::Failed;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-        }
-        KeyCode::Char('x') if is_finished => {
-            app.log_filter = LogFilter::Skipped;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-        }
-        KeyCode::Char('c') if is_finished => {
-            app.log_filter = LogFilter::Changelog;
-            app.sync_log_index = 0;
-            app.expanded_repo = None;
-            app.repo_commits.clear();
-            app.changelog_scroll = 0;
-
-            // Collect updated repos with paths for batch commit fetch
-            let updated_repos: Vec<(String, std::path::PathBuf)> = app
-                .sync_log_entries
-                .iter()
-                .filter(|e| e.had_updates)
-                .filter_map(|e| e.path.clone().map(|p| (e.repo_name.clone(), p)))
-                .collect();
-            app.changelog_total = updated_repos.len();
-            app.changelog_loaded = 0;
-            app.changelog_commits.clear();
-
-            if !updated_repos.is_empty() {
-                super::backend::spawn_changelog_fetch(updated_repos, backend_tx.clone());
-            }
-        }
-        // Sync history overlay toggle
-        KeyCode::Char('h') if is_finished => {
-            app.show_sync_history = !app.show_sync_history;
-        }
-        _ => {}
-    }
-}
-
-/// Count of log entries matching the current filter.
-fn filtered_log_count(app: &App) -> usize {
-    match app.log_filter {
-        LogFilter::All => app.sync_log_entries.len(),
-        LogFilter::Updated => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.had_updates || e.is_clone)
-            .count(),
-        LogFilter::Failed => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.status == SyncLogStatus::Failed)
-            .count(),
-        LogFilter::Skipped => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.status == SyncLogStatus::Skipped)
-            .count(),
-        LogFilter::Changelog => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.had_updates)
-            .count(),
-    }
-}
-
-/// Returns filtered log entries matching the current filter.
-fn filtered_log_entries(app: &App) -> Vec<&SyncLogEntry> {
-    match app.log_filter {
-        LogFilter::All => app.sync_log_entries.iter().collect(),
-        LogFilter::Updated => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.had_updates || e.is_clone)
-            .collect(),
-        LogFilter::Failed => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.status == SyncLogStatus::Failed)
-            .collect(),
-        LogFilter::Skipped => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.status == SyncLogStatus::Skipped)
-            .collect(),
-        LogFilter::Changelog => app
-            .sync_log_entries
-            .iter()
-            .filter(|e| e.had_updates)
-            .collect(),
     }
 }
 
@@ -731,176 +244,6 @@ fn compute_repo_path(app: &App, repo_name: &str) -> Option<std::path::PathBuf> {
     Some(base_path.join(path_str))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tokio::sync::mpsc::error::TryRecvError;
-
-    use crate::config::{Config, WorkspaceConfig};
-
-    fn build_workspace_app(default_workspace: Option<&str>) -> App {
-        let mut config = Config::default();
-        config.default_workspace = default_workspace.map(ToString::to_string);
-
-        let ws = WorkspaceConfig::new("test-ws", "/tmp/test-ws");
-        let mut app = App::new(config, vec![ws.clone()]);
-        app.screen = Screen::Workspace;
-        app.workspace_index = 0;
-        app.active_workspace = Some(ws);
-        app
-    }
-
-    #[tokio::test]
-    async fn workspace_key_f_opens_folder_for_selected_workspace() {
-        let mut app = build_workspace_app(None);
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let _ = take_open_workspace_folder_call_count();
-
-        handle_workspace_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE),
-            &tx,
-        )
-        .await;
-
-        assert_eq!(take_open_workspace_folder_call_count(), 1);
-    }
-
-    #[tokio::test]
-    async fn workspace_key_o_is_noop() {
-        let mut app = build_workspace_app(None);
-        let before_index = app.workspace_index;
-        let before_scroll = app.workspace_detail_scroll;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let _ = take_open_workspace_folder_call_count();
-
-        handle_workspace_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE),
-            &tx,
-        )
-        .await;
-
-        assert_eq!(app.workspace_index, before_index);
-        assert_eq!(app.workspace_detail_scroll, before_scroll);
-        assert_eq!(take_open_workspace_folder_call_count(), 0);
-        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
-    }
-
-    #[tokio::test]
-    async fn workspace_key_d_does_not_clear_when_already_default() {
-        let mut app = build_workspace_app(Some("test-ws"));
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-        handle_workspace_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
-            &tx,
-        )
-        .await;
-
-        assert_eq!(app.config.default_workspace.as_deref(), Some("test-ws"));
-        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
-    }
-
-    #[test]
-    fn next_default_workspace_name_is_set_only() {
-        assert_eq!(
-            next_default_workspace_name(Some("current"), "next"),
-            Some("next".to_string())
-        );
-        assert_eq!(next_default_workspace_name(Some("same"), "same"), None);
-        assert_eq!(
-            next_default_workspace_name(None, "selected"),
-            Some("selected".to_string())
-        );
-    }
-}
-
-fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
-    if matches!(app.operation_state, OperationState::Running { .. }) {
-        app.error_message = Some("An operation is already running".to_string());
-        return;
-    }
-
-    app.tick_count = 0;
-    app.operation_state = OperationState::Discovering {
-        message: format!("Starting {}...", operation),
-    };
-    app.log_lines.clear();
-    app.scroll_offset = 0;
-
-    if !matches!(app.screen, Screen::Progress) {
-        app.navigate_to(Screen::Progress);
-    }
-
-    super::backend::spawn_operation(operation, app, backend_tx.clone());
-}
-
-fn dashboard_tab_item_count(app: &App) -> usize {
-    match app.stat_index {
-        0 => app
-            .local_repos
-            .iter()
-            .map(|r| r.owner.as_str())
-            .collect::<std::collections::HashSet<_>>()
-            .len(),
-        1 => {
-            if app.filter_text.is_empty() {
-                app.local_repos.len()
-            } else {
-                let ft = app.filter_text.to_lowercase();
-                app.local_repos
-                    .iter()
-                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
-                    .count()
-            }
-        }
-        2 => app
-            .local_repos
-            .iter()
-            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
-            .count(),
-        3 => app.local_repos.iter().filter(|r| r.behind > 0).count(),
-        4 => app.local_repos.iter().filter(|r| r.ahead > 0).count(),
-        5 => app.local_repos.iter().filter(|r| r.is_uncommitted).count(),
-        _ => 0,
-    }
-}
-
-fn dashboard_selected_repo_path(app: &App) -> Option<std::path::PathBuf> {
-    let selected = app.dashboard_table_state.selected()?;
-    let repos: Vec<&super::app::RepoEntry> = match app.stat_index {
-        0 => return None, // Owners tab — no single repo
-        1 => {
-            if app.filter_text.is_empty() {
-                app.local_repos.iter().collect()
-            } else {
-                let ft = app.filter_text.to_lowercase();
-                app.local_repos
-                    .iter()
-                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
-                    .collect()
-            }
-        }
-        2 => app
-            .local_repos
-            .iter()
-            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
-            .collect(),
-        3 => app.local_repos.iter().filter(|r| r.behind > 0).collect(),
-        4 => app.local_repos.iter().filter(|r| r.ahead > 0).collect(),
-        5 => app
-            .local_repos
-            .iter()
-            .filter(|r| r.is_uncommitted)
-            .collect(),
-        _ => return None,
-    };
-    repos.get(selected).map(|r| r.path.clone())
-}
-
 fn handle_backend_message(
     app: &mut App,
     msg: BackendMessage,
@@ -909,11 +252,13 @@ fn handle_backend_message(
     match msg {
         BackendMessage::OrgsDiscovered(count) => {
             app.operation_state = OperationState::Discovering {
+                operation: Operation::Sync,
                 message: format!("Found {} organizations", count),
             };
         }
         BackendMessage::OrgStarted(name) => {
             app.operation_state = OperationState::Discovering {
+                operation: Operation::Sync,
                 message: format!("Discovering: {}", name),
             };
         }
@@ -1076,6 +421,11 @@ fn handle_backend_message(
                 String::new()
             };
 
+            if app.log_lines.len() >= MAX_LOG_LINES {
+                let drop_count = app.log_lines.len() + 1 - MAX_LOG_LINES;
+                app.log_lines.drain(0..drop_count);
+                app.scroll_offset = app.scroll_offset.saturating_sub(drop_count);
+            }
             app.log_lines.push(format!(
                 "{} {} - {}{}",
                 prefix, repo_name, message, commit_info

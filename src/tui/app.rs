@@ -12,11 +12,11 @@ use std::time::Instant;
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    InitCheck,
-    SetupWizard,
-    Workspace,
+    SystemCheck,
+    WorkspaceSetup,
+    Workspaces,
     Dashboard,
-    Progress,
+    Sync,
     Settings,
 }
 
@@ -41,6 +41,7 @@ impl std::fmt::Display for Operation {
 pub enum OperationState {
     Idle,
     Discovering {
+        operation: Operation,
         message: String,
     },
     Running {
@@ -303,7 +304,7 @@ impl App {
     /// Create a new App with the given config and workspaces.
     pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>) -> Self {
         let (screen, active_workspace, base_path) = match workspaces.len() {
-            0 => (Screen::SetupWizard, None, None),
+            0 => (Screen::WorkspaceSetup, None, None),
             1 => {
                 let ws = workspaces[0].clone();
                 let bp = Some(ws.expanded_base_path());
@@ -316,10 +317,10 @@ impl App {
                         let bp = Some(ws.expanded_base_path());
                         (Screen::Dashboard, Some(ws.clone()), bp)
                     } else {
-                        (Screen::Workspace, None, None)
+                        (Screen::Workspaces, None, None)
                     }
                 } else {
-                    (Screen::Workspace, None, None)
+                    (Screen::Workspaces, None, None)
                 }
             }
         };
@@ -358,7 +359,7 @@ impl App {
             check_results: Vec::new(),
             checks_loading: false,
             sync_pull: false,
-            setup_state: if screen == Screen::SetupWizard {
+            setup_state: if screen == Screen::WorkspaceSetup {
                 let default_path = std::env::current_dir()
                     .map(|p| state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
@@ -431,7 +432,7 @@ mod tests {
     #[test]
     fn test_new_no_workspaces_shows_setup_wizard() {
         let app = App::new(Config::default(), vec![]);
-        assert_eq!(app.screen, Screen::SetupWizard);
+        assert_eq!(app.screen, Screen::WorkspaceSetup);
         assert!(app.setup_state.is_some());
         assert!(app.active_workspace.is_none());
         assert!(app.base_path.is_none());
@@ -452,7 +453,7 @@ mod tests {
         let ws1 = WorkspaceConfig::new("ws1", "/tmp/ws1");
         let ws2 = WorkspaceConfig::new("ws2", "/tmp/ws2");
         let app = App::new(Config::default(), vec![ws1, ws2]);
-        assert_eq!(app.screen, Screen::Workspace);
+        assert_eq!(app.screen, Screen::Workspaces);
         assert!(app.active_workspace.is_none());
     }
 
@@ -474,7 +475,7 @@ mod tests {
         let mut config = Config::default();
         config.default_workspace = Some("nonexistent".to_string());
         let app = App::new(config, vec![ws1, ws2]);
-        assert_eq!(app.screen, Screen::Workspace);
+        assert_eq!(app.screen, Screen::Workspaces);
         assert!(app.active_workspace.is_none());
     }
 }

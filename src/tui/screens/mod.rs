@@ -1,7 +1,7 @@
 //! TUI screen modules.
 
 pub mod dashboard;
-pub mod init_check;
 pub mod settings;
-pub mod sync_progress;
-pub mod workspace;
+pub mod sync;
+pub mod system_check;
+pub mod workspaces;

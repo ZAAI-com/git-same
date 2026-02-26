@@ -100,47 +100,33 @@ fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect) {
         .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(Color::DarkGray);
 
-    // Line 1: nodes and connectors
+    let segments = Layout::horizontal([
+        Constraint::Ratio(3, 23),
+        Constraint::Ratio(2, 23),
+        Constraint::Ratio(3, 23),
+        Constraint::Ratio(2, 23),
+        Constraint::Ratio(3, 23),
+        Constraint::Ratio(2, 23),
+        Constraint::Ratio(3, 23),
+        Constraint::Ratio(2, 23),
+        Constraint::Ratio(3, 23),
+    ])
+    .split(area);
+
     let mut node_spans: Vec<Span> = Vec::new();
-    node_spans.push(Span::raw("   "));
-
-    for (i, _label) in steps.iter().enumerate() {
-        let step_num = i + 1;
-
-        if i > 0 {
-            // Connector between nodes
-            if step_num <= current {
-                node_spans.push(Span::styled(" \u{2501}\u{2501}\u{2501} ", green));
-            } else {
-                node_spans.push(Span::styled(" \u{2500} \u{2500} ", dim));
-            }
-        }
-
-        // Node
-        if step_num < current || state.step == SetupStep::Complete {
-            // Completed: green checkmark
-            node_spans.push(Span::styled("(\u{2713})", green_bold));
-        } else if step_num == current {
-            // Active: cyan number
-            node_spans.push(Span::styled(format!("({})", step_num), cyan_bold));
-        } else {
-            // Upcoming: dim number
-            node_spans.push(Span::styled(format!("({})", step_num), dim));
-        }
-    }
-
-    // Line 2: labels under nodes
     let mut label_spans: Vec<Span> = Vec::new();
-    label_spans.push(Span::raw("  "));
 
     for (i, label) in steps.iter().enumerate() {
         let step_num = i + 1;
-
-        if i > 0 {
-            label_spans.push(Span::raw("     "));
-        }
-
-        let style = if step_num < current || state.step == SetupStep::Complete {
+        let node_width = segments[i * 2].width as usize;
+        let node_style = if step_num < current || state.step == SetupStep::Complete {
+            green_bold
+        } else if step_num == current {
+            cyan_bold
+        } else {
+            dim
+        };
+        let label_style = if step_num < current || state.step == SetupStep::Complete {
             green
         } else if step_num == current {
             cyan_bold
@@ -148,13 +134,69 @@ fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect) {
             dim
         };
 
-        label_spans.push(Span::styled(format!("{:<8}", label), style));
+        let node_text = if step_num < current || state.step == SetupStep::Complete {
+            "(\u{2713})".to_string()
+        } else {
+            format!("({})", step_num)
+        };
+
+        node_spans.push(Span::styled(
+            center_cell(&node_text, node_width),
+            node_style,
+        ));
+        label_spans.push(Span::styled(center_cell(label, node_width), label_style));
+
+        if i < steps.len() - 1 {
+            let connector_width = segments[i * 2 + 1].width as usize;
+            let connector_done = step_num < current || state.step == SetupStep::Complete;
+            let connector_style = if connector_done { green } else { dim };
+            node_spans.push(Span::styled(
+                connector_cell(connector_width, connector_done),
+                connector_style,
+            ));
+            label_spans.push(Span::raw(" ".repeat(connector_width)));
+        }
     }
 
-    let lines = vec![Line::from(node_spans), Line::from(label_spans)];
-
-    let widget = Paragraph::new(lines).alignment(Alignment::Center);
+    let widget = Paragraph::new(vec![Line::from(node_spans), Line::from(label_spans)]);
     frame.render_widget(widget, area);
+}
+
+fn center_cell(text: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+
+    let text = if text.chars().count() > width {
+        text.chars().take(width).collect::<String>()
+    } else {
+        text.to_string()
+    };
+    let text_width = text.chars().count();
+    let left_pad = (width - text_width) / 2;
+    let right_pad = width - text_width - left_pad;
+    format!("{}{}{}", " ".repeat(left_pad), text, " ".repeat(right_pad))
+}
+
+fn connector_cell(width: usize, completed: bool) -> String {
+    if width == 0 {
+        return String::new();
+    }
+
+    if completed {
+        return "\u{2501}".repeat(width);
+    }
+
+    // Dashed connector for upcoming steps.
+    let mut out = String::with_capacity(width);
+    for i in 0..width {
+        if i % 2 == 0 {
+            out.push('\u{2500}');
+        } else {
+            out.push(' ');
+        }
+    }
+    out
 }
 
 /// Render the 2-line status bar with actions and navigation hints.
@@ -302,22 +344,43 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
         ),
     };
 
-    // Add step counter to actions line (right-aligned)
+    let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
     let step_num = state.step_number();
-    let mut actions_with_step = actions;
-    if step_num > 0 {
-        let step_text = format!("Step {} of {}", step_num, SetupState::TOTAL_STEPS);
-        let used_width: usize = actions_with_step.iter().map(|s| s.width()).sum();
-        let available = area.width as usize;
-        if available > used_width + step_text.len() + 2 {
-            let pad = available - used_width - step_text.len() - 1;
-            actions_with_step.push(Span::raw(" ".repeat(pad)));
-            actions_with_step.push(Span::styled(step_text, dim));
-        }
+    let step_text = if step_num > 0 {
+        Some(format!("Step {} of {}", step_num, SetupState::TOTAL_STEPS))
+    } else {
+        None
+    };
+    let step_width = step_text
+        .as_ref()
+        .map(|s| s.chars().count() as u16 + 1)
+        .unwrap_or(0);
+    let top_cols =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(step_width)]).split(rows[0]);
+
+    frame.render_widget(Paragraph::new(Line::from(actions)), top_cols[0]);
+    if let Some(text) = step_text {
+        let step_widget = Paragraph::new(Line::from(Span::styled(text, dim))).right_aligned();
+        frame.render_widget(step_widget, top_cols[1]);
     }
 
-    let lines = vec![Line::from(actions_with_step), Line::from(nav)];
+    frame.render_widget(Paragraph::new(Line::from(nav)), rows[1]);
+}
 
-    let widget = Paragraph::new(lines);
-    frame.render_widget(widget, area);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn center_cell_matches_width() {
+        let out = center_cell("Auth", 10);
+        assert_eq!(out.chars().count(), 10);
+        assert!(out.contains("Auth"));
+    }
+
+    #[test]
+    fn connector_cell_matches_width() {
+        assert_eq!(connector_cell(7, true).chars().count(), 7);
+        assert_eq!(connector_cell(7, false).chars().count(), 7);
+    }
 }

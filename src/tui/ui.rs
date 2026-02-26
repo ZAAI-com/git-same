@@ -7,15 +7,15 @@ use ratatui::Frame;
 /// Render the current screen.
 pub fn render(app: &mut App, frame: &mut Frame) {
     match app.screen {
-        Screen::InitCheck => screens::init_check::render(app, frame),
-        Screen::SetupWizard => {
+        Screen::SystemCheck => screens::system_check::render(app, frame),
+        Screen::WorkspaceSetup => {
             if let Some(ref setup) = app.setup_state {
                 crate::setup::ui::render(setup, frame);
             }
         }
-        Screen::Workspace => screens::workspace::render(app, frame),
+        Screen::Workspaces => screens::workspaces::render(app, frame),
         Screen::Dashboard => screens::dashboard::render(app, frame),
-        Screen::Progress => screens::sync_progress::render(app, frame),
+        Screen::Sync => screens::sync::render(app, frame),
         Screen::Settings => screens::settings::render(app, frame),
     }
 }

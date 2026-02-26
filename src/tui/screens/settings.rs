@@ -11,8 +11,37 @@ use ratatui::{
     Frame,
 };
 
+use crossterm::event::{KeyCode, KeyEvent};
+
 use crate::banner::render_banner;
 use crate::tui::app::App;
+
+pub fn handle_key(app: &mut App, key: KeyEvent) {
+    let num_items = 2; // Requirements, Options
+    match key.code {
+        KeyCode::Tab | KeyCode::Down => {
+            app.settings_index = (app.settings_index + 1) % num_items;
+        }
+        KeyCode::Up => {
+            app.settings_index = (app.settings_index + num_items - 1) % num_items;
+        }
+        KeyCode::Char('c') => {
+            // Open config directory in Finder / file manager
+            if let Ok(path) = crate::config::Config::default_path() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::process::Command::new("open").arg(parent).spawn();
+                }
+            }
+        }
+        KeyCode::Char('d') => {
+            app.dry_run = !app.dry_run;
+        }
+        KeyCode::Char('m') => {
+            app.sync_pull = !app.sync_pull;
+        }
+        _ => {}
+    }
+}
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([

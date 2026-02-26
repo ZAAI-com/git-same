@@ -8,10 +8,177 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::{App, LogFilter, OperationState, SyncLogStatus};
+use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::tui::app::{App, LogFilter, OperationState, SyncLogEntry, SyncLogStatus};
+use crate::tui::event::AppEvent;
 use crate::tui::widgets::status_bar;
 
 use crate::banner::render_animated_banner;
+
+// ── Key handler ─────────────────────────────────────────────────────────────
+
+pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
+    let is_finished = matches!(app.operation_state, OperationState::Finished { .. });
+
+    match key.code {
+        // Scroll log
+        KeyCode::Down => {
+            if is_finished {
+                if app.log_filter == LogFilter::Changelog {
+                    app.changelog_scroll += 1;
+                } else {
+                    let count = filtered_log_count(app);
+                    if count > 0 && app.sync_log_index < count.saturating_sub(1) {
+                        app.sync_log_index += 1;
+                    }
+                }
+            } else if app.scroll_offset < app.log_lines.len().saturating_sub(1) {
+                app.scroll_offset += 1;
+            }
+        }
+        KeyCode::Up => {
+            if is_finished {
+                if app.log_filter == LogFilter::Changelog {
+                    app.changelog_scroll = app.changelog_scroll.saturating_sub(1);
+                } else {
+                    app.sync_log_index = app.sync_log_index.saturating_sub(1);
+                }
+            } else {
+                app.scroll_offset = app.scroll_offset.saturating_sub(1);
+            }
+        }
+        // Expand/collapse commit deep dive
+        KeyCode::Enter if is_finished => {
+            // Extract data we need before mutating app
+            let selected = filtered_log_entries(app)
+                .get(app.sync_log_index)
+                .map(|e| (e.repo_name.clone(), e.path.clone()));
+
+            if let Some((repo_name, path)) = selected {
+                if app.expanded_repo.as_deref() == Some(&repo_name) {
+                    // Toggle off: collapse
+                    app.expanded_repo = None;
+                    app.repo_commits.clear();
+                } else if let Some(path) = path {
+                    // Expand: fetch commits
+                    app.expanded_repo = Some(repo_name.clone());
+                    app.repo_commits.clear();
+                    crate::tui::backend::spawn_commit_fetch(path, repo_name, backend_tx.clone());
+                }
+            }
+        }
+        // Post-sync log filters
+        KeyCode::Char('a') if is_finished => {
+            app.log_filter = LogFilter::All;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+        }
+        KeyCode::Char('u') if is_finished => {
+            app.log_filter = LogFilter::Updated;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+        }
+        KeyCode::Char('f') if is_finished => {
+            app.log_filter = LogFilter::Failed;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+        }
+        KeyCode::Char('x') if is_finished => {
+            app.log_filter = LogFilter::Skipped;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+        }
+        KeyCode::Char('c') if is_finished => {
+            app.log_filter = LogFilter::Changelog;
+            app.sync_log_index = 0;
+            app.expanded_repo = None;
+            app.repo_commits.clear();
+            app.changelog_scroll = 0;
+
+            // Collect updated repos with paths for batch commit fetch
+            let updated_repos: Vec<(String, std::path::PathBuf)> = app
+                .sync_log_entries
+                .iter()
+                .filter(|e| e.had_updates)
+                .filter_map(|e| e.path.clone().map(|p| (e.repo_name.clone(), p)))
+                .collect();
+            app.changelog_total = updated_repos.len();
+            app.changelog_loaded = 0;
+            app.changelog_commits.clear();
+
+            if !updated_repos.is_empty() {
+                crate::tui::backend::spawn_changelog_fetch(updated_repos, backend_tx.clone());
+            }
+        }
+        // Sync history overlay toggle
+        KeyCode::Char('h') if is_finished => {
+            app.show_sync_history = !app.show_sync_history;
+        }
+        _ => {}
+    }
+}
+
+/// Count of log entries matching the current filter.
+fn filtered_log_count(app: &App) -> usize {
+    match app.log_filter {
+        LogFilter::All => app.sync_log_entries.len(),
+        LogFilter::Updated => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates || e.is_clone)
+            .count(),
+        LogFilter::Failed => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Failed)
+            .count(),
+        LogFilter::Skipped => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Skipped)
+            .count(),
+        LogFilter::Changelog => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates)
+            .count(),
+    }
+}
+
+/// Returns filtered log entries matching the current filter.
+fn filtered_log_entries(app: &App) -> Vec<&SyncLogEntry> {
+    match app.log_filter {
+        LogFilter::All => app.sync_log_entries.iter().collect(),
+        LogFilter::Updated => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates || e.is_clone)
+            .collect(),
+        LogFilter::Failed => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Failed)
+            .collect(),
+        LogFilter::Skipped => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.status == SyncLogStatus::Skipped)
+            .collect(),
+        LogFilter::Changelog => app
+            .sync_log_entries
+            .iter()
+            .filter(|e| e.had_updates)
+            .collect(),
+    }
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
 
 pub fn render(app: &App, frame: &mut Frame) {
     let is_finished = matches!(&app.operation_state, OperationState::Finished { .. });
@@ -62,8 +229,10 @@ fn render_running_layout(app: &App, frame: &mut Frame, phase: f64) {
     render_running_log(app, frame, chunks[7]);
 
     let hint = match &app.operation_state {
-        OperationState::Running { .. } => "\u{2191}/\u{2193}: Scroll log  Ctrl+C: Quit",
-        _ => "Ctrl+C: Quit",
+        OperationState::Running { .. } => {
+            "Esc: Minimize  \u{2191}/\u{2193}: Scroll log  Ctrl+C: Quit"
+        }
+        _ => "Esc: Minimize  Ctrl+C: Quit",
     };
     status_bar::render(frame, chunks[8], hint);
 }
@@ -158,7 +327,7 @@ fn render_nothing_changed_layout(app: &App, frame: &mut Frame, phase: f64) {
 fn render_title(app: &App, frame: &mut Frame, area: Rect) {
     let title_text = match &app.operation_state {
         OperationState::Idle => "Idle".to_string(),
-        OperationState::Discovering { message } => message.clone(),
+        OperationState::Discovering { message, .. } => message.clone(),
         OperationState::Running { operation, .. } => format!("{}ing Repositories", operation),
         OperationState::Finished { operation, .. } => format!("{} Complete", operation),
     };
@@ -328,7 +497,8 @@ fn render_throughput(app: &App, frame: &mut Frame, area: Rect) {
             ));
         }
 
-        if eta_secs > 0 && *completed > 0 {
+        let has_eta_data = throughput_samples.iter().any(|&sample| sample > 0);
+        if has_eta_data && eta_secs > 0 && *completed > 0 {
             spans.push(Span::raw("  "));
             spans.push(Span::styled("ETA: ", Style::default().fg(Color::DarkGray)));
             spans.push(Span::styled(
@@ -456,9 +626,11 @@ fn render_worker_slots(app: &App, frame: &mut Frame, area: Rect) {
 fn render_running_log(app: &App, frame: &mut Frame, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
     let total = app.log_lines.len();
-    let start = total.saturating_sub(visible_height);
+    let max_start = total.saturating_sub(visible_height);
+    let start = app.scroll_offset.min(max_start);
+    let end = (start + visible_height).min(total);
 
-    let items: Vec<ListItem> = app.log_lines[start..]
+    let items: Vec<ListItem> = app.log_lines[start..end]
         .iter()
         .map(|line| {
             let style = if line.starts_with("[**]") {

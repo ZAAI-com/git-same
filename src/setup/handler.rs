@@ -124,12 +124,12 @@ fn confirm_path(state: &mut SetupState) {
 
 fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => {
+        KeyCode::Up | KeyCode::Char('k') => {
             if state.path_suggestion_index > 0 {
                 state.path_suggestion_index -= 1;
             }
         }
-        KeyCode::Down => {
+        KeyCode::Down | KeyCode::Char('j') => {
             if state.path_suggestion_index + 1 < state.path_suggestions.len() {
                 state.path_suggestion_index += 1;
             }

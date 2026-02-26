@@ -12,8 +12,217 @@ use ratatui::{
 
 use chrono::DateTime;
 
+use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc::UnboundedSender;
+
 use crate::banner::render_banner;
-use crate::tui::app::{App, RepoEntry};
+use crate::tui::app::{App, Operation, OperationState, RepoEntry, Screen};
+use crate::tui::event::AppEvent;
+
+// ── Key handler ─────────────────────────────────────────────────────────────
+
+pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
+    match key.code {
+        KeyCode::Char('s') => {
+            if should_open_sync_from_dashboard(app) {
+                open_sync_view(app);
+            } else {
+                start_operation(app, Operation::Sync, backend_tx);
+            }
+        }
+        KeyCode::Char('t') => {
+            app.last_status_scan = None; // Force immediate refresh
+            app.status_loading = true;
+            start_operation(app, Operation::Status, backend_tx);
+        }
+        // Tab shortcuts
+        KeyCode::Char('o') => {
+            app.stat_index = 0;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('r') => {
+            app.stat_index = 1;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('c') => {
+            app.stat_index = 2;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('b') => {
+            app.stat_index = 3;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('a') => {
+            app.stat_index = 4;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('u') => {
+            app.stat_index = 5;
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Char('e') => {
+            app.navigate_to(Screen::Settings);
+        }
+        KeyCode::Char('w') => {
+            app.navigate_to(Screen::Workspaces);
+        }
+        KeyCode::Char('i') => {
+            app.navigate_to(Screen::SystemCheck);
+        }
+        KeyCode::Char('/') => {
+            app.filter_active = true;
+            app.filter_text.clear();
+            app.stat_index = 1;
+            app.dashboard_table_state.select(Some(0));
+        }
+        // Tab navigation (left/right between stat boxes)
+        KeyCode::Left => {
+            app.stat_index = app.stat_index.saturating_sub(1);
+            app.dashboard_table_state.select(Some(0));
+        }
+        KeyCode::Right => {
+            if app.stat_index < 5 {
+                app.stat_index += 1;
+                app.dashboard_table_state.select(Some(0));
+            }
+        }
+        // List navigation (up/down within tab content)
+        KeyCode::Down => {
+            let count = tab_item_count(app);
+            if count > 0 {
+                let current = app.dashboard_table_state.selected().unwrap_or(0);
+                if current + 1 < count {
+                    app.dashboard_table_state.select(Some(current + 1));
+                }
+            }
+        }
+        KeyCode::Up => {
+            let count = tab_item_count(app);
+            if count > 0 {
+                let current = app.dashboard_table_state.selected().unwrap_or(0);
+                app.dashboard_table_state
+                    .select(Some(current.saturating_sub(1)));
+            }
+        }
+        KeyCode::Enter => {
+            // Open the selected repo's folder
+            if let Some(path) = selected_repo_path(app) {
+                let _ = std::process::Command::new("open").arg(&path).spawn();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
+    if matches!(app.operation_state, OperationState::Running { .. }) {
+        app.error_message = Some("An operation is already running".to_string());
+        return;
+    }
+
+    app.tick_count = 0;
+    app.operation_state = OperationState::Discovering {
+        operation,
+        message: format!("Starting {}...", operation),
+    };
+    app.log_lines.clear();
+    app.scroll_offset = 0;
+
+    if operation == Operation::Sync && !matches!(app.screen, Screen::Sync) {
+        app.navigate_to(Screen::Sync);
+    }
+
+    crate::tui::backend::spawn_operation(operation, app, backend_tx.clone());
+}
+
+fn should_open_sync_from_dashboard(app: &App) -> bool {
+    match &app.operation_state {
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            ..
+        }
+        | OperationState::Running {
+            operation: Operation::Sync,
+            ..
+        }
+        | OperationState::Finished {
+            operation: Operation::Sync,
+            ..
+        } => true,
+        _ => !app.sync_log_entries.is_empty(),
+    }
+}
+
+fn open_sync_view(app: &mut App) {
+    if !matches!(app.screen, Screen::Sync) {
+        app.navigate_to(Screen::Sync);
+    }
+}
+
+fn tab_item_count(app: &App) -> usize {
+    match app.stat_index {
+        0 => app
+            .local_repos
+            .iter()
+            .map(|r| r.owner.as_str())
+            .collect::<HashSet<_>>()
+            .len(),
+        1 => {
+            if app.filter_text.is_empty() {
+                app.local_repos.len()
+            } else {
+                let ft = app.filter_text.to_lowercase();
+                app.local_repos
+                    .iter()
+                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
+                    .count()
+            }
+        }
+        2 => app
+            .local_repos
+            .iter()
+            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
+            .count(),
+        3 => app.local_repos.iter().filter(|r| r.behind > 0).count(),
+        4 => app.local_repos.iter().filter(|r| r.ahead > 0).count(),
+        5 => app.local_repos.iter().filter(|r| r.is_uncommitted).count(),
+        _ => 0,
+    }
+}
+
+fn selected_repo_path(app: &App) -> Option<std::path::PathBuf> {
+    let selected = app.dashboard_table_state.selected()?;
+    let repos: Vec<&RepoEntry> = match app.stat_index {
+        0 => return None, // Owners tab — no single repo
+        1 => {
+            if app.filter_text.is_empty() {
+                app.local_repos.iter().collect()
+            } else {
+                let ft = app.filter_text.to_lowercase();
+                app.local_repos
+                    .iter()
+                    .filter(|r| r.full_name.to_lowercase().contains(&ft))
+                    .collect()
+            }
+        }
+        2 => app
+            .local_repos
+            .iter()
+            .filter(|r| !r.is_uncommitted && r.behind == 0 && r.ahead == 0)
+            .collect(),
+        3 => app.local_repos.iter().filter(|r| r.behind > 0).collect(),
+        4 => app.local_repos.iter().filter(|r| r.ahead > 0).collect(),
+        5 => app
+            .local_repos
+            .iter()
+            .filter(|r| r.is_uncommitted)
+            .collect(),
+        _ => return None,
+    };
+    repos.get(selected).map(|r| r.path.clone())
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
 
 pub(crate) fn format_timestamp(raw: &str) -> String {
     use chrono::Utc;
@@ -186,13 +395,24 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
     ])
     .split(area);
 
-    let total_repos = app.local_repos.len();
-    let total_owners = app
+    let completed_repos = app.local_repos.len();
+    let completed_owners = app
         .local_repos
         .iter()
         .map(|r| r.owner.as_str())
         .collect::<HashSet<_>>()
         .len();
+    let discovered_repos = app.all_repos.len();
+    let discovered_owners = app
+        .all_repos
+        .iter()
+        .map(|r| r.owner.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let total_repos = discovered_repos.max(completed_repos);
+    let total_owners = discovered_owners.max(completed_owners);
+    let owners_progress = format!("{}/{}", completed_owners, total_owners);
+    let repos_progress = format!("{}/{}", completed_repos, total_repos);
     let uncommitted = app.local_repos.iter().filter(|r| r.is_uncommitted).count();
     let behind = app.local_repos.iter().filter(|r| r.behind > 0).count();
     let ahead = app.local_repos.iter().filter(|r| r.ahead > 0).count();
@@ -206,7 +426,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
     render_stat_box(
         frame,
         cols[0],
-        &total_owners.to_string(),
+        &owners_progress,
         "o",
         "Owners",
         Color::Rgb(21, 128, 61),
@@ -215,7 +435,7 @@ fn render_stats(app: &App, frame: &mut Frame, area: Rect) -> [Rect; 6] {
     render_stat_box(
         frame,
         cols[1],
-        &total_repos.to_string(),
+        &repos_progress,
         "r",
         "Repositories",
         Color::Rgb(21, 128, 61),
@@ -723,32 +943,169 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
-    // Line 1: sync timestamp (centered full-width) + [s] Sync (right overlay)
-    if let Some(ref ws) = app.active_workspace {
-        if let Some(ref ts) = ws.last_synced {
-            let folder_name = std::path::Path::new(&ws.base_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&ws.base_path);
-            let formatted = format_timestamp(ts);
-            let sync_line = Line::from(vec![
-                Span::styled("Synced ", dim),
+    // Line 1: live sync status (centered full-width) + [s] action (right overlay)
+    let sync_line = match &app.operation_state {
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            message,
+        } => Some(Line::from(vec![
+            Span::styled(
+                "Sync ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("discovering", dim),
+            Span::styled(": ", dim),
+            Span::styled(message.clone(), dim),
+        ])),
+        OperationState::Running {
+            operation: Operation::Sync,
+            completed,
+            total,
+            started_at,
+            throughput_samples,
+            active_repos,
+            ..
+        } => {
+            let pct = if *total > 0 {
+                ((*completed as f64 / *total as f64) * 100.0).round() as u64
+            } else {
+                0
+            };
+            let elapsed_secs = started_at.elapsed().as_secs_f64();
+            let sample_count = throughput_samples.len().min(10);
+            let sample_rate = if sample_count > 0 {
+                throughput_samples
+                    .iter()
+                    .rev()
+                    .take(sample_count)
+                    .copied()
+                    .sum::<u64>() as f64
+                    / sample_count as f64
+            } else {
+                0.0
+            };
+            let repos_per_sec = if sample_rate > 0.0 {
+                sample_rate
+            } else if elapsed_secs > 1.0 {
+                *completed as f64 / elapsed_secs
+            } else {
+                0.0
+            };
+            let remaining = total.saturating_sub(*completed);
+            let has_eta_data = throughput_samples.iter().any(|&n| n > 0);
+            let eta_secs = if has_eta_data && repos_per_sec > 0.1 {
+                Some((remaining as f64 / repos_per_sec).ceil() as u64)
+            } else {
+                None
+            };
+            let concurrency = app
+                .active_workspace
+                .as_ref()
+                .and_then(|ws| ws.concurrency)
+                .unwrap_or(app.config.concurrency);
+
+            let mut spans = vec![
                 Span::styled(
-                    folder_name.to_string(),
+                    "Sync ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("running ", dim),
+                Span::styled(format!("{}%", pct), Style::default().fg(Color::Cyan)),
+                Span::styled(format!(" ({}/{})", completed, total), dim),
+            ];
+
+            if repos_per_sec > 0.0 {
+                spans.push(Span::styled(
+                    format!("  |  {:.1} repo/s", repos_per_sec),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            if let Some(eta_secs) = eta_secs.filter(|_| remaining > 0) {
+                spans.push(Span::styled(
+                    format!("  |  ETA {}", format_duration_secs(eta_secs)),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
+            spans.push(Span::styled(
+                format!("  |  workers {}/{}", active_repos.len(), concurrency),
+                Style::default().fg(Color::DarkGray),
+            ));
+            Some(Line::from(spans))
+        }
+        OperationState::Finished {
+            operation: Operation::Sync,
+            summary,
+            with_updates,
+            duration_secs,
+            ..
+        } => {
+            let total = summary.success + summary.failed + summary.skipped;
+            Some(Line::from(vec![
+                Span::styled(
+                    "Last Sync ",
                     Style::default()
                         .fg(Color::Rgb(21, 128, 61))
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" with GitHub ", dim),
-                Span::styled(formatted, dim),
-            ]);
-            frame.render_widget(Paragraph::new(vec![sync_line]).centered(), rows[0]);
+                Span::styled(
+                    format!("{} repos", total),
+                    Style::default().fg(Color::Rgb(21, 128, 61)),
+                ),
+                Span::styled(
+                    format!("  |  {} updated", with_updates),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Span::styled(
+                    format!("  |  {} failed", summary.failed),
+                    if summary.failed > 0 {
+                        Style::default().fg(Color::Red)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    },
+                ),
+                Span::styled(
+                    format!("  |  {:.1}s", duration_secs),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]))
         }
+        _ => app.active_workspace.as_ref().and_then(|ws| {
+            ws.last_synced.as_ref().map(|ts| {
+                let folder_name = std::path::Path::new(&ws.base_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&ws.base_path);
+                let formatted = format_timestamp(ts);
+                Line::from(vec![
+                    Span::styled("Synced ", dim),
+                    Span::styled(
+                        folder_name.to_string(),
+                        Style::default()
+                            .fg(Color::Rgb(21, 128, 61))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" with GitHub ", dim),
+                    Span::styled(formatted, dim),
+                ])
+            })
+        }),
+    };
+    if let Some(sync_line) = sync_line {
+        frame.render_widget(Paragraph::new(vec![sync_line]).centered(), rows[0]);
     }
 
+    let sync_action_label = if should_open_sync_from_dashboard(app) {
+        " Open"
+    } else {
+        " Sync"
+    };
     let actions_right = Line::from(vec![
         Span::styled("[s]", key_style),
-        Span::styled(" Sync", dim),
+        Span::styled(sync_action_label, dim),
         Span::raw(" "),
     ]);
     frame.render_widget(Paragraph::new(vec![actions_right]).right_aligned(), rows[0]);
@@ -786,4 +1143,12 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
 
     frame.render_widget(nav_left, nav_cols[0]);
     frame.render_widget(nav_right, nav_cols[1]);
+}
+
+fn format_duration_secs(secs: u64) -> String {
+    if secs >= 60 {
+        format!("{}m{}s", secs / 60, secs % 60)
+    } else {
+        format!("{}s", secs)
+    }
 }

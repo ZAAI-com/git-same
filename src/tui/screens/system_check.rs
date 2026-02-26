@@ -8,8 +8,95 @@ use ratatui::{
     Frame,
 };
 
-use crate::tui::app::App;
+use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::config::Config;
+use crate::setup::state::SetupState;
+use crate::tui::app::{App, CheckEntry, Screen};
+use crate::tui::event::{AppEvent, BackendMessage};
 use crate::tui::widgets::status_bar;
+
+// ── Key handler ─────────────────────────────────────────────────────────────
+
+pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
+    match key.code {
+        KeyCode::Enter if !app.checks_loading => {
+            // Run requirement checks
+            app.checks_loading = true;
+            let results = crate::checks::check_requirements().await;
+            app.check_results = results
+                .into_iter()
+                .map(|r| CheckEntry {
+                    name: r.name,
+                    passed: r.passed,
+                    message: r.message,
+                    critical: r.critical,
+                })
+                .collect();
+            app.checks_loading = false;
+        }
+        KeyCode::Char('c') if !app.check_results.is_empty() && !app.config_created => {
+            // Create config file
+            let tx = backend_tx.clone();
+            tokio::spawn(async move {
+                match Config::default_path() {
+                    Ok(config_path) => {
+                        if config_path.exists() {
+                            let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                format!(
+                                    "Config already exists at {}. Delete it first to recreate.",
+                                    config_path.display()
+                                ),
+                            )));
+                            return;
+                        }
+                        if let Some(parent) = config_path.parent() {
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                        format!("Failed to create config directory: {}", e),
+                                    )));
+                                return;
+                            }
+                        }
+                        let default_config = Config::default_toml();
+                        match std::fs::write(&config_path, default_config) {
+                            Ok(()) => {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigCreated(
+                                        config_path.display().to_string(),
+                                    )));
+                            }
+                            Err(e) => {
+                                let _ =
+                                    tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                                        format!("Failed to write config: {}", e),
+                                    )));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AppEvent::Backend(BackendMessage::InitConfigError(
+                            format!("Cannot determine config path: {}", e),
+                        )));
+                    }
+                }
+            });
+        }
+        KeyCode::Char('s') => {
+            // Launch setup wizard
+            let default_path = std::env::current_dir()
+                .map(|p| crate::setup::state::tilde_collapse(&p.to_string_lossy()))
+                .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
+            app.setup_state = Some(SetupState::new(&default_path));
+            app.navigate_to(Screen::WorkspaceSetup);
+        }
+        _ => {}
+    }
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
 
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::vertical([
