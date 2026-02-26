@@ -36,9 +36,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         Color::Cyan
     };
     let muted = Color::DarkGray;
-    let input_text_color = if popup_open {
-        Color::DarkGray
-    } else if state.path_suggestions_mode {
+    let input_text_color = if popup_open || state.path_suggestions_mode {
         Color::DarkGray
     } else {
         Color::Yellow
