@@ -78,7 +78,7 @@ Configure these in your repo settings (Settings → Secrets and variables → Ac
 |--------|-------------|
 | `APPLE_DEVELOPER_CERTIFICATE_P12` | Base64-encoded `.p12` from step 5 above |
 | `APPLE_DEVELOPER_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` in step 4 |
-| `APPLE_SIGNING_IDENTITY` | Full identity string, e.g. `Your Name (TEAMID)` — visible in Keychain Access |
+| `APPLE_SIGNING_IDENTITY` | Name + Team ID only (e.g. `Your Name (TEAMID)`), **without** the `Developer ID Application:` prefix because the workflow command adds that prefix |
 | `APPLE_ID` | Your Apple ID email |
 | `APPLE_TEAM_ID` | 10-character Team ID from step 7 |
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from step 6 |

@@ -164,7 +164,8 @@ impl WorkspaceStore {
     ///
     /// Also removes the workspace from the global registry.
     pub fn delete(root: &Path) -> Result<(), AppError> {
-        let dot_dir = Self::dot_dir(root);
+        let expanded_root = expand_path(root);
+        let dot_dir = Self::dot_dir(&expanded_root);
         if !dot_dir.exists() {
             return Err(AppError::config(format!(
                 "No workspace config found at '{}'",
@@ -174,7 +175,7 @@ impl WorkspaceStore {
 
         // Unregister from global config first so we don't leave stale registry entries
         // when registry writes fail.
-        let tilde_path = tilde_collapse_path(root);
+        let tilde_path = tilde_collapse_path(&expanded_root);
         Config::remove_from_registry(&tilde_path)?;
 
         std::fs::remove_dir_all(&dot_dir).map_err(|e| {

@@ -147,6 +147,51 @@ fn delete_keeps_workspace_files_when_registry_update_fails() {
 }
 
 #[test]
+fn delete_with_relative_root_removes_registered_workspace() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    with_temp_home(&home, || {
+        let global_config_path = crate::config::Config::default_path().unwrap();
+        std::fs::create_dir_all(global_config_path.parent().unwrap()).unwrap();
+        std::fs::write(&global_config_path, crate::config::Config::default_toml()).unwrap();
+
+        let root = temp.path().join("my-ws");
+        let dot_dir = WorkspaceStore::dot_dir(&root);
+        std::fs::create_dir_all(&dot_dir).unwrap();
+        std::fs::write(
+            dot_dir.join("config.toml"),
+            "[provider]\nkind = \"github\"\n",
+        )
+        .unwrap();
+
+        let canonical_root = std::fs::canonicalize(&root).unwrap();
+        let registry_path = crate::config::workspace::tilde_collapse_path(&canonical_root);
+        crate::config::Config::add_to_registry_at(&global_config_path, &registry_path).unwrap();
+
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+        struct CwdRestore(std::path::PathBuf);
+        impl Drop for CwdRestore {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+        let _cwd_restore = CwdRestore(original_cwd);
+
+        WorkspaceStore::delete(std::path::Path::new("my-ws")).unwrap();
+
+        assert!(!dot_dir.exists(), ".git-same should be deleted");
+        let cfg = crate::config::Config::load_from(&global_config_path).unwrap();
+        assert!(
+            cfg.workspaces.is_empty(),
+            "workspace registry should be empty after delete"
+        );
+    });
+}
+
+#[test]
 fn save_returns_error_when_global_config_is_missing() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");

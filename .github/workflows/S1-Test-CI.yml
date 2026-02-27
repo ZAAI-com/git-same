@@ -142,7 +142,17 @@ jobs:
 
           # Primary matches Cargo.toml bin name
           MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
-          CARGO_BIN=$(grep -A1 '^\[\[bin\]\]' Cargo.toml | grep 'name' | sed 's/.*= *"\(.*\)"/\1/')
+          CARGO_BIN=$(awk '
+            /^\[\[bin\]\]/ { in_bin=1; next }
+            in_bin && /^\[/ { exit }
+            in_bin && $1 == "name" {
+              match($0, /"([^"]+)"/, m)
+              if (m[1] != "") { print m[1]; exit }
+            }
+          ' Cargo.toml)
+          if [ -z "$CARGO_BIN" ]; then
+            echo "ERROR: Could not resolve bin name from Cargo.toml"; exit 1
+          fi
           if [ "$MANIFEST_PRIMARY" != "$CARGO_BIN" ]; then
             echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
           fi
@@ -150,7 +160,7 @@ jobs:
           # Homebrew workflow references all aliases
           while IFS= read -r alias; do
             [ -z "$alias" ] && continue
-            if ! grep -q "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
+            if ! grep -Fq -- "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
               echo "ERROR: '$alias' missing from S3-Publish-Homebrew.yml"; exit 1
             fi
           done < toolkit/packaging/binary-aliases.txt

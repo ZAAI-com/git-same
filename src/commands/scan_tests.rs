@@ -86,3 +86,29 @@ fn run_register_with_custom_config_path_updates_registry() {
         cfg.workspaces[0]
     );
 }
+
+#[test]
+fn run_returns_error_when_custom_config_is_invalid() {
+    let temp = tempfile::tempdir().unwrap();
+    let scan_root = temp.path().join("scan-root");
+    let ws_root = scan_root.join("team").join("project");
+    let dot_dir = ws_root.join(".git-same");
+    std::fs::create_dir_all(&dot_dir).unwrap();
+    std::fs::write(
+        dot_dir.join("config.toml"),
+        "[provider]\nkind = \"github\"\n",
+    )
+    .unwrap();
+
+    let invalid_config_path = temp.path().join("invalid-config.toml");
+    std::fs::write(&invalid_config_path, "invalid = [").unwrap();
+
+    let args = crate::cli::ScanArgs {
+        path: Some(scan_root),
+        depth: 5,
+        register: false,
+    };
+    let output = crate::output::Output::quiet();
+    let err = run(&args, Some(&invalid_config_path), &output).unwrap_err();
+    assert!(err.to_string().contains("Failed to parse config"));
+}

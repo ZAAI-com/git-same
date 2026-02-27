@@ -31,8 +31,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
     let global = match config_path {
         Some(path) => Config::load_from(path),
         None => Config::load(),
-    }
-    .unwrap_or_default();
+    }?;
     let registered: std::collections::HashSet<PathBuf> = global
         .workspaces
         .iter()
