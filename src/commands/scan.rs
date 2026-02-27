@@ -4,6 +4,7 @@ use crate::cli::ScanArgs;
 use crate::config::{Config, WorkspaceStore};
 use crate::errors::{AppError, Result};
 use crate::output::Output;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Run the scan command.
@@ -111,41 +112,57 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
 /// Recursively scan for directories containing `.git-same/config.toml`.
 fn scan_for_workspaces(root: &Path, max_depth: usize) -> Vec<PathBuf> {
     let mut results = Vec::new();
-    scan_recursive(root, 0, max_depth, &mut results);
+    let mut visited = HashSet::new();
+    scan_recursive(root, 0, max_depth, &mut results, &mut visited);
     results.sort();
+    results.dedup();
     results
 }
 
-fn scan_recursive(dir: &Path, depth: usize, max_depth: usize, results: &mut Vec<PathBuf>) {
+fn scan_recursive(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    results: &mut Vec<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+) {
     if depth > max_depth {
         return;
     }
 
+    let canonical_dir = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if !visited.insert(canonical_dir.clone()) {
+        return;
+    }
+
     // Check if this directory is a workspace root
-    let config_path = WorkspaceStore::config_path(dir);
+    let config_path = WorkspaceStore::config_path(&canonical_dir);
     if config_path.exists() {
-        if let Ok(canonical) = std::fs::canonicalize(dir) {
-            results.push(canonical);
-        }
+        results.push(canonical_dir);
         // Don't recurse into workspace directories
         return;
     }
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = std::fs::read_dir(&canonical_dir) else {
         return;
     };
 
     for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
+        // Avoid traversing symlinks to directories.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
             continue;
         }
+
+        let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         // Skip hidden dirs (except .git-same itself is already handled above)
         if name.starts_with('.') {
             continue;
         }
-        scan_recursive(&path, depth + 1, max_depth, results);
+        scan_recursive(&path, depth + 1, max_depth, results, visited);
     }
 }
 

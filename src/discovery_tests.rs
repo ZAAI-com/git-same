@@ -124,6 +124,32 @@ fn test_plan_sync_not_cloned() {
     assert!(skipped[0].1.contains("not cloned"));
 }
 
+#[cfg(unix)]
+#[test]
+fn test_scan_local_ignores_symlinked_directories() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TempDir::new().unwrap();
+    let repo_path = temp.path().join("org/repo");
+    std::fs::create_dir_all(&repo_path).unwrap();
+    symlink(temp.path().join("org"), temp.path().join("org-link")).unwrap();
+
+    let mut git = MockGit::new();
+    git.add_repo(
+        std::fs::canonicalize(&repo_path)
+            .unwrap()
+            .to_string_lossy()
+            .to_string(),
+    );
+
+    let orchestrator = DiscoveryOrchestrator::new(FilterOptions::default(), "{org}/{repo}".into());
+    let repos = orchestrator.scan_local(temp.path(), &git);
+
+    assert_eq!(repos.len(), 1);
+    assert_eq!(repos[0].1, "org");
+    assert_eq!(repos[0].2, "repo");
+}
+
 #[test]
 fn test_merge_repos() {
     let repos1 = vec![test_repo("repo1", "org1")];

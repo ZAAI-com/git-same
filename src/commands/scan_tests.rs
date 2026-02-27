@@ -51,6 +51,28 @@ fn scan_does_not_recurse_into_workspace() {
     assert_eq!(found[0], std::fs::canonicalize(&outer).unwrap());
 }
 
+#[cfg(unix)]
+#[test]
+fn scan_ignores_symlinked_directories() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let ws_root = temp.path().join("my-workspace");
+    let dot_dir = ws_root.join(".git-same");
+    std::fs::create_dir_all(&dot_dir).unwrap();
+    std::fs::write(
+        dot_dir.join("config.toml"),
+        "[provider]\nkind = \"github\"\n",
+    )
+    .unwrap();
+
+    symlink(&ws_root, temp.path().join("workspace-link")).unwrap();
+
+    let found = scan_for_workspaces(temp.path(), 3);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0], std::fs::canonicalize(&ws_root).unwrap());
+}
+
 #[test]
 fn run_register_with_custom_config_path_updates_registry() {
     let temp = tempfile::tempdir().unwrap();
