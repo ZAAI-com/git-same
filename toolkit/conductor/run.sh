@@ -10,7 +10,25 @@ cd "$PROJECT_DIR"
 
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
 ALIAS_FILE="$PROJECT_DIR/toolkit/packaging/binary-aliases.txt"
-PRIMARY_BIN=$(head -n1 "$ALIAS_FILE")
+if [ ! -r "$ALIAS_FILE" ]; then
+    echo "ERROR: Alias manifest not found or unreadable: $ALIAS_FILE"
+    exit 1
+fi
+
+BINARIES=()
+while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] && BINARIES+=("$line")
+done < "$ALIAS_FILE"
+
+if [ ${#BINARIES[@]} -eq 0 ]; then
+    echo "ERROR: Alias manifest contains no aliases: $ALIAS_FILE"
+    exit 1
+fi
+
+PRIMARY_BIN="${BINARIES[0]}"
 GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
 
 # Install primary binary
@@ -23,9 +41,8 @@ if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
     exit 1
 fi
 
-# Create alias symlinks from manifest (skip line 1 = primary)
-tail -n +2 "$ALIAS_FILE" | while read -r alias; do
-    [ -z "$alias" ] && continue
+# Create alias symlinks from manifest (skip primary)
+for alias in "${BINARIES[@]:1}"; do
     # Replace stale standalone alias binaries with a symlink to the primary binary.
     if [ -e "$CARGO_BIN_DIR/$alias" ] && [ ! -L "$CARGO_BIN_DIR/$alias" ]; then
         rm -f "$CARGO_BIN_DIR/$alias"

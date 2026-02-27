@@ -174,13 +174,21 @@ impl WorkspaceConfig {
 
 /// Collapse the home directory prefix to `~` for display.
 pub fn tilde_collapse_path(path: &Path) -> String {
-    let s = path.to_string_lossy();
-    if let Ok(home) = std::env::var("HOME") {
-        if s.starts_with(&home) {
-            return format!("~{}", &s[home.len()..]);
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
+
+    if let Some(home) = home {
+        let home_path = Path::new(&home);
+        if let Ok(suffix) = path.strip_prefix(home_path) {
+            if suffix.as_os_str().is_empty() {
+                return "~".to_string();
+            }
+            return format!("~{}{}", std::path::MAIN_SEPARATOR, suffix.to_string_lossy());
         }
     }
-    s.to_string()
+
+    path.to_string_lossy().to_string()
 }
 
 #[cfg(test)]

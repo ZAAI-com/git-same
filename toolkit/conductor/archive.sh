@@ -13,9 +13,16 @@ CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
 ALIAS_FILE="$PROJECT_DIR/toolkit/packaging/binary-aliases.txt"
 if [ -f "$ALIAS_FILE" ]; then
     BINARIES=()
-    while IFS= read -r line; do
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
         [ -n "$line" ] && BINARIES+=("$line")
     done < "$ALIAS_FILE"
+    if [ ${#BINARIES[@]} -eq 0 ]; then
+        echo "WARNING: $ALIAS_FILE contains no aliases, falling back to hardcoded list."
+        BINARIES=("git-same" "gitsame" "gitsa" "gisa")
+    fi
 else
     echo "WARNING: $ALIAS_FILE not found, falling back to hardcoded list."
     BINARIES=("git-same" "gitsame" "gitsa" "gisa")

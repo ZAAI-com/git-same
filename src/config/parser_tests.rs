@@ -214,3 +214,24 @@ fn test_add_to_registry_at_adds_path_without_duplicates() {
     let config = Config::load_from(&path).unwrap();
     assert_eq!(config.workspaces, vec!["~/repos".to_string()]);
 }
+
+#[test]
+fn test_add_to_registry_at_errors_when_workspaces_is_not_array() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+concurrency = 4
+workspaces = "invalid"
+"#,
+    )
+    .unwrap();
+
+    let err = Config::add_to_registry_at(&path, "~/repos").unwrap_err();
+    assert!(err.to_string().contains("workspaces"));
+
+    // Ensure malformed field was not silently rewritten.
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains(r#"workspaces = "invalid""#));
+}

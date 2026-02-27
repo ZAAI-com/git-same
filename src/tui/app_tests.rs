@@ -7,6 +7,19 @@ fn test_new_no_workspaces_shows_setup_wizard() {
     assert!(app.setup_state.is_some());
     assert!(app.active_workspace.is_none());
     assert!(app.base_path.is_none());
+    assert!(
+        !app.setup_state
+            .as_ref()
+            .expect("setup state")
+            .is_first_setup
+    );
+}
+
+#[test]
+fn test_new_no_workspaces_uses_config_created_for_first_setup_flag() {
+    let app = App::new(Config::default(), vec![], true);
+    let setup = app.setup_state.as_ref().expect("setup state");
+    assert!(setup.is_first_setup);
 }
 
 #[test]

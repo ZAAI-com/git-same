@@ -104,7 +104,7 @@ gisa sync
 
 ## Configuration
 
-Edit `~/.config/git-same/config.toml` to customize behavior:
+Global behavior is configured in `~/.config/git-same/config.toml`:
 
 ```toml
 # Directory structure: {org}/{repo} or {provider}/{org}/{repo}
@@ -115,6 +115,12 @@ concurrency = 4
 
 # Default sync mode: fetch or pull
 sync_mode = "fetch"
+
+# Optional default workspace root path
+# default_workspace = "~/Git-Same/GitHub"
+
+# Registered workspace root paths
+# workspaces = ["~/Git-Same/GitHub"]
 
 [clone]
 # Clone depth (0 = full history)
@@ -135,37 +141,27 @@ include_forks = false
 
 # Filter by organizations (empty = all)
 orgs = []
-
-# Default provider (GitHub.com)
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-prefer_ssh = true
-enabled = true
 ```
 
-`base_path` is workspace-specific (`WorkspaceConfig.base_path`) and is set during
-`gisa setup` (or via workspace config files), not in the global `Config`.
-
-### Multi-Provider Setup
+Provider and workspace-specific settings are stored inside each workspace at
+`<workspace-root>/.git-same/config.toml`:
 
 ```toml
-# GitHub.com
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-prefer_ssh = true
-enabled = true
+username = "my-user"
+orgs = ["my-org"]
 
-# GitHub Enterprise
-[[providers]]
-kind = "github-enterprise"
-name = "Work GitHub"
-api_url = "https://github.company.com/api/v3"
-auth = "gh-cli"
+[provider]
+kind = "github"
 prefer_ssh = true
-enabled = true
-base_path = "~/work/code"
+```
+
+For GitHub Enterprise, configure the workspace provider:
+
+```toml
+[provider]
+kind = "github-enterprise"
+api_url = "https://github.company.com/api/v3"
+prefer_ssh = true
 ```
 
 Authenticate GitHub Enterprise once with:
@@ -363,7 +359,10 @@ cargo uninstall git-same
 
 # Remove config and cache
 rm -rf ~/.config/git-same/
-rm -rf ~/.cache/git-same/
+
+# Workspace-local cache/history live under each workspace:
+# <workspace-root>/.git-same/cache.json
+# <workspace-root>/.git-same/sync-history.json
 ```
 
 ## License

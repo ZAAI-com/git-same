@@ -161,6 +161,7 @@ pub struct CheckEntry {
     pub name: String,
     pub passed: bool,
     pub message: String,
+    pub suggestion: Option<String>,
     pub critical: bool,
 }
 
@@ -365,7 +366,7 @@ impl App {
                 let default_path = std::env::current_dir()
                     .map(|p| state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-                let mut setup = SetupState::with_first_setup(&default_path, true);
+                let mut setup = SetupState::with_first_setup(&default_path, config_was_created);
                 setup.config_was_created = config_was_created;
                 Some(setup)
             } else {

@@ -366,22 +366,33 @@ include_forks = false
         let mut doc: toml::Value = toml::from_str(&content)
             .map_err(|e| AppError::config(format!("Failed to parse config: {}", e)))?;
 
-        if let Some(table) = doc.as_table_mut() {
-            let workspaces = table
-                .entry("workspaces")
-                .or_insert_with(|| toml::Value::Array(Vec::new()));
+        let table = doc
+            .as_table_mut()
+            .ok_or_else(|| AppError::config("Invalid config: expected root table"))?;
 
-            if let Some(arr) = workspaces.as_array_mut() {
-                if let Some(path_to_add) = add {
-                    let val = toml::Value::String(path_to_add.to_string());
-                    if !arr.contains(&val) {
-                        arr.push(val);
-                    }
-                }
-                if let Some(path_to_remove) = remove {
-                    arr.retain(|v| v.as_str().map(|s| s != path_to_remove).unwrap_or(true));
-                }
+        if let Some(existing) = table.get("workspaces") {
+            if !existing.is_array() {
+                return Err(AppError::config(
+                    "Invalid config: 'workspaces' must be an array",
+                ));
             }
+        }
+
+        let workspaces = table
+            .entry("workspaces")
+            .or_insert_with(|| toml::Value::Array(Vec::new()));
+        let arr = workspaces
+            .as_array_mut()
+            .ok_or_else(|| AppError::config("Invalid config: 'workspaces' must be an array"))?;
+
+        if let Some(path_to_add) = add {
+            let val = toml::Value::String(path_to_add.to_string());
+            if !arr.contains(&val) {
+                arr.push(val);
+            }
+        }
+        if let Some(path_to_remove) = remove {
+            arr.retain(|v| v.as_str().map(|s| s != path_to_remove).unwrap_or(true));
         }
 
         let new_content = toml::to_string_pretty(&doc)

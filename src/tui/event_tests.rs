@@ -49,6 +49,7 @@ fn backend_message_variants_construct_and_clone() {
         name: "git".to_string(),
         passed: true,
         message: "installed".to_string(),
+        suggestion: None,
         critical: true,
     }];
 

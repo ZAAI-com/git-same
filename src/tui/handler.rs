@@ -73,6 +73,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                                     name: r.name,
                                     passed: r.passed,
                                     message: r.message,
+                                    suggestion: r.suggestion,
                                     critical: r.critical,
                                 })
                                 .collect();
@@ -116,6 +117,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                             name: r.name,
                             passed: r.passed,
                             message: r.message,
+                            suggestion: r.suggestion,
                             critical: r.critical,
                         })
                         .collect();
@@ -607,7 +609,7 @@ fn handle_backend_message(
                         name: e.name.clone(),
                         passed: e.passed,
                         message: e.message.clone(),
-                        suggestion: None,
+                        suggestion: e.suggestion.clone(),
                         critical: e.critical,
                     })
                     .collect();

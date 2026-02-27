@@ -138,3 +138,24 @@ fn test_tilde_collapse_path_replaces_home() {
     let collapsed = tilde_collapse_path(&path);
     assert!(collapsed.starts_with('~'));
 }
+
+#[test]
+fn test_tilde_collapse_path_home_exactly() {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return;
+    }
+    let collapsed = tilde_collapse_path(std::path::Path::new(&home));
+    assert_eq!(collapsed, "~");
+}
+
+#[test]
+fn test_tilde_collapse_path_does_not_match_string_prefix_only() {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if home.is_empty() {
+        return;
+    }
+    let fake = std::path::PathBuf::from(format!("{}-other/repos", home));
+    let collapsed = tilde_collapse_path(&fake);
+    assert_eq!(collapsed, fake.to_string_lossy());
+}

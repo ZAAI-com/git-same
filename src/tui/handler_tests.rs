@@ -101,3 +101,38 @@ async fn setup_org_discovery_backend_message_populates_state() {
     assert_eq!(setup.orgs.len(), 1);
     assert_eq!(setup.orgs[0].name, "acme");
 }
+
+#[tokio::test]
+async fn setup_check_results_preserve_suggestions() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.screen = Screen::WorkspaceSetup;
+    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+
+    handle_event(
+        &mut app,
+        AppEvent::Backend(BackendMessage::SetupCheckResults(vec![CheckEntry {
+            name: "gh".to_string(),
+            passed: false,
+            message: "Not authenticated".to_string(),
+            suggestion: Some("Run: gh auth login".to_string()),
+            critical: true,
+        }])),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.check_results.len(), 1);
+    assert_eq!(
+        app.check_results[0].suggestion.as_deref(),
+        Some("Run: gh auth login")
+    );
+
+    let setup = app.setup_state.as_ref().expect("setup state");
+    assert_eq!(setup.check_results.len(), 1);
+    assert_eq!(
+        setup.check_results[0].suggestion.as_deref(),
+        Some("Run: gh auth login")
+    );
+}
