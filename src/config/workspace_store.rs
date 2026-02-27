@@ -171,6 +171,12 @@ impl WorkspaceStore {
                 dot_dir.display()
             )));
         }
+
+        // Unregister from global config first so we don't leave stale registry entries
+        // when registry writes fail.
+        let tilde_path = tilde_collapse_path(root);
+        Config::remove_from_registry(&tilde_path)?;
+
         std::fs::remove_dir_all(&dot_dir).map_err(|e| {
             AppError::config(format!(
                 "Failed to remove workspace at '{}': {}",
@@ -178,10 +184,6 @@ impl WorkspaceStore {
                 e
             ))
         })?;
-
-        // Unregister from global config
-        let tilde_path = tilde_collapse_path(root);
-        Config::remove_from_registry(&tilde_path)?;
 
         Ok(())
     }

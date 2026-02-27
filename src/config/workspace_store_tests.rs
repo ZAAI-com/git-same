@@ -118,6 +118,35 @@ fn delete_returns_error_when_dot_dir_missing() {
 }
 
 #[test]
+fn delete_keeps_workspace_files_when_registry_update_fails() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+
+    with_temp_home(&home, || {
+        let global_config_path = crate::config::Config::default_path().unwrap();
+        std::fs::create_dir_all(global_config_path.parent().unwrap()).unwrap();
+        std::fs::write(&global_config_path, "invalid = [").unwrap();
+
+        let root = temp.path().join("my-ws");
+        let dot_dir = WorkspaceStore::dot_dir(&root);
+        std::fs::create_dir_all(&dot_dir).unwrap();
+        std::fs::write(
+            dot_dir.join("config.toml"),
+            "[provider]\nkind = \"github\"\n",
+        )
+        .unwrap();
+
+        let err = WorkspaceStore::delete(&root).unwrap_err();
+        assert!(err.to_string().contains("Failed to parse config"));
+        assert!(
+            dot_dir.exists(),
+            ".git-same should remain when unregister fails"
+        );
+    });
+}
+
+#[test]
 fn save_returns_error_when_global_config_is_missing() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
