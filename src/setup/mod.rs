@@ -85,6 +85,14 @@ async fn run_wizard(
     loop {
         terminal.draw(|frame| ui::render(state, frame))?;
 
+        // If we're on the requirements step and checks have not run yet,
+        // run checks before waiting for key input.
+        if maybe_start_requirements_checks(state) {
+            terminal.draw(|frame| ui::render(state, frame))?;
+            run_requirements_checks(state).await;
+            continue;
+        }
+
         // If we're on the orgs step and loading, trigger discovery before waiting for input
         if state.step == SetupStep::SelectOrgs && state.org_loading {
             // Render loading state first, then do discovery
@@ -124,3 +132,33 @@ async fn run_wizard(
     }
     Ok(())
 }
+
+pub(crate) fn maybe_start_requirements_checks(state: &mut SetupState) -> bool {
+    if state.step != SetupStep::Requirements || state.checks_triggered {
+        return false;
+    }
+
+    state.checks_triggered = true;
+    state.checks_loading = true;
+    state.config_path_display = crate::config::Config::default_path()
+        .ok()
+        .map(|p| p.display().to_string());
+    true
+}
+
+pub(crate) fn apply_requirements_check_results(
+    state: &mut SetupState,
+    results: Vec<crate::checks::CheckResult>,
+) {
+    state.check_results = results;
+    state.checks_loading = false;
+}
+
+pub(crate) async fn run_requirements_checks(state: &mut SetupState) {
+    let results = crate::checks::check_requirements().await;
+    apply_requirements_check_results(state, results);
+}
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

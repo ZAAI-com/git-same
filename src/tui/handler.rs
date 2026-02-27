@@ -63,12 +63,7 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 if let Some(ref mut setup) = app.setup_state {
                     setup.tick_count = setup.tick_count.wrapping_add(1);
                     // Auto-trigger requirement checks on first tick
-                    if setup.step == SetupStep::Requirements && !setup.checks_triggered {
-                        setup.checks_triggered = true;
-                        setup.checks_loading = true;
-                        setup.config_path_display = crate::config::Config::default_path()
-                            .ok()
-                            .map(|p| p.display().to_string());
+                    if crate::setup::maybe_start_requirements_checks(setup) {
                         let tx = backend_tx.clone();
                         tokio::spawn(async move {
                             let results = crate::checks::check_requirements().await;
@@ -606,7 +601,7 @@ fn handle_backend_message(
             // Also populate setup state if on Requirements step
             if let Some(ref mut setup) = app.setup_state {
                 // Map CheckEntry back to CheckResult for setup state storage
-                setup.check_results = entries
+                let results = entries
                     .iter()
                     .map(|e| crate::checks::CheckResult {
                         name: e.name.clone(),
@@ -616,7 +611,7 @@ fn handle_backend_message(
                         critical: e.critical,
                     })
                     .collect();
-                setup.checks_loading = false;
+                crate::setup::apply_requirements_check_results(setup, results);
             }
         }
         BackendMessage::DefaultWorkspaceUpdated(name) => {
