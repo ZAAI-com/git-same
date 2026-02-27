@@ -24,6 +24,33 @@ fn resolve_from_list_errors_when_multiple_workspaces() {
 }
 
 #[test]
+fn resolve_selector_from_list_matches_unique_folder_name() {
+    let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/alpha"));
+    let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/bravo"));
+
+    let resolved = WorkspacePolicy::resolve_selector_from_list("bravo", vec![ws1, ws2]).unwrap();
+    assert_eq!(resolved.root_path, std::path::PathBuf::from("/tmp/bravo"));
+}
+
+#[test]
+fn resolve_selector_from_list_errors_when_folder_name_is_ambiguous() {
+    let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/team-a/work"));
+    let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/team-b/work"));
+
+    let err = WorkspacePolicy::resolve_selector_from_list("work", vec![ws1, ws2]).unwrap_err();
+    assert!(err.to_string().contains("ambiguous"));
+    assert!(err.to_string().contains("explicit path"));
+}
+
+#[test]
+fn looks_like_path_identifies_path_like_selectors() {
+    assert!(WorkspacePolicy::looks_like_path("~/repos"));
+    assert!(WorkspacePolicy::looks_like_path("./repos"));
+    assert!(WorkspacePolicy::looks_like_path("/tmp/repos"));
+    assert!(!WorkspacePolicy::looks_like_path("work"));
+}
+
+#[test]
 fn detect_from_cwd_returns_none_for_plain_tmp_dir() {
     let temp = tempfile::tempdir().unwrap();
     // No .git-same directory present, so detection should return None

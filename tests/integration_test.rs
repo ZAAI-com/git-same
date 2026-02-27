@@ -45,6 +45,11 @@ fn assert_banner_branding(stdout: &str) {
         "Unexpected legacy version suffix in subheadline, got:\n{}",
         stdout
     );
+    assert!(
+        !stdout.contains("GT-SAME"),
+        "Unexpected legacy GT-SAME banner text in stdout, got:\n{}",
+        stdout
+    );
 }
 
 #[test]
@@ -411,6 +416,32 @@ fn test_cli_subcommands_use_dashboard_subheadline() {
         let output = run_cli_with_env(&home, &arg_refs);
         assert_banner_branding(&String::from_utf8_lossy(&output.stdout));
     }
+}
+
+#[test]
+fn test_workspace_list_uses_canonical_banner() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    std::fs::create_dir_all(home.join(".config")).expect("Failed to create config dir");
+    std::fs::create_dir_all(home.join(".cache")).expect("Failed to create cache dir");
+
+    let config_path = temp.path().join("config.toml");
+    let config_str = config_path
+        .to_str()
+        .expect("Config path is not valid UTF-8");
+
+    let init_output = run_cli_with_env(&home, &["init", "--path", config_str, "--force"]);
+    assert!(
+        init_output.status.success(),
+        "Init failed: {:?}",
+        init_output
+    );
+
+    let workspace_output = run_cli_with_env(&home, &["-C", config_str, "workspace", "list"]);
+    assert!(workspace_output.status.success(), "workspace list failed");
+    assert_banner_branding(&String::from_utf8_lossy(&workspace_output.stdout));
 }
 
 #[test]

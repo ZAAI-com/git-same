@@ -84,7 +84,7 @@ pub struct SetupArgs {
 /// Arguments for the sync command
 #[derive(Args, Debug)]
 pub struct SyncCmdArgs {
-    /// Workspace path or name to sync
+    /// Workspace path or folder name to sync
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -112,7 +112,7 @@ pub struct SyncCmdArgs {
 /// Arguments for the status command
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Workspace path or name
+    /// Workspace path or folder name
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -152,7 +152,8 @@ pub enum WorkspaceCommand {
 /// Arguments for the workspace default subcommand
 #[derive(Args, Debug)]
 pub struct WorkspaceDefaultArgs {
-    /// Workspace path or name to set as default (omit to show current)
+    /// Workspace path or folder name to set as default (omit to show current)
+    #[arg(value_name = "WORKSPACE")]
     pub name: Option<String>,
 
     /// Clear the default workspace

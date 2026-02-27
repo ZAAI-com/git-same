@@ -204,7 +204,7 @@ Sync repositories — discover, clone new, fetch/pull existing:
 gisa sync [OPTIONS]
 
 Options:
-  -w, --workspace <NAME>      Workspace to sync
+  -w, --workspace <WORKSPACE> Workspace to sync (path or unique folder name)
       --pull                  Use pull instead of fetch for existing repos
   -n, --dry-run               Show what would be done
   -c, --concurrency <N>       Number of parallel operations (1-32)
@@ -220,7 +220,7 @@ Show status of local repositories:
 gisa status [OPTIONS]
 
 Options:
-  -w, --workspace <NAME>      Workspace to check
+  -w, --workspace <WORKSPACE> Workspace to check (path or unique folder name)
   -o, --org <ORG>...          Filter by organization (repeatable)
   -d, --uncommitted                 Show only repositories with uncommitted changes
   -b, --behind                Show only repositories behind upstream
@@ -233,7 +233,7 @@ Manage workspaces:
 
 ```bash
 gisa workspace list              # List configured workspaces
-gisa workspace default [NAME]    # Set default workspace
+gisa workspace default [WORKSPACE] # Set default workspace (path or unique folder name)
 gisa workspace default --clear   # Clear default workspace
 ```
 

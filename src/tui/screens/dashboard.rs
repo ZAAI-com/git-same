@@ -15,7 +15,7 @@ use chrono::DateTime;
 use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::banner::render_banner;
+use crate::banner::{render_animated_banner, render_banner};
 use crate::tui::app::{App, Operation, OperationState, RepoEntry, Screen};
 use crate::tui::event::AppEvent;
 
@@ -246,6 +246,20 @@ pub(crate) fn format_timestamp(raw: &str) -> String {
     }
 }
 
+fn sync_banner_phase(app: &App) -> Option<f64> {
+    match &app.operation_state {
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            ..
+        }
+        | OperationState::Running {
+            operation: Operation::Sync,
+            ..
+        } => Some((app.tick_count as f64 / 50.0).fract()),
+        _ => None,
+    }
+}
+
 pub fn render(app: &mut App, frame: &mut Frame) {
     let chunks = Layout::vertical([
         Constraint::Length(6), // Banner
@@ -258,7 +272,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     ])
     .split(frame.area());
 
-    render_banner(frame, chunks[0]);
+    if let Some(phase) = sync_banner_phase(app) {
+        render_animated_banner(frame, chunks[0], phase);
+    } else {
+        render_banner(frame, chunks[0]);
+    }
     render_tagline(frame, chunks[1]);
     render_config_reqs(app, frame, chunks[2]);
     render_workspace_info(app, frame, chunks[3]);

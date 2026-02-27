@@ -12,8 +12,8 @@ pub fn run(args: &WorkspaceArgs, config: &Config, output: &Output) -> Result<()>
         WorkspaceCommand::Default(default_args) => {
             if default_args.clear {
                 clear_default(output)
-            } else if let Some(ref path) = default_args.name {
-                set_default(path, output)
+            } else if let Some(ref selector) = default_args.name {
+                set_default(selector, config, output)
             } else {
                 show_default(config, output)
             }
@@ -71,15 +71,13 @@ fn show_default(config: &Config, output: &Output) -> Result<()> {
                 output.info(&format!("Default workspace: {} (not found)", path_str));
             }
         }
-        None => output.info("No default workspace set. Use 'gisa workspace default <path>'."),
+        None => output.info("No default workspace set. Use 'gisa workspace default <path|name>'."),
     }
     Ok(())
 }
 
-fn set_default(path_str: &str, output: &Output) -> Result<()> {
-    let expanded = shellexpand::tilde(path_str);
-    let root = std::path::Path::new(expanded.as_ref());
-    let ws = WorkspaceManager::load(root)?;
+fn set_default(selector: &str, config: &Config, output: &Output) -> Result<()> {
+    let ws = WorkspaceManager::resolve(Some(selector), config)?;
 
     let tilde_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
     Config::save_default_workspace(Some(&tilde_path))?;

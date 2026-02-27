@@ -30,7 +30,13 @@ pub async fn run_command(
     command: &Command,
     config_path: Option<&Path>,
     output: &Output,
+    quiet: bool,
 ) -> Result<()> {
+    // Print the canonical CLI banner for all subcommands.
+    if !output.is_json() && !quiet {
+        crate::banner::print_banner();
+    }
+
     // Commands that don't need config
     if let Command::Init(args) = command {
         return run_init(args, output).await;

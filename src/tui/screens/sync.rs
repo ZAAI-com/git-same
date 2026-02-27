@@ -15,8 +15,6 @@ use crate::tui::app::{App, LogFilter, OperationState, SyncLogEntry, SyncLogStatu
 use crate::tui::event::AppEvent;
 use crate::tui::screens::dashboard::{hide_sync_progress, start_sync_operation};
 
-use crate::banner::render_animated_banner;
-
 // ── Key handler ─────────────────────────────────────────────────────────────
 
 pub fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<AppEvent>) {
@@ -219,14 +217,6 @@ const POPUP_HEIGHT_PERCENT: u16 = 80;
 pub fn render(app: &App, frame: &mut Frame) {
     let is_finished = matches!(&app.operation_state, OperationState::Finished { .. });
 
-    // Animate during active ops, static otherwise
-    let phase = match &app.operation_state {
-        OperationState::Discovering { .. } | OperationState::Running { .. } => {
-            (app.tick_count as f64 / 50.0).fract()
-        }
-        _ => 0.0,
-    };
-
     let popup_area = centered_rect(frame.area(), POPUP_WIDTH_PERCENT, POPUP_HEIGHT_PERCENT);
     dim_outside_popup(frame, popup_area);
     frame.render_widget(Clear, popup_area);
@@ -239,7 +229,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    render_running_layout(app, frame, inner, phase);
+    render_running_layout(app, frame, inner);
 
     // Sync history overlay (on top of popup)
     if app.show_sync_history && is_finished {
@@ -249,9 +239,8 @@ pub fn render(app: &App, frame: &mut Frame) {
 
 // ── Popup layout ────────────────────────────────────────────────────────────
 
-fn render_running_layout(app: &App, frame: &mut Frame, area: Rect, phase: f64) {
+fn render_running_layout(app: &App, frame: &mut Frame, area: Rect) {
     let chunks = Layout::vertical([
-        Constraint::Length(6), // Banner
         Constraint::Length(3), // Title
         Constraint::Length(3), // Progress bar
         Constraint::Length(1), // Enriched counters / summary
@@ -263,15 +252,14 @@ fn render_running_layout(app: &App, frame: &mut Frame, area: Rect, phase: f64) {
     ])
     .split(area);
 
-    render_animated_banner(frame, chunks[0], phase);
-    render_title(app, frame, chunks[1]);
-    render_progress_bar(app, frame, chunks[2]);
-    render_enriched_counters(app, frame, chunks[3]);
-    render_throughput(app, frame, chunks[4]);
-    render_phase_indicator(app, frame, chunks[5]);
-    render_worker_slots(app, frame, chunks[6]);
-    render_main_log(app, frame, chunks[7]);
-    render_bottom_actions(app, frame, chunks[8]);
+    render_title(app, frame, chunks[0]);
+    render_progress_bar(app, frame, chunks[1]);
+    render_enriched_counters(app, frame, chunks[2]);
+    render_throughput(app, frame, chunks[3]);
+    render_phase_indicator(app, frame, chunks[4]);
+    render_worker_slots(app, frame, chunks[5]);
+    render_main_log(app, frame, chunks[6]);
+    render_bottom_actions(app, frame, chunks[7]);
 }
 
 fn render_main_log(app: &App, frame: &mut Frame, area: Rect) {
