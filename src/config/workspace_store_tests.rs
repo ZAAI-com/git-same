@@ -158,6 +158,28 @@ fn save_updates_registry_when_global_config_exists() {
 }
 
 #[test]
+fn save_with_registry_config_path_uses_explicit_config_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("my-ws");
+    std::fs::create_dir_all(&root).unwrap();
+
+    let custom_config_path = temp.path().join("custom-config.toml");
+    std::fs::write(&custom_config_path, crate::config::Config::default_toml()).unwrap();
+
+    let ws = WorkspaceConfig::new_from_root(&root);
+    WorkspaceStore::save_with_registry_config_path(&ws, &custom_config_path).unwrap();
+
+    assert!(WorkspaceStore::config_path(&root).exists());
+
+    let cfg = crate::config::Config::load_from(&custom_config_path).unwrap();
+    assert_eq!(cfg.workspaces.len(), 1);
+    assert_eq!(
+        cfg.workspaces[0],
+        crate::config::workspace::tilde_collapse_path(&root)
+    );
+}
+
+#[test]
 fn save_rolls_back_new_workspace_write_when_registry_update_fails() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");

@@ -63,8 +63,16 @@ impl WorkspaceStore {
     /// Creates the `.git-same/` directory if necessary and registers the workspace
     /// in the global config registry.
     pub fn save(workspace: &WorkspaceConfig) -> Result<(), AppError> {
-        // Preflight: avoid partial workspace writes when global config is missing.
         let global_config_path = Config::default_path()?;
+        Self::save_with_registry_config_path(workspace, &global_config_path)
+    }
+
+    /// Save a workspace config and register it in a specific global config file.
+    pub fn save_with_registry_config_path(
+        workspace: &WorkspaceConfig,
+        global_config_path: &Path,
+    ) -> Result<(), AppError> {
+        // Preflight: avoid partial workspace writes when global config is missing.
         if !global_config_path.exists() {
             return Err(AppError::config(
                 "Config file not found. Run 'gisa init' first.",
@@ -105,7 +113,7 @@ impl WorkspaceStore {
 
         // Register in global config
         let tilde_path = tilde_collapse_path(&workspace.root_path);
-        if let Err(err) = Config::add_to_registry(&tilde_path) {
+        if let Err(err) = Config::add_to_registry_at(global_config_path, &tilde_path) {
             rollback_workspace_write(
                 &config_path,
                 previous_config_content.as_deref(),

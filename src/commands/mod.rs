@@ -45,7 +45,7 @@ pub async fn run_command(
         return reset::run(args, output).await;
     }
     if let Command::Scan(args) = command {
-        return scan::run(args, output);
+        return scan::run(args, config_path, output);
     }
     #[cfg(feature = "tui")]
     if let Command::Setup(args) = command {

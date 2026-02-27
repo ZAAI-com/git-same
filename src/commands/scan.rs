@@ -7,7 +7,7 @@ use crate::output::Output;
 use std::path::{Path, PathBuf};
 
 /// Run the scan command.
-pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
+pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Result<()> {
     let root = match &args.path {
         Some(p) => p.clone(),
         None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -28,7 +28,11 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
     }
 
     // Load existing registry to flag already-registered workspaces
-    let global = Config::load().unwrap_or_default();
+    let global = match config_path {
+        Some(path) => Config::load_from(path),
+        None => Config::load(),
+    }
+    .unwrap_or_default();
     let registered: std::collections::HashSet<PathBuf> = global
         .workspaces
         .iter()
@@ -52,13 +56,19 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
 
             if args.register {
                 match WorkspaceStore::load(ws_root) {
-                    Ok(ws) => match WorkspaceStore::save(&ws) {
-                        Ok(()) => output.success(&format!("    Registered: {}", tilde)),
-                        Err(e) => {
-                            output.warn(&format!("    Failed to register {}: {}", tilde, e));
-                            register_failures.push(format!("{}: {}", tilde, e));
+                    Ok(ws) => {
+                        let save_result = match config_path {
+                            Some(path) => WorkspaceStore::save_with_registry_config_path(&ws, path),
+                            None => WorkspaceStore::save(&ws),
+                        };
+                        match save_result {
+                            Ok(()) => output.success(&format!("    Registered: {}", tilde)),
+                            Err(e) => {
+                                output.warn(&format!("    Failed to register {}: {}", tilde, e));
+                                register_failures.push(format!("{}: {}", tilde, e));
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         output.warn(&format!("    Skipping {}: {}", tilde, e));
                         register_failures.push(format!("{}: {}", tilde, e));

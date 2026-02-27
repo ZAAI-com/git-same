@@ -137,9 +137,15 @@ pub enum AuthStatus {
 
 /// Collapse an absolute path's home directory prefix into `~`.
 pub fn tilde_collapse(path: &str) -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        if path.starts_with(&home) {
-            return format!("~{}", &path[home.len()..]);
+    let home_var = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
+    if let Ok(home) = home_var {
+        let home_path = std::path::Path::new(&home);
+        let p = std::path::Path::new(path);
+        if let Ok(suffix) = p.strip_prefix(home_path) {
+            if suffix.as_os_str().is_empty() {
+                return "~".to_string();
+            }
+            return format!("~{}{}", std::path::MAIN_SEPARATOR, suffix.to_string_lossy());
         }
     }
     path.to_string()

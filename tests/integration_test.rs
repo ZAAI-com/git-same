@@ -80,6 +80,19 @@ fn read_default_workspace(path: &Path) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn read_workspace_registry(path: &Path) -> Vec<String> {
+    let content = std::fs::read_to_string(path).expect("Failed to read config file");
+    let doc: toml::Value = toml::from_str(&content).expect("Failed to parse config TOML");
+    doc.get("workspaces")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn assert_banner_branding(stdout: &str) {
     let description = env!("CARGO_PKG_DESCRIPTION");
     assert!(
@@ -492,6 +505,59 @@ fn test_scan_register_requires_init() {
     assert!(
         !default_config_path(&home).exists(),
         "Config file should not be auto-created in this flow"
+    );
+}
+
+#[test]
+fn test_scan_register_uses_custom_config_path() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    let repos = home.join("repos");
+    let ws_root = repos.join("team").join("project");
+    write_workspace_config(&ws_root);
+
+    let custom_config_path = temp.path().join("custom-config.toml");
+    let custom_config_arg = custom_config_path
+        .to_str()
+        .expect("Custom config path is not valid UTF-8");
+    let init_output = run_cli_with_env(&home, &["init", "--path", custom_config_arg, "--force"]);
+    assert!(
+        init_output.status.success(),
+        "init --path failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+
+    let repos_arg = repos.to_str().expect("Repos path is not valid UTF-8");
+    let scan_output = run_cli_with_env(
+        &home,
+        &["-C", custom_config_arg, "scan", repos_arg, "--register"],
+    );
+    assert!(
+        scan_output.status.success(),
+        "scan --register with custom config failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout),
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+
+    assert!(
+        !default_config_path(&home).exists(),
+        "Default config should not be required when -C is provided"
+    );
+
+    let workspaces = read_workspace_registry(&custom_config_path);
+    assert_eq!(
+        workspaces.len(),
+        1,
+        "Expected one registered workspace in custom config, got {:?}",
+        workspaces
+    );
+    assert!(
+        workspaces[0].ends_with("/repos/team/project"),
+        "Expected registered workspace path to point at repos/team/project, got '{}'",
+        workspaces[0]
     );
 }
 
