@@ -242,9 +242,6 @@ pub struct App {
     /// Setup wizard state (active when on SetupWizard screen).
     pub setup_state: Option<SetupState>,
 
-    /// Whether the config file was freshly created on this launch.
-    pub config_was_created: bool,
-
     /// Whether status scan is in progress.
     pub status_loading: bool,
 
@@ -374,7 +371,6 @@ impl App {
             } else {
                 None
             },
-            config_was_created,
             status_loading: false,
             last_status_scan: None,
             stat_index: 0,

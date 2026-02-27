@@ -334,7 +334,9 @@ include_forks = false
     /// Add a workspace path to the registry in a specific config file.
     pub fn add_to_registry_at(config_path: &Path, path: &str) -> Result<(), AppError> {
         if !config_path.exists() {
-            return Ok(());
+            return Err(AppError::config(
+                "Config file not found. Run 'gisa init' first.",
+            ));
         }
         Self::modify_registry_at(config_path, Some(path), None)
     }

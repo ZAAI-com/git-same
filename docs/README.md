@@ -54,7 +54,7 @@ The tool can be invoked using any of these names:
 | `gisa`     | Shortest alias (symlink)       |
 | `git same` | Git subcommand (requires git-same in PATH) |
 
-> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary — run `toolkit/Conductor/run.sh` to create alias symlinks. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary — run `toolkit/conductor/run.sh` to create alias symlinks. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
 
 ## Quick Start
 
@@ -343,7 +343,7 @@ cargo fmt --all -- --check
 cargo install --path .
 ```
 
-This installs the `git-same` binary. To also create the alias symlinks (`gitsame`, `gitsa`, `gisa`), run `toolkit/Conductor/run.sh` or install via Homebrew. Make sure `~/.cargo/bin` is in your `$PATH`.
+This installs the `git-same` binary. To also create the alias symlinks (`gitsame`, `gitsa`, `gisa`), run `toolkit/conductor/run.sh` or install via Homebrew. Make sure `~/.cargo/bin` is in your `$PATH`.
 
 ### Rebuilding
 

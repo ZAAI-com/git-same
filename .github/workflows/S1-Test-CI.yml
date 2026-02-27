@@ -140,9 +140,13 @@ jobs:
             fi
           done < toolkit/packaging/binary-aliases.txt
 
+          # Conductor script paths exist with exact casing (important on Linux)
+          [ -f toolkit/conductor/run.sh ] || { echo "ERROR: toolkit/conductor/run.sh not found"; exit 1; }
+          [ -f toolkit/conductor/archive.sh ] || { echo "ERROR: toolkit/conductor/archive.sh not found"; exit 1; }
+
           # Scripts reference the manifest
-          grep -q 'binary-aliases.txt' toolkit/Conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
-          grep -q 'binary-aliases.txt' toolkit/Conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
+          grep -q 'binary-aliases.txt' toolkit/conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
+          grep -q 'binary-aliases.txt' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
 
           echo "All alias drift checks passed."
 

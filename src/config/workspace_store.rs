@@ -63,7 +63,16 @@ impl WorkspaceStore {
     /// Creates the `.git-same/` directory if necessary and registers the workspace
     /// in the global config registry.
     pub fn save(workspace: &WorkspaceConfig) -> Result<(), AppError> {
+        // Preflight: avoid partial workspace writes when global config is missing.
+        let global_config_path = Config::default_path()?;
+        if !global_config_path.exists() {
+            return Err(AppError::config(
+                "Config file not found. Run 'gisa init' first.",
+            ));
+        }
+
         let dot_dir = Self::dot_dir(&workspace.root_path);
+        let dot_dir_existed = dot_dir.exists();
         std::fs::create_dir_all(&dot_dir).map_err(|e| {
             AppError::config(format!(
                 "Failed to create workspace directory '{}': {}",
@@ -73,6 +82,18 @@ impl WorkspaceStore {
         })?;
 
         let config_path = dot_dir.join(CONFIG_FILE);
+        let previous_config_content = if config_path.exists() {
+            Some(std::fs::read_to_string(&config_path).map_err(|e| {
+                AppError::config(format!(
+                    "Failed to read existing workspace config at '{}': {}",
+                    config_path.display(),
+                    e
+                ))
+            })?)
+        } else {
+            None
+        };
+
         let content = workspace.to_toml()?;
         std::fs::write(&config_path, content).map_err(|e| {
             AppError::config(format!(
@@ -84,7 +105,15 @@ impl WorkspaceStore {
 
         // Register in global config
         let tilde_path = tilde_collapse_path(&workspace.root_path);
-        let _ = Config::add_to_registry(&tilde_path);
+        if let Err(err) = Config::add_to_registry(&tilde_path) {
+            rollback_workspace_write(
+                &config_path,
+                previous_config_content.as_deref(),
+                &dot_dir,
+                !dot_dir_existed,
+            );
+            return Err(err);
+        }
 
         Ok(())
     }
@@ -144,7 +173,7 @@ impl WorkspaceStore {
 
         // Unregister from global config
         let tilde_path = tilde_collapse_path(root);
-        let _ = Config::remove_from_registry(&tilde_path);
+        Config::remove_from_registry(&tilde_path)?;
 
         Ok(())
     }
@@ -173,6 +202,48 @@ impl WorkspaceStore {
         }
 
         Ok(ws)
+    }
+}
+
+fn rollback_workspace_write(
+    config_path: &Path,
+    previous_config_content: Option<&str>,
+    dot_dir: &Path,
+    remove_dot_dir: bool,
+) {
+    match previous_config_content {
+        Some(previous) => {
+            if let Err(e) = std::fs::write(config_path, previous) {
+                tracing::warn!(
+                    path = %config_path.display(),
+                    error = %e,
+                    "Failed to restore previous workspace config during rollback"
+                );
+            }
+        }
+        None => {
+            if let Err(e) = std::fs::remove_file(config_path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!(
+                        path = %config_path.display(),
+                        error = %e,
+                        "Failed to remove workspace config during rollback"
+                    );
+                }
+            }
+        }
+    }
+
+    if remove_dot_dir {
+        if let Err(e) = std::fs::remove_dir(dot_dir) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::warn!(
+                    path = %dot_dir.display(),
+                    error = %e,
+                    "Failed to remove workspace directory during rollback"
+                );
+            }
+        }
     }
 }
 

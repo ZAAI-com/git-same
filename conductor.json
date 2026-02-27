@@ -2,9 +2,9 @@
   "name": "Git-Same",
   "description": "Mirror GitHub org/repo structure locally - supports multiple providers",
   "scripts": {
-    "setup": "./toolkit/Conductor/setup.sh",
-    "run": "./toolkit/Conductor/run.sh",
-    "archive": "./toolkit/Conductor/archive.sh"
+    "setup": "./toolkit/conductor/setup.sh",
+    "run": "./toolkit/conductor/run.sh",
+    "archive": "./toolkit/conductor/archive.sh"
   },
   "stack": {
     "language": "Rust",

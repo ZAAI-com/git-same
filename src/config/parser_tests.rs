@@ -192,3 +192,25 @@ fn test_save_default_workspace_to_nonexistent_file() {
         Config::save_default_workspace_to(Path::new("/nonexistent/config.toml"), Some("ws"));
     assert!(result.is_err());
 }
+
+#[test]
+fn test_add_to_registry_at_returns_error_when_config_missing() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("missing-config.toml");
+
+    let err = Config::add_to_registry_at(&path, "~/repos").unwrap_err();
+    assert!(err.to_string().contains("Run 'gisa init' first"));
+}
+
+#[test]
+fn test_add_to_registry_at_adds_path_without_duplicates() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, Config::default_toml()).unwrap();
+
+    Config::add_to_registry_at(&path, "~/repos").unwrap();
+    Config::add_to_registry_at(&path, "~/repos").unwrap();
+
+    let config = Config::load_from(&path).unwrap();
+    assert_eq!(config.workspaces, vec!["~/repos".to_string()]);
+}

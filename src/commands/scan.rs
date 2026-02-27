@@ -2,7 +2,7 @@
 
 use crate::cli::ScanArgs;
 use crate::config::{Config, WorkspaceStore};
-use crate::errors::Result;
+use crate::errors::{AppError, Result};
 use crate::output::Output;
 use std::path::{Path, PathBuf};
 
@@ -40,6 +40,7 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
         .collect();
 
     let mut new_count = 0usize;
+    let mut register_failures = Vec::new();
     for ws_root in &found {
         let is_registered = registered.contains(ws_root);
         let tilde = crate::config::workspace::tilde_collapse_path(ws_root);
@@ -53,9 +54,15 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
                 match WorkspaceStore::load(ws_root) {
                     Ok(ws) => match WorkspaceStore::save(&ws) {
                         Ok(()) => output.success(&format!("    Registered: {}", tilde)),
-                        Err(e) => output.warn(&format!("    Failed to register {}: {}", tilde, e)),
+                        Err(e) => {
+                            output.warn(&format!("    Failed to register {}: {}", tilde, e));
+                            register_failures.push(format!("{}: {}", tilde, e));
+                        }
                     },
-                    Err(e) => output.warn(&format!("    Skipping {}: {}", tilde, e)),
+                    Err(e) => {
+                        output.warn(&format!("    Skipping {}: {}", tilde, e));
+                        register_failures.push(format!("{}: {}", tilde, e));
+                    }
                 }
             }
         }
@@ -73,6 +80,18 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
             ""
         }
     ));
+
+    if !register_failures.is_empty() {
+        let first = register_failures
+            .first()
+            .map(String::as_str)
+            .unwrap_or("unknown error");
+        return Err(AppError::config(format!(
+            "Failed to register {} workspace(s). First error: {}",
+            register_failures.len(),
+            first
+        )));
+    }
 
     Ok(())
 }

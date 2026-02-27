@@ -464,6 +464,38 @@ fn test_workspace_default_rejects_ambiguous_folder_name() {
 }
 
 #[test]
+fn test_scan_register_requires_init() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    let repos = home.join("repos");
+    let ws_root = repos.join("team").join("project");
+    write_workspace_config(&ws_root);
+
+    let repos_arg = repos.to_str().expect("Repos path is not valid UTF-8");
+    let output = run_cli_with_env(&home, &["scan", repos_arg, "--register"]);
+    assert!(
+        !output.status.success(),
+        "scan --register should fail when config is missing.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Run 'gisa init' first") || stderr.contains("Config file not found"),
+        "Expected init guidance in stderr, got:\n{}",
+        stderr
+    );
+
+    assert!(
+        !default_config_path(&home).exists(),
+        "Config file should not be auto-created in this flow"
+    );
+}
+
+#[test]
 fn test_missing_config_suggests_init() {
     let output = Command::new(git_same_binary())
         .args(["-C", "/tmp/nonexistent-gisa-config.toml", "sync"])
