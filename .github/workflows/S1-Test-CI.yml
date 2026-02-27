@@ -7,6 +7,9 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -22,6 +25,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -63,6 +68,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -83,8 +90,13 @@ jobs:
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -102,6 +114,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
+          use_oidc: true
           fail_ci_if_error: false
 
   alias-drift-check:
@@ -109,6 +122,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Verify alias manifest and consumers
         run: |
@@ -150,11 +165,43 @@ jobs:
 
           echo "All alias drift checks passed."
 
+  workflow-secret-safety:
+    name: Workflow Secret Safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Block known secret-leak patterns in workflows
+        run: |
+          set -euo pipefail
+
+          # Prevent credentials embedded in URLs (high leak risk in logs/config).
+          if grep -RInE 'https://[^/@[:space:]]+@github[.]com' .github/workflows; then
+            echo "ERROR: Credential-in-URL pattern found in workflow files."
+            exit 1
+          fi
+
+          # Prevent direct printing of expressions that evaluate from secrets.
+          if grep -RInE 'echo[[:space:]].*\$\{\{[[:space:]]*secrets\.' .github/workflows; then
+            echo "ERROR: Direct echo of secrets expression found in workflow files."
+            exit 1
+          fi
+
+          # Prevent shell xtrace in workflow scripts.
+          if grep -RInE '(^|[[:space:];])set[[:space:]]+-x([[:space:];]|$)|bash[[:space:]]+-x' .github/workflows; then
+            echo "ERROR: Shell xtrace detected in workflow files."
+            exit 1
+          fi
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

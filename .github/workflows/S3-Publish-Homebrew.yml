@@ -12,12 +12,17 @@ env:
   TAP_REPO: zaai-com/homebrew-tap
   FORMULA_NAME: git-same
 
+permissions:
+  contents: read
+
 jobs:
   homebrew:
     name: Update Homebrew Formula
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Get version from tag
         id: version
@@ -115,11 +120,16 @@ jobs:
           sed -i "s|SHA_LINUX_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.linux_aarch64 }}|g" formula.rb
           sed -i "s|SHA_MACOS_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.macos_aarch64 }}|g" formula.rb
 
+      - name: Checkout tap repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_REPO_COMMIT_TOKEN }}
+          path: tap
+          fetch-depth: 0
+
       - name: Push formula to tap
-        env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_REPO_COMMIT_TOKEN }}
         run: |
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Formula
           cp formula.rb "tap/Formula/${FORMULA_NAME}.rb"
           cd tap
@@ -130,5 +140,5 @@ jobs:
             echo "Formula unchanged, skipping commit"
           else
             git commit -m "Update ${FORMULA_NAME} to ${{ steps.version.outputs.version }}"
-            git push
+            git push origin HEAD
           fi
