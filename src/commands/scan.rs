@@ -43,7 +43,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
         })
         .collect();
 
-    let mut new_count = 0usize;
+    let mut unregistered_count = 0usize;
     let mut register_failures = Vec::new();
     for ws_root in &found {
         let is_registered = registered.contains(ws_root);
@@ -52,7 +52,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
             output.plain(&format!("  [registered]   {}", tilde));
         } else {
             output.plain(&format!("  [unregistered] {}", tilde));
-            new_count += 1;
+            unregistered_count += 1;
 
             if args.register {
                 match WorkspaceStore::load(ws_root) {
@@ -62,7 +62,10 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
                             None => WorkspaceStore::save(&ws),
                         };
                         match save_result {
-                            Ok(()) => output.success(&format!("    Registered: {}", tilde)),
+                            Ok(()) => {
+                                output.success(&format!("    Registered: {}", tilde));
+                                unregistered_count = unregistered_count.saturating_sub(1);
+                            }
                             Err(e) => {
                                 output.warn(&format!("    Failed to register {}: {}", tilde, e));
                                 register_failures.push(format!("{}: {}", tilde, e));
@@ -82,9 +85,9 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
     output.info(&format!(
         "Found {} workspace(s): {} registered, {} unregistered{}",
         found.len(),
-        found.len() - new_count,
-        new_count,
-        if new_count > 0 && !args.register {
+        found.len() - unregistered_count,
+        unregistered_count,
+        if unregistered_count > 0 && !args.register {
             " (use --register to add them)"
         } else {
             ""

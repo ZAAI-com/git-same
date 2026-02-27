@@ -18,7 +18,7 @@ Our S3 pipeline publishes a Formula (bare CLI binary + SHA256), not a Cask (.app
 
 **Single file modified:** `.github/workflows/S2-Release-GitHub.yml`
 
-Add 3 new steps to the `build-release-assets` job, conditional on `runner.os == 'macOS'`, inserted between the existing "Rename binary" and "Upload artifact" steps:
+Add 4 new steps to the `build-release-assets` job, conditional on `runner.os == 'macOS'`, inserted between the existing "Rename binary" and "Upload artifact" steps:
 
 ### Step 1: Import signing certificate
 - Decode the base64 `.p12` certificate from secrets

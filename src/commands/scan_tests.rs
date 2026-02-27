@@ -77,5 +77,12 @@ fn run_register_with_custom_config_path_updates_registry() {
 
     let cfg = crate::config::Config::load_from(&custom_config_path).unwrap();
     assert_eq!(cfg.workspaces.len(), 1);
-    assert!(cfg.workspaces[0].ends_with("/scan-root/team/project"));
+    let expected_suffix = std::path::Path::new("scan-root")
+        .join("team")
+        .join("project");
+    assert!(
+        std::path::Path::new(&cfg.workspaces[0]).ends_with(&expected_suffix),
+        "Unexpected registered workspace path: {}",
+        cfg.workspaces[0]
+    );
 }

@@ -434,8 +434,9 @@ fn test_workspace_default_accepts_unique_folder_name() {
     let config_path = default_config_path(&home);
     let default_workspace =
         read_default_workspace(&config_path).expect("Expected default_workspace to be set");
+    let expected_default_suffix = Path::new("repos").join("team-a").join("work");
     assert!(
-        default_workspace.ends_with("/repos/team-a/work"),
+        Path::new(&default_workspace).ends_with(&expected_default_suffix),
         "Expected default workspace to point at team-a/work, got '{}'",
         default_workspace
     );
@@ -554,8 +555,9 @@ fn test_scan_register_uses_custom_config_path() {
         "Expected one registered workspace in custom config, got {:?}",
         workspaces
     );
+    let expected_registered_suffix = Path::new("repos").join("team").join("project");
     assert!(
-        workspaces[0].ends_with("/repos/team/project"),
+        Path::new(&workspaces[0]).ends_with(&expected_registered_suffix),
         "Expected registered workspace path to point at repos/team/project, got '{}'",
         workspaces[0]
     );

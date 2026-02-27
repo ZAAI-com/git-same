@@ -218,9 +218,9 @@ Why: Validates that security controls are enforced without breaking delivery.
 
 How:
 1. Trigger S1 manually.
-2. Trigger S2 on a release tag input/process.
-3. Trigger S3 and verify environment approval for Homebrew publish.
-4. Trigger S4 and verify environment approval for crates publish.
+2. Trigger S2 via `workflow_dispatch` and confirm all S1 gate jobs pass before artifact build starts.
+3. Trigger S3 via `workflow_dispatch` and verify environment approval for Homebrew publish.
+4. Trigger S4 via `workflow_dispatch` and verify environment approval for crates publish.
 
 Verify:
 1. No secret value appears in logs.
