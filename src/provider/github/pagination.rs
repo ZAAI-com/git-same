@@ -110,7 +110,7 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
                 .await
             {
                 Ok(response) => response,
-                Err(e) if retry_count < MAX_RETRIES => {
+                Err(_) if retry_count < MAX_RETRIES => {
                     retry_count += 1;
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                     backoff_ms *= 2;

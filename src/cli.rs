@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 /// Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
 ///
-/// Available as: git-same, gitsame, gitsa, gisa
+/// Available as: git-same (primary), gitsame, gitsa, gisa (symlink aliases)
+/// Alias list: see toolkit/packaging/binary-aliases.txt
 /// Also works as: git same (git subcommand)
 #[derive(Parser, Debug)]
 #[command(name = "git-same")]

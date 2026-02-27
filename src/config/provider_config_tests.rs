@@ -1,5 +1,3 @@
-use super::*;
-
 // Provider configuration is now handled by WorkspaceProvider in workspace.rs.
 // These tests verify the WorkspaceProvider API used throughout the codebase.
 

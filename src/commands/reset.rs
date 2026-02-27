@@ -230,10 +230,7 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
                 output.success("All workspaces removed.");
             }
             ResetScope::Workspace(path) => {
-                output.success(&format!(
-                    "Workspace '{}' removed.",
-                    path.display()
-                ));
+                output.success(&format!("Workspace '{}' removed.", path.display()));
             }
         }
         Ok(())

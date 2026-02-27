@@ -497,7 +497,11 @@ fn handle_backend_message(
                 if let Some(ref mut ws) = app.active_workspace {
                     ws.last_synced = Some(now.clone());
                     let _ = WorkspaceManager::save(ws);
-                    if let Some(entry) = app.workspaces.iter_mut().find(|w| w.root_path == ws.root_path) {
+                    if let Some(entry) = app
+                        .workspaces
+                        .iter_mut()
+                        .find(|w| w.root_path == ws.root_path)
+                    {
                         entry.last_synced = Some(now.clone());
                     }
                 }

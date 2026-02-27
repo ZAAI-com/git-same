@@ -24,7 +24,10 @@ fn test_workspace_provider_effective_api_url() {
         api_url: Some("https://custom-api.example.com".to_string()),
         prefer_ssh: true,
     };
-    assert_eq!(provider.effective_api_url(), "https://custom-api.example.com");
+    assert_eq!(
+        provider.effective_api_url(),
+        "https://custom-api.example.com"
+    );
 }
 
 #[test]

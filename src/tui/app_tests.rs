@@ -35,8 +35,10 @@ fn test_new_multiple_no_default_shows_selector() {
 fn test_new_multiple_with_valid_default_auto_selects() {
     let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws1"));
     let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws2"));
-    let mut config = Config::default();
-    config.default_workspace = Some("/tmp/ws2".to_string());
+    let config = Config {
+        default_workspace: Some("/tmp/ws2".to_string()),
+        ..Config::default()
+    };
     let app = App::new(config, vec![ws1, ws2]);
     assert_eq!(app.screen, Screen::Dashboard);
     assert_eq!(
@@ -49,8 +51,10 @@ fn test_new_multiple_with_valid_default_auto_selects() {
 fn test_new_multiple_with_invalid_default_shows_selector() {
     let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws1"));
     let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws2"));
-    let mut config = Config::default();
-    config.default_workspace = Some("/tmp/nonexistent".to_string());
+    let config = Config {
+        default_workspace: Some("/tmp/nonexistent".to_string()),
+        ..Config::default()
+    };
     let app = App::new(config, vec![ws1, ws2]);
     assert_eq!(app.screen, Screen::Workspaces);
     assert!(app.active_workspace.is_none());

@@ -9,17 +9,31 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR"
 
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
-GS_COMMAND="$CARGO_BIN_DIR/gisa"
+ALIAS_FILE="$PROJECT_DIR/toolkit/packaging/binary-aliases.txt"
+PRIMARY_BIN=$(head -n1 "$ALIAS_FILE")
+GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
 
-# Install to ensure all binaries are up to date
-echo "Installing with: cargo install --path ."
-cargo install --path .
+# Install primary binary
+echo "Installing with: cargo install --path . --force"
+cargo install --path . --force
 echo ""
 
-if [ ! -x "$GS_COMMAND" ]; then
-    echo "ERROR: gisa installation failed."
+if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
+    echo "ERROR: $PRIMARY_BIN installation failed."
     exit 1
 fi
+
+# Create alias symlinks from manifest (skip line 1 = primary)
+tail -n +2 "$ALIAS_FILE" | while read -r alias; do
+    [ -z "$alias" ] && continue
+    # Replace stale standalone alias binaries with a symlink to the primary binary.
+    if [ -e "$CARGO_BIN_DIR/$alias" ] && [ ! -L "$CARGO_BIN_DIR/$alias" ]; then
+        rm -f "$CARGO_BIN_DIR/$alias"
+    fi
+    ln -sf "$CARGO_BIN_DIR/$PRIMARY_BIN" "$CARGO_BIN_DIR/$alias"
+    echo "  Symlinked: $alias -> $PRIMARY_BIN"
+done
+echo ""
 
 # Warn if gisa is also installed elsewhere (e.g. Homebrew)
 RED='\033[0;31m'

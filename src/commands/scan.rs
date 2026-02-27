@@ -14,7 +14,11 @@ pub fn run(args: &ScanArgs, output: &Output) -> Result<()> {
     };
 
     let root = std::fs::canonicalize(&root).unwrap_or(root);
-    output.info(&format!("Scanning {} (depth {})", root.display(), args.depth));
+    output.info(&format!(
+        "Scanning {} (depth {})",
+        root.display(),
+        args.depth
+    ));
 
     let found = scan_for_workspaces(&root, args.depth);
 

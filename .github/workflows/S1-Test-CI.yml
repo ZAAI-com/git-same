@@ -32,13 +32,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo +${{ matrix.rust }} fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo +${{ matrix.rust }} clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo test --all-features
+        run: cargo +${{ matrix.rust }} test --all-features
 
   build:
     name: Build (${{ matrix.target }})
@@ -76,7 +76,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo +stable build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-gcc' || '' }}
 
@@ -97,12 +97,54 @@ jobs:
           tool: cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --all-features --workspace --timeout 120 --out xml
+        run: cargo +stable tarpaulin --all-features --workspace --timeout 120 --out xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: false
+
+  alias-drift-check:
+    name: Alias Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify alias manifest and consumers
+        run: |
+          set -e
+
+          # Manifest exists
+          if [ ! -f toolkit/packaging/binary-aliases.txt ]; then
+            echo "ERROR: toolkit/packaging/binary-aliases.txt not found"; exit 1
+          fi
+
+          # Only 1 [[bin]] in Cargo.toml
+          BIN_COUNT=$(grep -c '^\[\[bin\]\]' Cargo.toml)
+          if [ "$BIN_COUNT" -ne 1 ]; then
+            echo "ERROR: Cargo.toml has $BIN_COUNT [[bin]] entries, expected 1"; exit 1
+          fi
+
+          # Primary matches Cargo.toml bin name
+          MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
+          CARGO_BIN=$(grep -A1 '^\[\[bin\]\]' Cargo.toml | grep 'name' | sed 's/.*= *"\(.*\)"/\1/')
+          if [ "$MANIFEST_PRIMARY" != "$CARGO_BIN" ]; then
+            echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
+          fi
+
+          # Homebrew workflow references all aliases
+          while IFS= read -r alias; do
+            [ -z "$alias" ] && continue
+            if ! grep -q "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
+              echo "ERROR: '$alias' missing from S3-Publish-Homebrew.yml"; exit 1
+            fi
+          done < toolkit/packaging/binary-aliases.txt
+
+          # Scripts reference the manifest
+          grep -q 'binary-aliases.txt' toolkit/Conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
+          grep -q 'binary-aliases.txt' toolkit/Conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
+
+          echo "All alias drift checks passed."
 
   audit:
     name: Security Audit

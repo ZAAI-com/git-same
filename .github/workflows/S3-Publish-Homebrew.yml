@@ -94,10 +94,16 @@ jobs:
               elsif OS.linux?
                 bin.install "git-same-linux-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
               end
+              bin.install_symlink "git-same" => "gitsame"
+              bin.install_symlink "git-same" => "gitsa"
+              bin.install_symlink "git-same" => "gisa"
             end
 
             test do
               assert_match version.to_s, shell_output("#{bin}/git-same --version")
+              assert_match version.to_s, shell_output("#{bin}/gitsame --version")
+              assert_match version.to_s, shell_output("#{bin}/gitsa --version")
+              assert_match version.to_s, shell_output("#{bin}/gisa --version")
             end
           end
           FORMULA

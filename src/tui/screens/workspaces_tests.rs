@@ -23,8 +23,10 @@ fn wrap_comma_separated_values_empty_means_all() {
 }
 
 fn build_workspace_app(default_workspace: Option<&str>) -> App {
-    let mut config = Config::default();
-    config.default_workspace = default_workspace.map(ToString::to_string);
+    let config = Config {
+        default_workspace: default_workspace.map(ToString::to_string),
+        ..Config::default()
+    };
 
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
     let mut app = App::new(config, vec![ws.clone()]);
@@ -78,8 +80,7 @@ async fn workspace_key_c_toggles_config_expansion() {
 
 #[tokio::test]
 async fn workspace_left_right_controls_panel_focus_and_list_movement() {
-    let mut config = Config::default();
-    config.default_workspace = None;
+    let config = Config::default();
     let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws1"));
     let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws2"));
     let mut app = App::new(config, vec![ws1.clone(), ws2]);

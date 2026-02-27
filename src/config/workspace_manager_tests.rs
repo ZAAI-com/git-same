@@ -4,7 +4,10 @@ use super::*;
 fn dot_dir_is_derived_from_workspace_root() {
     let root = Path::new("/tmp/my-workspace");
     let dot_dir = WorkspaceManager::dot_dir(root);
-    assert_eq!(dot_dir, std::path::PathBuf::from("/tmp/my-workspace/.git-same"));
+    assert_eq!(
+        dot_dir,
+        std::path::PathBuf::from("/tmp/my-workspace/.git-same")
+    );
 }
 
 #[test]

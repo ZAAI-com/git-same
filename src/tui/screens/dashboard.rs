@@ -342,7 +342,8 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
         .add_modifier(Modifier::BOLD);
     match &app.active_workspace {
         Some(ws) => {
-            let folder_name = ws.root_path
+            let folder_name = ws
+                .root_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or_else(|| ws.root_path.to_str().unwrap_or("workspace"))
@@ -1077,7 +1078,8 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         }
         _ => app.active_workspace.as_ref().and_then(|ws| {
             ws.last_synced.as_ref().map(|ts| {
-                let folder_name_owned = ws.root_path
+                let folder_name_owned = ws
+                    .root_path
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or_else(|| ws.root_path.to_str().unwrap_or("workspace"))

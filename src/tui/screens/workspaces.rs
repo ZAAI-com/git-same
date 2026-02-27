@@ -135,7 +135,6 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
     }
 }
 
-
 #[cfg(all(not(test), target_os = "macos"))]
 fn open_workspace_folder(path: &std::path::Path) {
     let _ = std::process::Command::new("open").arg(path).spawn();
@@ -237,7 +236,8 @@ fn render_workspace_nav(app: &App, frame: &mut Frame, area: Rect) {
         let ws_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
         let is_default = app.config.default_workspace.as_deref() == Some(ws_path.as_str());
 
-        let folder_name = ws.root_path
+        let folder_name = ws
+            .root_path
             .file_name()
             .and_then(|f| f.to_str())
             .unwrap_or(ws_path.as_str());
@@ -338,7 +338,9 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         .display()
         .to_string();
 
-    let cache_file = WorkspaceManager::cache_path(&ws.root_path).display().to_string();
+    let cache_file = WorkspaceManager::cache_path(&ws.root_path)
+        .display()
+        .to_string();
 
     let username = if ws.username.is_empty() {
         "\u{2014}".to_string()
@@ -363,7 +365,8 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     let default_label = if is_default { "Yes" } else { "No" };
     let active_label = if is_active { "Yes" } else { "No" };
 
-    let folder_name_owned = ws.root_path
+    let folder_name_owned = ws
+        .root_path
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or(ws_tilde_path.as_str())

@@ -9,21 +9,10 @@ repository = "https://github.com/zaai-com/git-same"
 keywords = ["git", "github", "cli", "clone", "sync"]
 categories = ["command-line-utilities", "development-tools"]
 
-# All binaries are installed by default
+# Aliases (gitsame, gitsa, gisa) are created as symlinks by installers.
+# See toolkit/packaging/binary-aliases.txt for the full list.
 [[bin]]
 name = "git-same"
-path = "src/main.rs"
-
-[[bin]]
-name = "gitsame"
-path = "src/main.rs"
-
-[[bin]]
-name = "gitsa"
-path = "src/main.rs"
-
-[[bin]]
-name = "gisa"
 path = "src/main.rs"
 
 [features]

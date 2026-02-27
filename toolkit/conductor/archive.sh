@@ -10,7 +10,16 @@ cd "$PROJECT_DIR"
 
 PACKAGE_NAME="git-same"
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
-BINARIES=("git-same" "gitsame" "gitsa" "gisa")
+ALIAS_FILE="$PROJECT_DIR/toolkit/packaging/binary-aliases.txt"
+if [ -f "$ALIAS_FILE" ]; then
+    BINARIES=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && BINARIES+=("$line")
+    done < "$ALIAS_FILE"
+else
+    echo "WARNING: $ALIAS_FILE not found, falling back to hardcoded list."
+    BINARIES=("git-same" "gitsame" "gitsa" "gisa")
+fi
 
 echo "========================================"
 echo "  Git-Same (Gisa CLI) Archive"

@@ -10,10 +10,22 @@ fn dot_dir_cache_and_config_paths_are_derived_from_root() {
     let cache = WorkspaceStore::cache_path(root);
     let history = WorkspaceStore::sync_history_path(root);
 
-    assert_eq!(dot_dir, std::path::PathBuf::from("/tmp/my-workspace/.git-same"));
-    assert_eq!(config, std::path::PathBuf::from("/tmp/my-workspace/.git-same/config.toml"));
-    assert_eq!(cache, std::path::PathBuf::from("/tmp/my-workspace/.git-same/cache.json"));
-    assert_eq!(history, std::path::PathBuf::from("/tmp/my-workspace/.git-same/sync-history.json"));
+    assert_eq!(
+        dot_dir,
+        std::path::PathBuf::from("/tmp/my-workspace/.git-same")
+    );
+    assert_eq!(
+        config,
+        std::path::PathBuf::from("/tmp/my-workspace/.git-same/config.toml")
+    );
+    assert_eq!(
+        cache,
+        std::path::PathBuf::from("/tmp/my-workspace/.git-same/cache.json")
+    );
+    assert_eq!(
+        history,
+        std::path::PathBuf::from("/tmp/my-workspace/.git-same/sync-history.json")
+    );
 }
 
 #[test]

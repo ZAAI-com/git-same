@@ -377,9 +377,7 @@ include_forks = false
                     }
                 }
                 if let Some(path_to_remove) = remove {
-                    arr.retain(|v| {
-                        v.as_str().map(|s| s != path_to_remove).unwrap_or(true)
-                    });
+                    arr.retain(|v| v.as_str().map(|s| s != path_to_remove).unwrap_or(true));
                 }
             }
         }
