@@ -75,6 +75,54 @@ jobs:
           use_oidc: true
           fail_ci_if_error: false
 
+  alias-drift-check:
+    name: Alias Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Verify alias manifest and consumers
+        run: |
+          set -e
+
+          # Manifest exists
+          if [ ! -f toolkit/packaging/binary-aliases.txt ]; then
+            echo "ERROR: toolkit/packaging/binary-aliases.txt not found"; exit 1
+          fi
+
+          # Only 1 [[bin]] in Cargo.toml
+          BIN_COUNT=$(grep -c '^\[\[bin\]\]' Cargo.toml)
+          if [ "$BIN_COUNT" -ne 1 ]; then
+            echo "ERROR: Cargo.toml has $BIN_COUNT [[bin]] entries, expected 1"; exit 1
+          fi
+
+          # Primary matches Cargo.toml bin name
+          MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
+          CARGO_BIN=$(grep -A1 '^\[\[bin\]\]' Cargo.toml | grep 'name' | sed 's/.*= *"\(.*\)"/\1/')
+          if [ "$MANIFEST_PRIMARY" != "$CARGO_BIN" ]; then
+            echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
+          fi
+
+          # Homebrew workflow references all aliases
+          while IFS= read -r alias; do
+            [ -z "$alias" ] && continue
+            if ! grep -q "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
+              echo "ERROR: '$alias' missing from S3-Publish-Homebrew.yml"; exit 1
+            fi
+          done < toolkit/packaging/binary-aliases.txt
+
+          # Conductor script paths exist with exact casing (important on Linux)
+          [ -f toolkit/conductor/run.sh ] || { echo "ERROR: toolkit/conductor/run.sh not found"; exit 1; }
+          [ -f toolkit/conductor/archive.sh ] || { echo "ERROR: toolkit/conductor/archive.sh not found"; exit 1; }
+
+          # Scripts reference the manifest
+          grep -q 'binary-aliases.txt' toolkit/conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
+          grep -q 'binary-aliases.txt' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
+
+          echo "All alias drift checks passed."
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -118,7 +166,7 @@ jobs:
 
   build-release-assets:
     name: Build Release Asset (${{ matrix.target }})
-    needs: [test, coverage, audit, workflow-secret-safety]
+    needs: [test, coverage, alias-drift-check, audit, workflow-secret-safety]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
