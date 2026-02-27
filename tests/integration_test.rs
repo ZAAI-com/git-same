@@ -27,6 +27,59 @@ fn run_cli_with_env(home: &Path, args: &[&str]) -> std::process::Output {
         .expect("Failed to execute git-same")
 }
 
+fn default_config_path(home: &Path) -> PathBuf {
+    home.join(".config").join("git-same").join("config.toml")
+}
+
+fn write_workspace_config(root: &Path) {
+    let dot_dir = root.join(".git-same");
+    std::fs::create_dir_all(&dot_dir).expect("Failed to create workspace metadata dir");
+    std::fs::write(
+        dot_dir.join("config.toml"),
+        r#"[provider]
+kind = "github"
+"#,
+    )
+    .expect("Failed to write workspace config");
+}
+
+fn setup_registered_workspaces(home: &Path, roots: &[PathBuf]) {
+    std::fs::create_dir_all(home.join(".config")).expect("Failed to create config dir");
+    std::fs::create_dir_all(home.join(".cache")).expect("Failed to create cache dir");
+
+    let init_output = run_cli_with_env(home, &["init", "--force"]);
+    assert!(
+        init_output.status.success(),
+        "Init failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+
+    for root in roots {
+        write_workspace_config(root);
+    }
+
+    let repos_root = home.join("repos");
+    let repos_arg = repos_root
+        .to_str()
+        .expect("Repos root path is not valid UTF-8");
+    let scan_output = run_cli_with_env(home, &["scan", repos_arg, "--register"]);
+    assert!(
+        scan_output.status.success(),
+        "Scan/register failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout),
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+}
+
+fn read_default_workspace(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).expect("Failed to read config file");
+    let doc: toml::Value = toml::from_str(&content).expect("Failed to parse config TOML");
+    doc.get("default_workspace")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
 fn assert_banner_branding(stdout: &str) {
     let description = env!("CARGO_PKG_DESCRIPTION");
     assert!(
@@ -344,6 +397,70 @@ fn test_workspace_list() {
 
     // Should succeed even with no workspaces
     assert!(output.status.success());
+}
+
+#[test]
+fn test_workspace_default_accepts_unique_folder_name() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+
+    let ws_target = home.join("repos").join("team-a").join("work");
+    let ws_other = home.join("repos").join("team-b").join("other");
+    setup_registered_workspaces(&home, &[ws_target.clone(), ws_other]);
+
+    let set_output = run_cli_with_env(&home, &["workspace", "default", "work"]);
+    assert!(
+        set_output.status.success(),
+        "workspace default by folder name failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&set_output.stdout),
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    let config_path = default_config_path(&home);
+    let default_workspace =
+        read_default_workspace(&config_path).expect("Expected default_workspace to be set");
+    assert!(
+        default_workspace.ends_with("/repos/team-a/work"),
+        "Expected default workspace to point at team-a/work, got '{}'",
+        default_workspace
+    );
+}
+
+#[test]
+fn test_workspace_default_rejects_ambiguous_folder_name() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+
+    let ws_a = home.join("repos").join("team-a").join("work");
+    let ws_b = home.join("repos").join("team-b").join("work");
+    setup_registered_workspaces(&home, &[ws_a, ws_b]);
+
+    let output = run_cli_with_env(&home, &["workspace", "default", "work"]);
+    assert!(
+        !output.status.success(),
+        "Expected ambiguous selector to fail.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    assert!(
+        stderr.contains("ambiguous") && stderr.contains("explicit path"),
+        "Expected ambiguous selector guidance in stderr, got:\n{}",
+        stderr
+    );
+
+    let config_path = default_config_path(&home);
+    let default_workspace = read_default_workspace(&config_path);
+    assert!(
+        default_workspace.is_none(),
+        "default_workspace should remain unset on ambiguous selector, got {:?}",
+        default_workspace
+    );
 }
 
 #[test]

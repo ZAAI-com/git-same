@@ -35,7 +35,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
     if key.modifiers == KeyModifiers::NONE
         && key.code == KeyCode::Char('q')
-        && !matches!(state.step, SetupStep::SelectPath)
+        && !matches!(state.step, SetupStep::SelectPath | SetupStep::Requirements)
     {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
@@ -43,6 +43,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
     if !path_popup_active
         && state.step != SetupStep::SelectPath
+        && state.step != SetupStep::Requirements
         && key.modifiers == KeyModifiers::NONE
         && key.code == KeyCode::Esc
     {
@@ -68,7 +69,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
 
     match state.step {
-        SetupStep::Welcome => handle_welcome(state, key),
+        SetupStep::Requirements => handle_requirements(state, key),
         SetupStep::SelectProvider => handle_provider(state, key),
         SetupStep::Authenticate => handle_auth(state, key).await,
         SetupStep::SelectPath => handle_path(state, key),
@@ -80,8 +81,10 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
 
 async fn handle_step_forward(state: &mut SetupState) {
     match state.step {
-        SetupStep::Welcome => {
-            state.next_step();
+        SetupStep::Requirements => {
+            if !state.checks_loading && state.requirements_passed() {
+                state.next_step();
+            }
         }
         SetupStep::SelectProvider => {
             if state.provider_choices[state.provider_index].available {
@@ -134,10 +137,12 @@ async fn handle_step_forward(state: &mut SetupState) {
     }
 }
 
-fn handle_welcome(state: &mut SetupState, key: KeyEvent) {
+fn handle_requirements(state: &mut SetupState, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
-            state.next_step();
+            if !state.checks_loading && state.requirements_passed() {
+                state.next_step();
+            }
         }
         KeyCode::Esc => {
             state.prev_step();

@@ -8,7 +8,7 @@ use tokio::sync::mpsc::unbounded_channel;
 #[tokio::test]
 async fn q_quits_immediately() {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     let (tx, _rx) = unbounded_channel();
 
     handle_key(
@@ -24,39 +24,44 @@ async fn q_quits_immediately() {
 #[tokio::test]
 async fn setup_cancel_returns_to_previous_screen_when_present() {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     app.screen = Screen::WorkspaceSetup;
-    app.screen_stack = vec![Screen::SystemCheck, Screen::Workspaces];
-    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+    app.screen_stack = vec![Screen::Settings, Screen::Workspaces];
+    let mut setup = SetupState::new("~/Git-Same/GitHub");
+    setup.step = crate::setup::state::SetupStep::SelectProvider;
+    app.setup_state = Some(setup);
 
     handle_setup_wizard_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
 
     assert!(app.setup_state.is_none());
     assert_eq!(app.screen, Screen::Workspaces);
-    assert_eq!(app.screen_stack, vec![Screen::SystemCheck]);
+    assert_eq!(app.screen_stack, vec![Screen::Settings]);
 }
 
 #[tokio::test]
-async fn setup_cancel_without_history_falls_back_to_system_check() {
+async fn setup_cancel_without_history_quits() {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     app.screen = Screen::WorkspaceSetup;
     app.screen_stack.clear();
-    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+    let mut setup = SetupState::new("~/Git-Same/GitHub");
+    setup.step = crate::setup::state::SetupStep::SelectProvider;
+    app.setup_state = Some(setup);
 
     handle_setup_wizard_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).await;
 
     assert!(app.setup_state.is_none());
-    assert_eq!(app.screen, Screen::SystemCheck);
-    assert!(app.screen_stack.is_empty());
+    assert!(app.should_quit);
 }
 
 #[tokio::test]
 async fn setup_right_moves_to_next_step() {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     app.screen = Screen::WorkspaceSetup;
-    app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));
+    let mut setup = SetupState::new("~/Git-Same/GitHub");
+    setup.step = SetupStep::SelectProvider;
+    app.setup_state = Some(setup);
 
     handle_setup_wizard_key(&mut app, KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)).await;
 
@@ -69,7 +74,7 @@ async fn setup_right_moves_to_next_step() {
 #[tokio::test]
 async fn setup_org_discovery_backend_message_populates_state() {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     let (tx, _rx) = unbounded_channel();
     app.screen = Screen::WorkspaceSetup;
     app.setup_state = Some(SetupState::new("~/Git-Same/GitHub"));

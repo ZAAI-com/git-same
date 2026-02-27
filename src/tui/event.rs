@@ -75,10 +75,8 @@ pub enum BackendMessage {
     OperationError(String),
     /// Status scan results.
     StatusResults(Vec<RepoEntry>),
-    /// Init: config file created successfully.
-    InitConfigCreated(String),
-    /// Init: config creation failed.
-    InitConfigError(String),
+    /// Setup wizard requirement check results.
+    SetupCheckResults(Vec<CheckEntry>),
     /// Default workspace was set/cleared successfully.
     DefaultWorkspaceUpdated(Option<String>),
     /// Default workspace operation failed.

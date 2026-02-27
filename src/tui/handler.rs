@@ -62,6 +62,30 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
             if app.screen == Screen::WorkspaceSetup {
                 if let Some(ref mut setup) = app.setup_state {
                     setup.tick_count = setup.tick_count.wrapping_add(1);
+                    // Auto-trigger requirement checks on first tick
+                    if setup.step == SetupStep::Requirements && !setup.checks_triggered {
+                        setup.checks_triggered = true;
+                        setup.checks_loading = true;
+                        setup.config_path_display = crate::config::Config::default_path()
+                            .ok()
+                            .map(|p| p.display().to_string());
+                        let tx = backend_tx.clone();
+                        tokio::spawn(async move {
+                            let results = crate::checks::check_requirements().await;
+                            let entries: Vec<CheckEntry> = results
+                                .into_iter()
+                                .map(|r| CheckEntry {
+                                    name: r.name,
+                                    passed: r.passed,
+                                    message: r.message,
+                                    critical: r.critical,
+                                })
+                                .collect();
+                            let _ = tx.send(AppEvent::Backend(BackendMessage::SetupCheckResults(
+                                entries,
+                            )));
+                        });
+                    }
                     if setup.step == SetupStep::SelectOrgs
                         && setup.org_loading
                         && !setup.org_discovery_in_progress
@@ -179,10 +203,6 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
             app.screen = Screen::Dashboard;
             return;
         }
-        // Don't go back from entry points (no screen stack)
-        if app.screen == Screen::SystemCheck {
-            return;
-        }
         // Workspace screen: only go back if navigated to (has screen stack)
         if app.screen == Screen::Workspaces && app.screen_stack.is_empty() {
             return;
@@ -193,7 +213,6 @@ async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSender<A
 
     // Screen-specific keybindings
     match app.screen {
-        Screen::SystemCheck => screens::system_check::handle_key(app, key, backend_tx).await,
         Screen::WorkspaceSetup => unreachable!(), // handled above
         Screen::Workspaces => screens::workspaces::handle_key(app, key, backend_tx).await,
         Screen::Dashboard => screens::dashboard::handle_key(app, key, backend_tx).await,
@@ -235,10 +254,10 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
             app.screen = Screen::Dashboard;
             app.screen_stack.clear();
         } else {
-            // Cancelled — return to previous screen when available.
+            // Cancelled — return to previous screen when available, else quit.
             app.setup_state = None;
             if app.screen_stack.is_empty() {
-                app.screen = Screen::SystemCheck;
+                app.should_quit = true;
             } else {
                 app.go_back();
             }
@@ -580,12 +599,25 @@ fn handle_backend_message(
                 app.changelog_loaded += 1;
             }
         }
-        BackendMessage::InitConfigCreated(path) => {
-            app.config_created = true;
-            app.config_path_display = Some(path);
-        }
-        BackendMessage::InitConfigError(msg) => {
-            app.error_message = Some(msg);
+        BackendMessage::SetupCheckResults(entries) => {
+            // Populate app-level check_results (for Settings screen)
+            app.check_results = entries.clone();
+            app.checks_loading = false;
+            // Also populate setup state if on Requirements step
+            if let Some(ref mut setup) = app.setup_state {
+                // Map CheckEntry back to CheckResult for setup state storage
+                setup.check_results = entries
+                    .iter()
+                    .map(|e| crate::checks::CheckResult {
+                        name: e.name.clone(),
+                        passed: e.passed,
+                        message: e.message.clone(),
+                        suggestion: None,
+                        critical: e.critical,
+                    })
+                    .collect();
+                setup.checks_loading = false;
+            }
         }
         BackendMessage::DefaultWorkspaceUpdated(name) => {
             app.config.default_workspace = name;

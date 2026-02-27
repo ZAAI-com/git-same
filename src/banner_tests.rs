@@ -10,7 +10,6 @@ fn print_banner_executes_without_panicking() {
     print_banner();
 }
 
-#[cfg(feature = "tui")]
 #[test]
 fn interpolate_stops_clamps_to_bounds() {
     let start = interpolate_stops(&[(0, 0, 0), (255, 255, 255)], -1.0);
@@ -18,6 +17,20 @@ fn interpolate_stops_clamps_to_bounds() {
 
     let end = interpolate_stops(&[(0, 0, 0), (255, 255, 255)], 2.0);
     assert_eq!(end, (255, 255, 255));
+}
+
+#[test]
+fn cli_gradient_line_uses_truecolor_sequences() {
+    let rendered = cli_gradient_line_with_force("AB", &GRADIENT_STOPS, true);
+    assert!(rendered.contains("\u{1b}[38;2;59;130;246"));
+    assert!(rendered.contains("\u{1b}[38;2;34;197;94"));
+}
+
+#[test]
+fn cli_line5_styles_version_as_badge() {
+    let version_display = format!("{:^6}", "1.1.0");
+    let rendered = cli_line5_with_force(&version_display, &GRADIENT_STOPS, true);
+    assert!(rendered.contains("\u{1b}[48;2;"));
 }
 
 #[cfg(feature = "tui")]

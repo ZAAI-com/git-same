@@ -45,17 +45,23 @@ impl WorkspacePolicy {
                 Ok(ws) => return Ok(ws),
                 Err(path_err) => {
                     let workspaces = WorkspaceStore::list()?;
-                    return Self::resolve_selector_from_list(value, workspaces).map_err(|_| {
-                        if Self::looks_like_path(value) {
-                            path_err
-                        } else {
-                            AppError::config(format!(
+                    match Self::resolve_selector_from_list(value, workspaces) {
+                        Ok(ws) => return Ok(ws),
+                        Err(selector_err) => {
+                            let is_ambiguous = selector_err.to_string().contains("ambiguous");
+                            if is_ambiguous {
+                                return Err(selector_err);
+                            }
+                            if Self::looks_like_path(value) {
+                                return Err(path_err);
+                            }
+                            return Err(AppError::config(format!(
                                 "No workspace matched selector '{}'. Use 'gisa workspace list' and \
                                  pass a workspace folder name or path.",
                                 value
-                            ))
+                            )));
                         }
-                    });
+                    }
                 }
             }
         }

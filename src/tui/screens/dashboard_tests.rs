@@ -5,7 +5,7 @@ use tokio::sync::mpsc::unbounded_channel;
 
 fn build_app() -> App {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(Config::default(), vec![ws]);
+    let mut app = App::new(Config::default(), vec![ws], false);
     app.screen = Screen::Dashboard;
     app.screen_stack.clear();
     app

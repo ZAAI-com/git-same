@@ -66,7 +66,7 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             app.navigate_to(Screen::Workspaces);
         }
         KeyCode::Char('i') => {
-            app.navigate_to(Screen::SystemCheck);
+            app.navigate_to(Screen::Settings);
         }
         KeyCode::Char('/') => {
             app.filter_active = true;

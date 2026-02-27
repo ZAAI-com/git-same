@@ -6,19 +6,19 @@ use crate::types::ProviderKind;
 /// Which step of the wizard is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupStep {
-    /// Step 0: Welcome screen (first-time only).
-    Welcome,
-    /// Step 1: Select a provider.
+    /// Step 1: System requirements check.
+    Requirements,
+    /// Step 2: Select a provider.
     SelectProvider,
-    /// Step 2: Authenticate and detect username.
+    /// Step 3: Authenticate and detect username.
     Authenticate,
-    /// Step 3: Discover and select organizations.
+    /// Step 4: Discover and select organizations.
     SelectOrgs,
-    /// Step 4: Enter the base path.
+    /// Step 5: Enter the base path.
     SelectPath,
-    /// Step 5: Review and save.
+    /// Step 6: Review and save.
     Confirm,
-    /// Step 6: Success / completion screen.
+    /// Success / completion screen.
     Complete,
 }
 
@@ -39,7 +39,7 @@ pub enum SetupOutcome {
     Cancelled,
 }
 
-/// Represents one of the provider choices shown in step 1.
+/// Represents one of the provider choices shown in step 2.
 #[derive(Debug, Clone)]
 pub struct ProviderChoice {
     pub kind: ProviderKind,
@@ -73,23 +73,30 @@ pub struct SetupState {
     /// Outcome when done.
     pub outcome: Option<SetupOutcome>,
 
-    // Step 1: Provider selection
+    // Step 1: Requirements check
+    pub check_results: Vec<crate::checks::CheckResult>,
+    pub checks_loading: bool,
+    pub checks_triggered: bool,
+    pub config_path_display: Option<String>,
+    pub config_was_created: bool,
+
+    // Step 2: Provider selection
     pub provider_choices: Vec<ProviderChoice>,
     pub provider_index: usize,
 
-    // Step 2: Authentication
+    // Step 3: Authentication
     pub auth_status: AuthStatus,
     pub username: Option<String>,
     pub auth_token: Option<String>,
 
-    // Step 3: Org selection
+    // Step 4: Org selection
     pub orgs: Vec<OrgEntry>,
     pub org_index: usize,
     pub org_loading: bool,
     pub org_discovery_in_progress: bool,
     pub org_error: Option<String>,
 
-    // Step 4: Path
+    // Step 5: Path
     pub base_path: String,
     pub path_cursor: usize,
     pub path_suggestions_mode: bool,
@@ -111,11 +118,11 @@ pub struct SetupState {
     // Animation / UX
     /// Tick counter for spinner and animation effects.
     pub tick_count: u64,
-    /// Whether this is the first workspace setup (controls Welcome screen).
+    /// Whether this is the first workspace setup (controls UI text).
     pub is_first_setup: bool,
 }
 
-/// Authentication status during step 2.
+/// Authentication status during step 3.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthStatus {
     /// Haven't checked yet.
@@ -140,13 +147,11 @@ pub fn tilde_collapse(path: &str) -> String {
 
 impl SetupState {
     /// Create initial wizard state.
-    ///
-    /// If `is_first_setup` is true, the wizard starts with a Welcome screen.
     pub fn new(default_base_path: &str) -> Self {
         Self::with_first_setup(default_base_path, false)
     }
 
-    /// Create wizard state, optionally starting with the Welcome screen.
+    /// Create wizard state, optionally marking as first-time setup.
     pub fn with_first_setup(default_base_path: &str, is_first_setup: bool) -> Self {
         let provider_choices = vec![
             ProviderChoice {
@@ -184,16 +189,15 @@ impl SetupState {
         let base_path = default_base_path.to_string();
         let path_cursor = base_path.len();
 
-        let step = if is_first_setup {
-            SetupStep::Welcome
-        } else {
-            SetupStep::SelectProvider
-        };
-
         Self {
-            step,
+            step: SetupStep::Requirements,
             should_quit: false,
             outcome: None,
+            check_results: Vec::new(),
+            checks_loading: false,
+            checks_triggered: false,
+            config_path_display: None,
+            config_was_created: false,
             provider_choices,
             provider_index: 0,
             auth_status: AuthStatus::Pending,
@@ -250,7 +254,7 @@ impl SetupState {
 
     /// Populate the path suggestions list for the SelectPath step.
     pub fn populate_path_suggestions(&mut self) {
-        // Keep step 4 path fixed unless the user explicitly selects a folder
+        // Keep step 5 path fixed unless the user explicitly selects a folder
         // from the folder navigator popup.
         self.path_suggestions = vec![PathSuggestion {
             path: self.base_path.clone(),
@@ -270,27 +274,37 @@ impl SetupState {
         self.path_cursor = self.base_path.len();
     }
 
-    /// The 1-based step number for display (Welcome is not counted).
+    /// Whether all critical requirement checks have passed.
+    pub fn requirements_passed(&self) -> bool {
+        !self.check_results.is_empty()
+            && self
+                .check_results
+                .iter()
+                .filter(|r| r.critical)
+                .all(|r| r.passed)
+    }
+
+    /// The 1-based step number for display.
     pub fn step_number(&self) -> usize {
         match self.step {
-            SetupStep::Welcome => 0,
-            SetupStep::SelectProvider => 1,
-            SetupStep::Authenticate => 2,
-            SetupStep::SelectOrgs => 3,
-            SetupStep::SelectPath => 4,
-            SetupStep::Confirm => 5,
-            SetupStep::Complete => 5,
+            SetupStep::Requirements => 1,
+            SetupStep::SelectProvider => 2,
+            SetupStep::Authenticate => 3,
+            SetupStep::SelectOrgs => 4,
+            SetupStep::SelectPath => 5,
+            SetupStep::Confirm => 6,
+            SetupStep::Complete => 6,
         }
     }
 
-    /// Total number of numbered steps (excluding Welcome and Complete).
-    pub const TOTAL_STEPS: usize = 5;
+    /// Total number of numbered steps (excluding Complete).
+    pub const TOTAL_STEPS: usize = 6;
 
     /// Move to the next step.
     pub fn next_step(&mut self) {
         self.error_message = None;
         self.step = match self.step {
-            SetupStep::Welcome => SetupStep::SelectProvider,
+            SetupStep::Requirements => SetupStep::SelectProvider,
             SetupStep::SelectProvider => SetupStep::Authenticate,
             SetupStep::Authenticate => {
                 self.org_loading = true;
@@ -318,16 +332,12 @@ impl SetupState {
     pub fn prev_step(&mut self) {
         self.error_message = None;
         self.step = match self.step {
-            SetupStep::Welcome => {
+            SetupStep::Requirements => {
                 self.outcome = Some(SetupOutcome::Cancelled);
                 self.should_quit = true;
-                SetupStep::Welcome
+                SetupStep::Requirements
             }
-            SetupStep::SelectProvider => {
-                self.outcome = Some(SetupOutcome::Cancelled);
-                self.should_quit = true;
-                SetupStep::SelectProvider
-            }
+            SetupStep::SelectProvider => SetupStep::Requirements,
             SetupStep::Authenticate => SetupStep::SelectProvider,
             SetupStep::SelectOrgs => SetupStep::Authenticate,
             SetupStep::SelectPath => SetupStep::SelectOrgs,

@@ -60,6 +60,7 @@ async fn main() -> ExitCode {
                 use git_same::config::Config;
 
                 // Auto-create default config if it doesn't exist
+                let mut config_was_created = false;
                 if cli.config.is_none() {
                     let default_path = match Config::default_path() {
                         Ok(path) => path,
@@ -88,6 +89,7 @@ async fn main() -> ExitCode {
                             );
                             return ExitCode::from(2);
                         }
+                        config_was_created = true;
                     }
                 }
 
@@ -97,13 +99,15 @@ async fn main() -> ExitCode {
                 };
 
                 match config {
-                    Ok(config) => match git_same::app::tui::run_tui(config).await {
-                        Ok(()) => ExitCode::SUCCESS,
-                        Err(e) => {
-                            eprintln!("TUI error: {}", e);
-                            ExitCode::from(1)
+                    Ok(config) => {
+                        match git_same::app::tui::run_tui(config, config_was_created).await {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(e) => {
+                                eprintln!("TUI error: {}", e);
+                                ExitCode::from(1)
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         eprintln!("Failed to load config: {}", e);
                         eprintln!("Run 'gisa init' to create a configuration file.");

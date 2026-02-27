@@ -29,7 +29,7 @@ fn build_workspace_app(default_workspace: Option<&str>) -> App {
     };
 
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
-    let mut app = App::new(config, vec![ws.clone()]);
+    let mut app = App::new(config, vec![ws.clone()], false);
     app.screen = Screen::Workspaces;
     app.workspace_index = 0;
     app.active_workspace = Some(ws);
@@ -83,7 +83,7 @@ async fn workspace_left_right_controls_panel_focus_and_list_movement() {
     let config = Config::default();
     let ws1 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws1"));
     let ws2 = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws2"));
-    let mut app = App::new(config, vec![ws1.clone(), ws2]);
+    let mut app = App::new(config, vec![ws1.clone(), ws2], false);
     app.screen = Screen::Workspaces;
     app.workspace_index = 0;
     app.active_workspace = Some(ws1);

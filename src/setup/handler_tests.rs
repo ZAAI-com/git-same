@@ -25,6 +25,7 @@ fn find_entry_index(state: &SetupState, path: &std::path::Path) -> usize {
 #[tokio::test]
 async fn q_quits_setup_wizard() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
 
     handle_key(
         &mut state,
@@ -76,6 +77,7 @@ async fn org_loading_ignores_non_null_keys() {
 #[tokio::test]
 async fn right_advances_from_provider_step() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
     assert_eq!(state.step, SetupStep::SelectProvider);
 
     handle_key(

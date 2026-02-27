@@ -230,7 +230,7 @@ fn sync_progress_emits_fetch_pull_error_and_skip() {
 
 #[tokio::test]
 async fn spawn_operation_sync_without_workspace_emits_operation_error() {
-    let mut app = App::new(Config::default(), Vec::new());
+    let mut app = App::new(Config::default(), Vec::new(), false);
     app.active_workspace = None;
 
     let (tx, mut rx) = unbounded_channel();
@@ -251,7 +251,7 @@ async fn spawn_operation_sync_without_workspace_emits_operation_error() {
 
 #[tokio::test]
 async fn spawn_operation_status_without_workspace_emits_operation_error() {
-    let mut app = App::new(Config::default(), Vec::new());
+    let mut app = App::new(Config::default(), Vec::new(), false);
     app.active_workspace = None;
 
     let (tx, mut rx) = unbounded_channel();

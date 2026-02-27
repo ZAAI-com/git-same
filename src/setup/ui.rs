@@ -46,27 +46,23 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
     }
 
     // Title
-    let title_text = if state.step == SetupStep::Welcome {
-        ""
-    } else if state.is_first_setup {
+    let title_text = if state.is_first_setup {
         "Workspace Setup"
     } else {
         "New Workspace"
     };
-    if !title_text.is_empty() {
-        let title = Paragraph::new(title_text)
-            .style(
-                Style::default()
-                    .fg(if path_popup_active {
-                        Color::DarkGray
-                    } else {
-                        Color::White
-                    })
-                    .add_modifier(Modifier::BOLD),
-            )
-            .alignment(Alignment::Center);
-        frame.render_widget(title, chunks[idx]);
-    }
+    let title = Paragraph::new(title_text)
+        .style(
+            Style::default()
+                .fg(if path_popup_active {
+                    Color::DarkGray
+                } else {
+                    Color::White
+                })
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Center);
+    frame.render_widget(title, chunks[idx]);
     idx += 1;
 
     // Step progress indicator
@@ -90,7 +86,7 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
     idx += 1;
 
     match state.step {
-        SetupStep::Welcome => screens::welcome::render(state, frame, content_inner),
+        SetupStep::Requirements => screens::requirements::render(state, frame, content_inner),
         SetupStep::SelectProvider => screens::provider::render(state, frame, content_inner),
         SetupStep::Authenticate => screens::auth::render(state, frame, content_inner),
         SetupStep::SelectOrgs => screens::orgs::render(state, frame, content_inner),
@@ -105,8 +101,8 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
 
 /// Render the step progress indicator with nodes and connectors.
 fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect, dimmed: bool) {
-    let steps = ["Provider", "Auth", "Orgs", "Path", "Save"];
-    let current = state.step_number(); // 0 for Welcome, 1-5 for steps, 5 for Complete
+    let steps = ["Reqs", "Provider", "Auth", "Orgs", "Path", "Save"];
+    let current = state.step_number(); // 1-6 for steps, 6 for Complete
 
     let green = if dimmed {
         Style::default().fg(Color::DarkGray)
@@ -125,16 +121,19 @@ fn render_step_progress(state: &SetupState, frame: &mut Frame, area: Rect, dimme
     };
     let dim = Style::default().fg(Color::DarkGray);
 
+    // 6 nodes + 5 connectors = 11 segments. Ratio: 3/28 per node, 2/28 per connector (6*3 + 5*2 = 28)
     let segments = Layout::horizontal([
-        Constraint::Ratio(3, 23),
-        Constraint::Ratio(2, 23),
-        Constraint::Ratio(3, 23),
-        Constraint::Ratio(2, 23),
-        Constraint::Ratio(3, 23),
-        Constraint::Ratio(2, 23),
-        Constraint::Ratio(3, 23),
-        Constraint::Ratio(2, 23),
-        Constraint::Ratio(3, 23),
+        Constraint::Ratio(3, 28),
+        Constraint::Ratio(2, 28),
+        Constraint::Ratio(3, 28),
+        Constraint::Ratio(2, 28),
+        Constraint::Ratio(3, 28),
+        Constraint::Ratio(2, 28),
+        Constraint::Ratio(3, 28),
+        Constraint::Ratio(2, 28),
+        Constraint::Ratio(3, 28),
+        Constraint::Ratio(2, 28),
+        Constraint::Ratio(3, 28),
     ])
     .split(area);
 
@@ -244,11 +243,23 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
     };
 
     let top_center = match state.step {
-        SetupStep::Welcome => vec![
-            Span::styled("Press ", dim),
-            Span::styled("[Enter]", blue),
-            Span::styled(" to get started", dim),
-        ],
+        SetupStep::Requirements => {
+            if state.checks_loading {
+                vec![Span::styled("Checking system requirements...", yellow)]
+            } else if state.check_results.iter().any(|r| r.critical && !r.passed) {
+                vec![Span::styled(
+                    "Fix critical requirements to continue",
+                    yellow,
+                )]
+            } else if !state.check_results.is_empty() {
+                vec![
+                    Span::styled("[Enter]", blue),
+                    Span::styled(" Continue to setup", dim),
+                ]
+            } else {
+                vec![Span::styled("Preparing...", dim)]
+            }
+        }
         SetupStep::SelectProvider => vec![
             Span::styled("[↑] [↓]", blue),
             Span::styled(" Select provider", dim),

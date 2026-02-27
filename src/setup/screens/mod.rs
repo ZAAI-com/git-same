@@ -6,4 +6,4 @@ pub mod confirm;
 pub mod orgs;
 pub mod path;
 pub mod provider;
-pub mod welcome;
+pub mod requirements;

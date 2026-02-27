@@ -12,7 +12,6 @@ use std::time::Instant;
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    SystemCheck,
     WorkspaceSetup,
     Workspaces,
     Dashboard,
@@ -243,11 +242,8 @@ pub struct App {
     /// Setup wizard state (active when on SetupWizard screen).
     pub setup_state: Option<SetupState>,
 
-    /// Whether the config file was successfully created by init.
-    pub config_created: bool,
-
-    /// Path where config was written (for display).
-    pub config_path_display: Option<String>,
+    /// Whether the config file was freshly created on this launch.
+    pub config_was_created: bool,
 
     /// Whether status scan is in progress.
     pub status_loading: bool,
@@ -309,7 +305,7 @@ pub struct App {
 
 impl App {
     /// Create a new App with the given config and workspaces.
-    pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>) -> Self {
+    pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>, config_was_created: bool) -> Self {
         let (screen, active_workspace, base_path) = match workspaces.len() {
             0 => (Screen::WorkspaceSetup, None, None),
             1 => {
@@ -372,12 +368,13 @@ impl App {
                 let default_path = std::env::current_dir()
                     .map(|p| state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-                Some(SetupState::with_first_setup(&default_path, true))
+                let mut setup = SetupState::with_first_setup(&default_path, true);
+                setup.config_was_created = config_was_created;
+                Some(setup)
             } else {
                 None
             },
-            config_created: false,
-            config_path_display: None,
+            config_was_created,
             status_loading: false,
             last_status_scan: None,
             stat_index: 0,

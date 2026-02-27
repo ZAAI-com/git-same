@@ -23,7 +23,7 @@ fn render_output(app: &App) -> String {
 
 fn app_for_settings() -> App {
     let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws"));
-    App::new(Config::default(), vec![ws])
+    App::new(Config::default(), vec![ws], false)
 }
 
 #[test]
