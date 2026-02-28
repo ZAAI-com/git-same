@@ -5,10 +5,11 @@ use std::sync::Mutex;
 static HOME_LOCK: Mutex<()> = Mutex::new(());
 
 fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
-    let _lock = HOME_LOCK.lock().expect("HOME lock poisoned");
+    let _lock = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let original_home = std::env::var("HOME").ok();
     let original_userprofile = std::env::var("USERPROFILE").ok();
     let original_xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+    let original_git_same_config_dir = std::env::var("GIT_SAME_CONFIG_DIR").ok();
     #[cfg(windows)]
     let original_appdata = std::env::var("APPDATA").ok();
 
@@ -16,6 +17,7 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
         home: Option<String>,
         userprofile: Option<String>,
         xdg_config_home: Option<String>,
+        git_same_config_dir: Option<String>,
         #[cfg(windows)]
         appdata: Option<String>,
     }
@@ -40,6 +42,12 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
                 std::env::remove_var("XDG_CONFIG_HOME");
             }
 
+            if let Some(value) = self.git_same_config_dir.take() {
+                std::env::set_var("GIT_SAME_CONFIG_DIR", value);
+            } else {
+                std::env::remove_var("GIT_SAME_CONFIG_DIR");
+            }
+
             #[cfg(windows)]
             if let Some(value) = self.appdata.take() {
                 std::env::set_var("APPDATA", value);
@@ -49,10 +57,14 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
         }
     }
 
+    let config_dir = home.join(".config").join("git-same");
+    std::env::set_var("GIT_SAME_CONFIG_DIR", &config_dir);
+
     let _restore = HomeRestore {
         home: original_home,
         userprofile: original_userprofile,
         xdg_config_home: original_xdg_config_home,
+        git_same_config_dir: original_git_same_config_dir,
         #[cfg(windows)]
         appdata: original_appdata,
     };

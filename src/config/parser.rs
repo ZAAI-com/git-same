@@ -136,7 +136,17 @@ impl Default for Config {
 
 impl Config {
     /// Returns the default config file path (~/.config/git-same/config.toml).
+    ///
+    /// When `GIT_SAME_CONFIG_DIR` is set to an absolute path, that directory is used instead.
+    /// This allows tests to override config location on Windows (where dirs-sys ignores APPDATA).
     pub fn default_path() -> Result<PathBuf, AppError> {
+        if let Ok(override_dir) = std::env::var("GIT_SAME_CONFIG_DIR") {
+            let dir = PathBuf::from(&override_dir);
+            if dir.is_absolute() {
+                return Ok(dir.join("config.toml"));
+            }
+        }
+
         #[cfg(target_os = "macos")]
         let config_dir = {
             let home = std::env::var("HOME")
