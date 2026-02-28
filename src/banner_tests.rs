@@ -28,7 +28,7 @@ fn cli_gradient_line_uses_truecolor_sequences() {
 
 #[test]
 fn cli_line5_styles_version_as_badge() {
-    let version_display = format!("{:^6}", "1.1.0");
+    let version_display = format!("{:^6}", env!("CARGO_PKG_VERSION"));
     let rendered = cli_line5_with_force(&version_display, &GRADIENT_STOPS, true);
     assert!(rendered.contains("\u{1b}[48;2;"));
 }
