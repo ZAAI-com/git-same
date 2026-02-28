@@ -11,10 +11,17 @@ use std::path::{Path, PathBuf};
 pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Result<()> {
     let root = match &args.path {
         Some(p) => p.clone(),
-        None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        None => std::env::current_dir()
+            .map_err(|e| AppError::config(format!("Failed to resolve current directory: {}", e)))?,
     };
 
-    let root = std::fs::canonicalize(&root).unwrap_or(root);
+    let root = std::fs::canonicalize(&root).map_err(|e| {
+        AppError::config(format!(
+            "Failed to access scan root {}: {}",
+            root.display(),
+            e
+        ))
+    })?;
     output.info(&format!(
         "Scanning {} (depth {})",
         root.display(),

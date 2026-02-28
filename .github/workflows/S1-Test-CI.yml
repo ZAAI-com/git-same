@@ -135,7 +135,7 @@ jobs:
           fi
 
           # Only 1 [[bin]] in Cargo.toml
-          BIN_COUNT=$(grep -c '^\[\[bin\]\]' Cargo.toml)
+          BIN_COUNT=$(grep -c '^[[:space:]]*\[\[bin\]\]' Cargo.toml || true)
           if [ "$BIN_COUNT" -ne 1 ]; then
             echo "ERROR: Cargo.toml has $BIN_COUNT [[bin]] entries, expected 1"; exit 1
           fi
@@ -202,7 +202,7 @@ jobs:
           fi
 
           # Prevent shell xtrace in workflow scripts.
-          if grep -RInE '(^|[[:space:];])set[[:space:]]+-x([[:space:];]|$)|bash[[:space:]]+-x' .github/workflows; then
+          if grep -RInE '(^|[[:space:];])set[[:space:]]+-[a-wyzA-WYZ]*x|bash[[:space:]]+-[a-wyzA-WYZ]*x' .github/workflows; then
             echo "ERROR: Shell xtrace detected in workflow files."
             exit 1
           fi
