@@ -70,29 +70,19 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
 
 #[test]
 fn dot_dir_cache_and_config_paths_are_derived_from_root() {
-    let root = Path::new("/tmp/my-workspace");
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("my-workspace");
+    std::fs::create_dir_all(&root).unwrap();
 
-    let dot_dir = WorkspaceStore::dot_dir(root);
-    let config = WorkspaceStore::config_path(root);
-    let cache = WorkspaceStore::cache_path(root);
-    let history = WorkspaceStore::sync_history_path(root);
+    let dot_dir = WorkspaceStore::dot_dir(&root);
+    let config = WorkspaceStore::config_path(&root);
+    let cache = WorkspaceStore::cache_path(&root);
+    let history = WorkspaceStore::sync_history_path(&root);
 
-    assert_eq!(
-        dot_dir,
-        std::path::PathBuf::from("/tmp/my-workspace/.git-same")
-    );
-    assert_eq!(
-        config,
-        std::path::PathBuf::from("/tmp/my-workspace/.git-same/config.toml")
-    );
-    assert_eq!(
-        cache,
-        std::path::PathBuf::from("/tmp/my-workspace/.git-same/cache.json")
-    );
-    assert_eq!(
-        history,
-        std::path::PathBuf::from("/tmp/my-workspace/.git-same/sync-history.json")
-    );
+    assert_eq!(dot_dir, root.join(".git-same"));
+    assert_eq!(config, root.join(".git-same/config.toml"));
+    assert_eq!(cache, root.join(".git-same/cache.json"));
+    assert_eq!(history, root.join(".git-same/sync-history.json"));
 }
 
 #[test]
