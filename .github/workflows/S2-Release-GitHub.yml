@@ -183,6 +183,14 @@ jobs:
     strategy:
       matrix:
         include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: git-same
+            asset_name: git-same-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            artifact_name: git-same
+            asset_name: git-same-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: git-same
