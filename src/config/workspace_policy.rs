@@ -146,6 +146,7 @@ impl WorkspacePolicy {
 
     fn looks_like_path(value: &str) -> bool {
         value.contains(std::path::MAIN_SEPARATOR)
+            || value.contains('/')
             || value.starts_with('.')
             || value.starts_with('~')
     }

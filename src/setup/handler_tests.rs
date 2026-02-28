@@ -417,16 +417,15 @@ async fn very_large_directory_list_is_loaded() {
     )
     .await;
 
+    let prefix = format!(
+        "{}{}",
+        super::tilde_collapse(&temp.path().to_string_lossy()),
+        std::path::MAIN_SEPARATOR
+    );
     let children: Vec<_> = state
         .path_browse_entries
         .iter()
-        .filter(|entry| {
-            entry.depth == 2
-                && entry.path.starts_with(&format!(
-                    "{}/",
-                    super::tilde_collapse(&temp.path().to_string_lossy())
-                ))
-        })
+        .filter(|entry| entry.depth == 2 && entry.path.starts_with(&prefix))
         .map(|entry| entry.label.clone())
         .collect();
     assert_eq!(children.len(), 150);

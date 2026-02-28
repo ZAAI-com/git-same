@@ -8,10 +8,16 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
     let _lock = HOME_LOCK.lock().expect("HOME lock poisoned");
     let original_home = std::env::var("HOME").ok();
     let original_userprofile = std::env::var("USERPROFILE").ok();
+    let original_xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();
+    #[cfg(windows)]
+    let original_appdata = std::env::var("APPDATA").ok();
 
     struct HomeRestore {
         home: Option<String>,
         userprofile: Option<String>,
+        xdg_config_home: Option<String>,
+        #[cfg(windows)]
+        appdata: Option<String>,
     }
 
     impl Drop for HomeRestore {
@@ -27,15 +33,38 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
             } else {
                 std::env::remove_var("USERPROFILE");
             }
+
+            if let Some(value) = self.xdg_config_home.take() {
+                std::env::set_var("XDG_CONFIG_HOME", value);
+            } else {
+                std::env::remove_var("XDG_CONFIG_HOME");
+            }
+
+            #[cfg(windows)]
+            if let Some(value) = self.appdata.take() {
+                std::env::set_var("APPDATA", value);
+            } else {
+                std::env::remove_var("APPDATA");
+            }
         }
     }
 
     let _restore = HomeRestore {
         home: original_home,
         userprofile: original_userprofile,
+        xdg_config_home: original_xdg_config_home,
+        #[cfg(windows)]
+        appdata: original_appdata,
     };
     std::env::set_var("HOME", home);
     std::env::set_var("USERPROFILE", home);
+    std::env::set_var("XDG_CONFIG_HOME", home.join(".config"));
+    #[cfg(windows)]
+    {
+        let appdata = home.join("AppData").join("Roaming");
+        std::fs::create_dir_all(&appdata).ok();
+        std::env::set_var("APPDATA", &appdata);
+    }
     f()
 }
 

@@ -24,6 +24,7 @@ config.toml
 /test-output/
 *.profraw
 *.profdata
+cobertura.xml
 
 # Environment
 .env
