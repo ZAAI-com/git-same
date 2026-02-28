@@ -187,6 +187,14 @@ fn render_requirements_detail(app: &App, frame: &mut Frame, area: Rect) {
                 spans.push(Span::styled("  (critical)", fail_style));
             }
             lines.push(Line::from(spans));
+            if !check.passed {
+                if let Some(suggestion) = &check.suggestion {
+                    lines.push(Line::from(vec![
+                        Span::styled("      ", dim),
+                        Span::styled(suggestion, dim),
+                    ]));
+                }
+            }
         }
     }
 

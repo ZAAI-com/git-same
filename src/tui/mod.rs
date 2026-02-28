@@ -23,7 +23,7 @@ use std::io;
 use std::time::Duration;
 
 /// Run the TUI application.
-pub async fn run_tui(config: Config) -> Result<()> {
+pub async fn run_tui(config: Config, config_was_created: bool) -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -47,7 +47,7 @@ pub async fn run_tui(config: Config) -> Result<()> {
         let workspaces = WorkspaceManager::list()?;
 
         // Create app state
-        let mut app = App::new(config, workspaces);
+        let mut app = App::new(config, workspaces, config_was_created);
 
         // Start event loop
         let tick_rate = Duration::from_millis(100);

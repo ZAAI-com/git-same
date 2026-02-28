@@ -1,4 +1,5 @@
 use super::*;
+use crate::setup::state::OrgEntry;
 use crate::tui::app::{CheckEntry, Operation, RepoEntry};
 use crate::types::OpSummary;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -48,6 +49,7 @@ fn backend_message_variants_construct_and_clone() {
         name: "git".to_string(),
         passed: true,
         message: "installed".to_string(),
+        suggestion: None,
         critical: true,
     }];
 
@@ -57,6 +59,12 @@ fn backend_message_variants_construct_and_clone() {
         BackendMessage::OrgComplete("acme".to_string(), 2),
         BackendMessage::DiscoveryComplete(vec![repo.clone()]),
         BackendMessage::DiscoveryError("err".to_string()),
+        BackendMessage::SetupOrgsDiscovered(vec![OrgEntry {
+            name: "acme".to_string(),
+            repo_count: 2,
+            selected: true,
+        }]),
+        BackendMessage::SetupOrgsError("err".to_string()),
         BackendMessage::OperationStarted {
             operation: Operation::Sync,
             total: 3,
@@ -87,8 +95,7 @@ fn backend_message_variants_construct_and_clone() {
         }),
         BackendMessage::OperationError("err".to_string()),
         BackendMessage::StatusResults(status_rows),
-        BackendMessage::InitConfigCreated("/tmp/config.toml".to_string()),
-        BackendMessage::InitConfigError("failed".to_string()),
+        BackendMessage::SetupCheckResults(checks.clone()),
         BackendMessage::DefaultWorkspaceUpdated(Some("ws".to_string())),
         BackendMessage::DefaultWorkspaceError("bad".to_string()),
         BackendMessage::CheckResults(checks),

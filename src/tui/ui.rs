@@ -7,7 +7,6 @@ use ratatui::Frame;
 /// Render the current screen.
 pub fn render(app: &mut App, frame: &mut Frame) {
     match app.screen {
-        Screen::SystemCheck => screens::system_check::render(app, frame),
         Screen::WorkspaceSetup => {
             if let Some(ref setup) = app.setup_state {
                 crate::setup::ui::render(setup, frame);

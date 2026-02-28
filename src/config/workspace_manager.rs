@@ -1,31 +1,24 @@
 //! Workspace manager facade.
 //!
-//! This compatibility layer keeps the existing `WorkspaceManager` API stable
-//! while delegating storage and policy responsibilities to dedicated modules.
+//! Keeps a stable API while delegating to `WorkspaceStore` and `WorkspacePolicy`.
 
 use super::workspace::WorkspaceConfig;
 use super::{workspace_policy::WorkspacePolicy, workspace_store::WorkspaceStore};
 use crate::errors::AppError;
-use crate::types::ProviderKind;
 use std::path::{Path, PathBuf};
 
 /// Compatibility facade for workspace operations.
 pub struct WorkspaceManager;
 
 impl WorkspaceManager {
-    /// Returns the config directory: `~/.config/git-same/`.
-    pub fn config_dir() -> Result<PathBuf, AppError> {
-        WorkspaceStore::config_dir()
-    }
-
     /// List all workspace configs.
     pub fn list() -> Result<Vec<WorkspaceConfig>, AppError> {
         WorkspaceStore::list()
     }
 
-    /// Load a specific workspace by name.
-    pub fn load(name: &str) -> Result<WorkspaceConfig, AppError> {
-        WorkspaceStore::load(name)
+    /// Load a specific workspace by root path.
+    pub fn load(root: &Path) -> Result<WorkspaceConfig, AppError> {
+        WorkspaceStore::load(root)
     }
 
     /// Save a workspace config (create or update).
@@ -33,29 +26,29 @@ impl WorkspaceManager {
         WorkspaceStore::save(workspace)
     }
 
-    /// Delete a workspace by name.
-    pub fn delete(name: &str) -> Result<(), AppError> {
-        WorkspaceStore::delete(name)
+    /// Delete a workspace by root path.
+    pub fn delete(root: &Path) -> Result<(), AppError> {
+        WorkspaceStore::delete(root)
     }
 
-    /// Find a workspace whose base_path matches the given directory.
-    pub fn find_by_path(path: &Path) -> Result<Option<WorkspaceConfig>, AppError> {
-        WorkspaceStore::find_by_path(path)
+    /// Returns the `.git-same/` directory for a workspace root.
+    pub fn dot_dir(root: &Path) -> PathBuf {
+        WorkspaceStore::dot_dir(root)
     }
 
-    /// Load a workspace by its base_path string.
-    pub fn load_by_path(path_str: &str) -> Result<WorkspaceConfig, AppError> {
-        WorkspaceStore::load_by_path(path_str)
+    /// Returns the cache file path for a workspace root.
+    pub fn cache_path(root: &Path) -> PathBuf {
+        WorkspaceStore::cache_path(root)
     }
 
-    /// Derive a workspace name from a base path and provider.
-    pub fn name_from_path(path: &Path, provider: ProviderKind) -> String {
-        WorkspacePolicy::name_from_path(path, provider)
+    /// Returns the sync history file path for a workspace root.
+    pub fn sync_history_path(root: &Path) -> PathBuf {
+        WorkspaceStore::sync_history_path(root)
     }
 
-    /// Return a unique workspace name, appending `-2`, `-3`, etc. on collision.
-    pub fn unique_name(base: &str) -> Result<String, AppError> {
-        WorkspacePolicy::unique_name(base)
+    /// Walk up from `start` to find the nearest `.git-same/config.toml`.
+    pub fn detect_from_cwd(start: &Path) -> Option<PathBuf> {
+        WorkspacePolicy::detect_from_cwd(start)
     }
 
     /// Resolve which workspace to use.
@@ -71,16 +64,6 @@ impl WorkspaceManager {
         workspaces: Vec<WorkspaceConfig>,
     ) -> Result<WorkspaceConfig, AppError> {
         WorkspacePolicy::resolve_from_list(workspaces)
-    }
-
-    /// Returns the directory path for a workspace: `~/.config/git-same/<name>/`.
-    pub fn workspace_dir(name: &str) -> Result<PathBuf, AppError> {
-        WorkspaceStore::workspace_dir(name)
-    }
-
-    /// Returns the cache file path for a workspace.
-    pub fn cache_path(name: &str) -> Result<PathBuf, AppError> {
-        WorkspaceStore::cache_path(name)
     }
 }
 

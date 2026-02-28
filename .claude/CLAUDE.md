@@ -33,13 +33,13 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 ### Core modules
 
 - **`auth/`** — GitHub CLI (`gh`) authentication only (`gh auth token`), with SSH clone support
-- **`config/`** — TOML config parser. Default location: `~/.config/git-same/config.toml`. Sections: `[clone]`, `[filters]`, `[[providers]]`
+- **`config/`** — TOML config parser. Default: `~/.config/git-same/config.toml`. Top-level keys: `workspaces`, `default_workspace`, plus `[clone]` and `[filters]` sections
 - **`discovery/`** — `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
 - **`operations/clone/`** — `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
 - **`operations/sync/`** — `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
 - **`provider/`** — Trait-based provider abstraction (`Provider` trait in `traits.rs`). GitHub implementation in `github/client.rs` with pagination. Mock provider in `mock.rs` for testing
 - **`git/`** — `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands
-- **`cache/`** — `DiscoveryCache` with TTL-based validity at `~/.cache/git-same/`
+- **`cache/`** — `DiscoveryCache` with TTL-based validity, persisted per workspace at `<workspace-root>/.git-same/cache.json`
 - **`errors/`** — Custom error hierarchy: `AppError`, `GitError`, `ProviderError` with `suggested_action()` methods
 - **`output/`** — Verbosity levels and `indicatif` progress bars (`CloneProgressBar`, `SyncProgressBar`, `DiscoveryProgressBar`)
 - **`types/repo.rs`** — Core data types: `Repo`, `Org`, `ActionPlan`, `OpResult`, `OpSummary`

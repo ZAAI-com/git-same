@@ -70,8 +70,8 @@ pub mod prelude {
     pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
     pub use crate::cli::{Cli, Command, InitArgs, ResetArgs, StatusArgs, SyncCmdArgs};
     pub use crate::config::{
-        AuthMethod, Config, ConfigCloneOptions, FilterOptions, ProviderEntry,
-        SyncMode as ConfigSyncMode,
+        Config, ConfigCloneOptions, FilterOptions, SyncMode as ConfigSyncMode, WorkspaceConfig,
+        WorkspaceProvider,
     };
     pub use crate::discovery::DiscoveryOrchestrator;
     pub use crate::domain::RepoPathTemplate;

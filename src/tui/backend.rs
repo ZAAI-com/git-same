@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::config::{Config, WorkspaceConfig};
+use crate::config::{Config, WorkspaceConfig, WorkspaceProvider};
 use crate::git::{FetchResult, GitOperations, PullResult, ShellGit};
 use crate::operations::clone::CloneProgress;
 use crate::operations::sync::SyncProgress;
@@ -254,6 +254,24 @@ pub fn spawn_changelog_fetch(
             }));
         });
     }
+}
+
+/// Spawn setup-wizard org discovery without blocking the TUI event loop.
+pub fn spawn_setup_org_discovery(
+    ws_provider: WorkspaceProvider,
+    token: String,
+    tx: UnboundedSender<AppEvent>,
+) {
+    tokio::spawn(async move {
+        match crate::setup::handler::discover_org_entries(ws_provider, token).await {
+            Ok(orgs) => {
+                let _ = tx.send(AppEvent::Backend(BackendMessage::SetupOrgsDiscovered(orgs)));
+            }
+            Err(err) => {
+                let _ = tx.send(AppEvent::Backend(BackendMessage::SetupOrgsError(err)));
+            }
+        }
+    });
 }
 
 /// Spawn a backend operation as a Tokio task.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::setup::state::SetupStep;
+use crate::setup::state::{PathSuggestion, SetupStep};
 
 fn cwd_collapsed() -> String {
     super::tilde_collapse(&std::env::current_dir().unwrap().to_string_lossy())
@@ -25,6 +25,7 @@ fn find_entry_index(state: &SetupState, path: &std::path::Path) -> usize {
 #[tokio::test]
 async fn q_quits_setup_wizard() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
 
     handle_key(
         &mut state,
@@ -60,8 +61,23 @@ async fn left_moves_to_previous_step() {
 }
 
 #[tokio::test]
+async fn org_loading_ignores_non_null_keys() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = true;
+    state.org_error = None;
+    state.auth_token = None;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
+
+    assert!(state.org_loading);
+    assert!(state.org_error.is_none());
+}
+
+#[tokio::test]
 async fn right_advances_from_provider_step() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
     assert_eq!(state.step, SetupStep::SelectProvider);
 
     handle_key(
@@ -71,6 +87,68 @@ async fn right_advances_from_provider_step() {
     .await;
 
     assert_eq!(state.step, SetupStep::Authenticate);
+}
+
+#[tokio::test]
+async fn left_in_select_path_returns_to_orgs_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectPath;
+    state.path_browse_mode = false;
+    state.path_suggestions_mode = false;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+
+    assert_eq!(state.step, SetupStep::SelectOrgs);
+    assert!(!state.path_browse_mode);
+}
+
+#[tokio::test]
+async fn typing_does_not_edit_base_path_in_select_path_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectPath;
+    let original = state.base_path.clone();
+
+    for key in [
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+    ] {
+        handle_key(&mut state, key).await;
+    }
+
+    assert_eq!(state.base_path, original);
+    assert_eq!(state.step, SetupStep::SelectPath);
+}
+
+#[tokio::test]
+async fn enter_in_suggestions_mode_does_not_change_base_path() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectPath;
+    state.path_suggestions_mode = true;
+    state.path_suggestions = vec![
+        PathSuggestion {
+            path: "~/Git-Same/GitHub".to_string(),
+            label: "terminal folder".to_string(),
+        },
+        PathSuggestion {
+            path: "~/Developer".to_string(),
+            label: "other".to_string(),
+        },
+    ];
+    state.path_suggestion_index = 1;
+    let original = state.base_path.clone();
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.base_path, original);
+    assert_eq!(state.step, SetupStep::Confirm);
 }
 
 #[tokio::test]
@@ -98,6 +176,33 @@ async fn b_opens_path_browser_from_suggestions_mode() {
     assert!(state.path_browse_entries.iter().any(|entry| entry.path
         == super::tilde_collapse(&temp.path().to_string_lossy())
         && entry.depth == 1));
+}
+
+#[tokio::test]
+async fn left_on_root_moves_popup_to_parent_directory() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectPath;
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert!(state.path_browse_mode);
+    assert_eq!(state.path_browse_index, 0);
+
+    let root_before =
+        std::path::PathBuf::from(shellexpand::tilde(&state.path_browse_entries[0].path).as_ref());
+    let Some(parent_before) = root_before.parent().map(std::path::Path::to_path_buf) else {
+        // Nothing above `/` on this platform.
+        return;
+    };
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+
+    let expected = super::tilde_collapse(&parent_before.to_string_lossy());
+    assert_eq!(state.path_browse_index, 0);
+    assert_eq!(state.path_browse_current_dir, expected);
 }
 
 #[tokio::test]

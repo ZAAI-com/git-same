@@ -6,7 +6,6 @@
 //! - **GitHub** - github.com (active)
 //! - **GitHub Enterprise** - coming soon
 //! - **GitLab** - coming soon
-//! - **GitLab Self-Managed** - coming soon
 //! - **Codeberg** - coming soon
 //! - **Bitbucket** - coming soon
 //!
@@ -14,15 +13,15 @@
 //!
 //! ```no_run
 //! use git_same::provider::{create_provider, DiscoveryOptions, NoProgress};
-//! use git_same::config::ProviderEntry;
+//! use git_same::config::WorkspaceProvider;
 //!
 //! # async fn example() -> Result<(), git_same::errors::AppError> {
-//! let entry = ProviderEntry::github();
-//! let provider = create_provider(&entry, "ghp_token123")?;
+//! let provider = WorkspaceProvider::default();
+//! let p = create_provider(&provider, "ghp_token123")?;
 //!
 //! let options = DiscoveryOptions::new();
 //! let progress = NoProgress;
-//! let repos = provider.discover_repos(&options, &progress).await?;
+//! let repos = p.discover_repos(&options, &progress).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -37,19 +36,23 @@ pub use traits::{
     Credentials, DiscoveryOptions, DiscoveryProgress, NoProgress, Provider, RateLimitInfo,
 };
 
-use crate::config::ProviderEntry;
+use crate::config::WorkspaceProvider;
 use crate::errors::{AppError, ProviderError};
 use crate::types::ProviderKind;
 
-/// Creates a provider instance based on configuration.
-pub fn create_provider(entry: &ProviderEntry, token: &str) -> Result<Box<dyn Provider>, AppError> {
-    let api_url = entry.effective_api_url();
+/// Creates a provider instance based on workspace provider configuration.
+pub fn create_provider(
+    ws_provider: &WorkspaceProvider,
+    token: &str,
+) -> Result<Box<dyn Provider>, AppError> {
+    let api_url = ws_provider.effective_api_url();
 
-    match entry.kind {
+    match ws_provider.kind {
         ProviderKind::GitHub => {
             let credentials = Credentials::new(token, api_url);
-            let provider = github::GitHubProvider::new(credentials, entry.display_name())
-                .map_err(AppError::Provider)?;
+            let provider =
+                github::GitHubProvider::new(credentials, ws_provider.display_name().to_string())
+                    .map_err(AppError::Provider)?;
             Ok(Box::new(provider))
         }
         other => Err(AppError::Provider(ProviderError::NotImplemented(format!(

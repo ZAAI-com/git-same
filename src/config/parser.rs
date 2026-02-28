@@ -2,7 +2,6 @@
 //!
 //! Handles loading and parsing of config.toml files.
 
-use super::provider_config::ProviderEntry;
 use crate::errors::AppError;
 use crate::operations::clone::{DEFAULT_CONCURRENCY, MAX_CONCURRENCY};
 use serde::{Deserialize, Serialize};
@@ -86,7 +85,7 @@ pub struct Config {
     #[serde(default)]
     pub sync_mode: SyncMode,
 
-    /// Default workspace name (used when --workspace is not specified and multiple exist)
+    /// Default workspace path (used when --workspace is not specified and multiple exist)
     #[serde(default)]
     pub default_workspace: Option<String>,
 
@@ -103,9 +102,9 @@ pub struct Config {
     #[serde(default)]
     pub filters: FilterOptions,
 
-    /// Provider configurations
-    #[serde(default = "default_providers")]
-    pub providers: Vec<ProviderEntry>,
+    /// Registry of known workspace root paths (tilde-collapsed).
+    #[serde(default)]
+    pub workspaces: Vec<String>,
 }
 
 fn default_structure() -> String {
@@ -120,10 +119,6 @@ fn default_refresh_interval() -> u64 {
     30
 }
 
-fn default_providers() -> Vec<ProviderEntry> {
-    vec![ProviderEntry::github()]
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -134,7 +129,7 @@ impl Default for Config {
             refresh_interval: default_refresh_interval(),
             clone: ConfigCloneOptions::default(),
             filters: FilterOptions::default(),
-            providers: default_providers(),
+            workspaces: Vec::new(),
         }
     }
 }
@@ -204,17 +199,6 @@ impl Config {
             ));
         }
 
-        // Validate providers
-        if self.providers.is_empty() {
-            return Err(AppError::config("At least one provider must be configured"));
-        }
-
-        for (i, provider) in self.providers.iter().enumerate() {
-            provider
-                .validate()
-                .map_err(|e| AppError::config(format!("Provider {} error: {}", i + 1, e)))?;
-        }
-
         Ok(())
     }
 
@@ -256,13 +240,6 @@ include_forks = false
 
 # Exclude specific repos
 # exclude_repos = ["org/repo-to-skip"]
-
-# Provider configuration (default: GitHub.com with gh CLI auth)
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-prefer_ssh = true
-# base_path = "~/github"
 "#
     }
 
@@ -349,9 +326,82 @@ prefer_ssh = true
         Ok(())
     }
 
-    /// Returns enabled providers only.
-    pub fn enabled_providers(&self) -> impl Iterator<Item = &ProviderEntry> {
-        self.providers.iter().filter(|p| p.enabled)
+    /// Add a workspace path to the global registry.
+    pub fn add_to_registry(path: &str) -> Result<(), AppError> {
+        Self::add_to_registry_at(&Self::default_path()?, path)
+    }
+
+    /// Add a workspace path to the registry in a specific config file.
+    pub fn add_to_registry_at(config_path: &Path, path: &str) -> Result<(), AppError> {
+        if !config_path.exists() {
+            return Err(AppError::config(
+                "Config file not found. Run 'gisa init' first.",
+            ));
+        }
+        Self::modify_registry_at(config_path, Some(path), None)
+    }
+
+    /// Remove a workspace path from the global registry.
+    pub fn remove_from_registry(path: &str) -> Result<(), AppError> {
+        Self::remove_from_registry_at(&Self::default_path()?, path)
+    }
+
+    /// Remove a workspace path from the registry in a specific config file.
+    pub fn remove_from_registry_at(config_path: &Path, path: &str) -> Result<(), AppError> {
+        if !config_path.exists() {
+            return Ok(());
+        }
+        Self::modify_registry_at(config_path, None, Some(path))
+    }
+
+    /// Add or remove a path from the workspaces registry in the config file.
+    fn modify_registry_at(
+        config_path: &Path,
+        add: Option<&str>,
+        remove: Option<&str>,
+    ) -> Result<(), AppError> {
+        let content = std::fs::read_to_string(config_path)
+            .map_err(|e| AppError::config(format!("Failed to read config: {}", e)))?;
+
+        let mut doc: toml::Value = toml::from_str(&content)
+            .map_err(|e| AppError::config(format!("Failed to parse config: {}", e)))?;
+
+        let table = doc
+            .as_table_mut()
+            .ok_or_else(|| AppError::config("Invalid config: expected root table"))?;
+
+        if let Some(existing) = table.get("workspaces") {
+            if !existing.is_array() {
+                return Err(AppError::config(
+                    "Invalid config: 'workspaces' must be an array",
+                ));
+            }
+        }
+
+        let workspaces = table
+            .entry("workspaces")
+            .or_insert_with(|| toml::Value::Array(Vec::new()));
+        let arr = workspaces
+            .as_array_mut()
+            .ok_or_else(|| AppError::config("Invalid config: 'workspaces' must be an array"))?;
+
+        if let Some(path_to_add) = add {
+            let val = toml::Value::String(path_to_add.to_string());
+            if !arr.contains(&val) {
+                arr.push(val);
+            }
+        }
+        if let Some(path_to_remove) = remove {
+            arr.retain(|v| v.as_str().map(|s| s != path_to_remove).unwrap_or(true));
+        }
+
+        let new_content = toml::to_string_pretty(&doc)
+            .map_err(|e| AppError::config(format!("Failed to serialize config: {}", e)))?;
+
+        std::fs::write(config_path, new_content)
+            .map_err(|e| AppError::config(format!("Failed to write config: {}", e)))?;
+
+        Ok(())
     }
 }
 

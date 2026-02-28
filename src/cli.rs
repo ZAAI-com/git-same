@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 /// Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
 ///
-/// Available as: git-same, gitsame, gitsa, gisa
+/// Available as: git-same (primary), gitsame, gitsa, gisa (symlink aliases)
+/// Alias list: see toolkit/packaging/binary-aliases.txt
 /// Also works as: git same (git subcommand)
 #[derive(Parser, Debug)]
 #[command(name = "git-same")]
@@ -55,6 +56,9 @@ pub enum Command {
 
     /// Reset gisa — remove all config, workspaces, and cache
     Reset(ResetArgs),
+
+    /// Scan a directory tree for unregistered workspaces (.git-same/ folders)
+    Scan(ScanArgs),
 }
 
 /// Arguments for the init command
@@ -80,7 +84,7 @@ pub struct SetupArgs {
 /// Arguments for the sync command
 #[derive(Args, Debug)]
 pub struct SyncCmdArgs {
-    /// Workspace path or name to sync
+    /// Workspace path or folder name to sync
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -108,7 +112,7 @@ pub struct SyncCmdArgs {
 /// Arguments for the status command
 #[derive(Args, Debug)]
 pub struct StatusArgs {
-    /// Workspace path or name
+    /// Workspace path or folder name
     #[arg(short, long)]
     pub workspace: Option<String>,
 
@@ -148,7 +152,8 @@ pub enum WorkspaceCommand {
 /// Arguments for the workspace default subcommand
 #[derive(Args, Debug)]
 pub struct WorkspaceDefaultArgs {
-    /// Workspace path or name to set as default (omit to show current)
+    /// Workspace path or folder name to set as default (omit to show current)
+    #[arg(value_name = "WORKSPACE")]
     pub name: Option<String>,
 
     /// Clear the default workspace
@@ -162,6 +167,21 @@ pub struct ResetArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub force: bool,
+}
+
+/// Arguments for the scan command
+#[derive(Args, Debug)]
+pub struct ScanArgs {
+    /// Root directory to scan (default: current directory)
+    pub path: Option<PathBuf>,
+
+    /// Maximum directory depth to search (default: 5)
+    #[arg(short, long, default_value = "5")]
+    pub depth: usize,
+
+    /// Register discovered workspaces automatically
+    #[arg(long)]
+    pub register: bool,
 }
 
 impl Cli {

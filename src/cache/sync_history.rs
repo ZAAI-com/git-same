@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::debug;
 
 use crate::tui::app::SyncHistoryEntry;
@@ -17,19 +17,16 @@ struct SyncHistoryFile {
 
 /// Manages per-workspace sync history persistence.
 ///
-/// History is stored at `~/.config/git-same/<workspace>/sync-history.json`.
+/// History is stored at `<workspace-root>/.git-same/sync-history.json`.
 pub struct SyncHistoryManager {
     path: PathBuf,
 }
 
 impl SyncHistoryManager {
-    /// Create a history manager for a specific workspace.
-    pub fn for_workspace(workspace_name: &str) -> Result<Self> {
-        let dir = crate::config::WorkspaceManager::workspace_dir(workspace_name)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        Ok(Self {
-            path: dir.join("sync-history.json"),
-        })
+    /// Create a history manager for a specific workspace root path.
+    pub fn for_workspace(root: &Path) -> Result<Self> {
+        let path = crate::config::WorkspaceStore::sync_history_path(root);
+        Ok(Self { path })
     }
 
     /// Load sync history from disk. Returns empty vec if file doesn't exist.

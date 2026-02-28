@@ -27,6 +27,72 @@ fn run_cli_with_env(home: &Path, args: &[&str]) -> std::process::Output {
         .expect("Failed to execute git-same")
 }
 
+fn default_config_path(home: &Path) -> PathBuf {
+    home.join(".config").join("git-same").join("config.toml")
+}
+
+fn write_workspace_config(root: &Path) {
+    let dot_dir = root.join(".git-same");
+    std::fs::create_dir_all(&dot_dir).expect("Failed to create workspace metadata dir");
+    std::fs::write(
+        dot_dir.join("config.toml"),
+        r#"[provider]
+kind = "github"
+"#,
+    )
+    .expect("Failed to write workspace config");
+}
+
+fn setup_registered_workspaces(home: &Path, roots: &[PathBuf]) {
+    std::fs::create_dir_all(home.join(".config")).expect("Failed to create config dir");
+    std::fs::create_dir_all(home.join(".cache")).expect("Failed to create cache dir");
+
+    let init_output = run_cli_with_env(home, &["init", "--force"]);
+    assert!(
+        init_output.status.success(),
+        "Init failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+
+    for root in roots {
+        write_workspace_config(root);
+    }
+
+    let repos_root = home.join("repos");
+    let repos_arg = repos_root
+        .to_str()
+        .expect("Repos root path is not valid UTF-8");
+    let scan_output = run_cli_with_env(home, &["scan", repos_arg, "--register"]);
+    assert!(
+        scan_output.status.success(),
+        "Scan/register failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout),
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+}
+
+fn read_default_workspace(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).expect("Failed to read config file");
+    let doc: toml::Value = toml::from_str(&content).expect("Failed to parse config TOML");
+    doc.get("default_workspace")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string)
+}
+
+fn read_workspace_registry(path: &Path) -> Vec<String> {
+    let content = std::fs::read_to_string(path).expect("Failed to read config file");
+    let doc: toml::Value = toml::from_str(&content).expect("Failed to parse config TOML");
+    doc.get("workspaces")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn assert_banner_branding(stdout: &str) {
     let description = env!("CARGO_PKG_DESCRIPTION");
     assert!(
@@ -43,6 +109,11 @@ fn assert_banner_branding(stdout: &str) {
     assert!(
         !stdout.contains(&format!("{description}  Version")),
         "Unexpected legacy version suffix in subheadline, got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("GT-SAME"),
+        "Unexpected legacy GT-SAME banner text in stdout, got:\n{}",
         stdout
     );
 }
@@ -202,7 +273,6 @@ fn test_init_creates_config() {
 
     // Verify content is valid TOML
     let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
-    assert!(content.contains("base_path"));
     assert!(content.contains("concurrency"));
 }
 
@@ -238,8 +308,8 @@ fn test_init_force_overwrites() {
     // Verify content was overwritten
     let content = std::fs::read_to_string(&config_path).expect("Failed to read config");
     assert!(
-        content.contains("base_path"),
-        "Config should contain base_path"
+        content.contains("concurrency"),
+        "Config should contain concurrency setting"
     );
 }
 
@@ -272,7 +342,9 @@ fn test_status_nonexistent_workspace() {
     assert!(
         stderr.contains("not found")
             || stderr.contains("No workspaces")
-            || stderr.contains("No workspace configured"),
+            || stderr.contains("No workspace configured")
+            || stderr.contains("No workspace config found")
+            || stderr.contains("Configuration error"),
         "Expected workspace not found error, got: {}",
         stderr
     );
@@ -338,6 +410,157 @@ fn test_workspace_list() {
 
     // Should succeed even with no workspaces
     assert!(output.status.success());
+}
+
+#[test]
+fn test_workspace_default_accepts_unique_folder_name() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+
+    let ws_target = home.join("repos").join("team-a").join("work");
+    let ws_other = home.join("repos").join("team-b").join("other");
+    setup_registered_workspaces(&home, &[ws_target.clone(), ws_other]);
+
+    let set_output = run_cli_with_env(&home, &["workspace", "default", "work"]);
+    assert!(
+        set_output.status.success(),
+        "workspace default by folder name failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&set_output.stdout),
+        String::from_utf8_lossy(&set_output.stderr)
+    );
+
+    let config_path = default_config_path(&home);
+    let default_workspace =
+        read_default_workspace(&config_path).expect("Expected default_workspace to be set");
+    let expected_default_suffix = Path::new("repos").join("team-a").join("work");
+    assert!(
+        Path::new(&default_workspace).ends_with(&expected_default_suffix),
+        "Expected default workspace to point at team-a/work, got '{}'",
+        default_workspace
+    );
+}
+
+#[test]
+fn test_workspace_default_rejects_ambiguous_folder_name() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+
+    let ws_a = home.join("repos").join("team-a").join("work");
+    let ws_b = home.join("repos").join("team-b").join("work");
+    setup_registered_workspaces(&home, &[ws_a, ws_b]);
+
+    let output = run_cli_with_env(&home, &["workspace", "default", "work"]);
+    assert!(
+        !output.status.success(),
+        "Expected ambiguous selector to fail.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    assert!(
+        stderr.contains("ambiguous") && stderr.contains("explicit path"),
+        "Expected ambiguous selector guidance in stderr, got:\n{}",
+        stderr
+    );
+
+    let config_path = default_config_path(&home);
+    let default_workspace = read_default_workspace(&config_path);
+    assert!(
+        default_workspace.is_none(),
+        "default_workspace should remain unset on ambiguous selector, got {:?}",
+        default_workspace
+    );
+}
+
+#[test]
+fn test_scan_register_requires_init() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    let repos = home.join("repos");
+    let ws_root = repos.join("team").join("project");
+    write_workspace_config(&ws_root);
+
+    let repos_arg = repos.to_str().expect("Repos path is not valid UTF-8");
+    let output = run_cli_with_env(&home, &["scan", repos_arg, "--register"]);
+    assert!(
+        !output.status.success(),
+        "scan --register should fail when config is missing.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Run 'gisa init' first") || stderr.contains("Config file not found"),
+        "Expected init guidance in stderr, got:\n{}",
+        stderr
+    );
+
+    assert!(
+        !default_config_path(&home).exists(),
+        "Config file should not be auto-created in this flow"
+    );
+}
+
+#[test]
+fn test_scan_register_uses_custom_config_path() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    let repos = home.join("repos");
+    let ws_root = repos.join("team").join("project");
+    write_workspace_config(&ws_root);
+
+    let custom_config_path = temp.path().join("custom-config.toml");
+    let custom_config_arg = custom_config_path
+        .to_str()
+        .expect("Custom config path is not valid UTF-8");
+    let init_output = run_cli_with_env(&home, &["init", "--path", custom_config_arg, "--force"]);
+    assert!(
+        init_output.status.success(),
+        "init --path failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&init_output.stdout),
+        String::from_utf8_lossy(&init_output.stderr)
+    );
+
+    let repos_arg = repos.to_str().expect("Repos path is not valid UTF-8");
+    let scan_output = run_cli_with_env(
+        &home,
+        &["-C", custom_config_arg, "scan", repos_arg, "--register"],
+    );
+    assert!(
+        scan_output.status.success(),
+        "scan --register with custom config failed.\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&scan_output.stdout),
+        String::from_utf8_lossy(&scan_output.stderr)
+    );
+
+    assert!(
+        !default_config_path(&home).exists(),
+        "Default config should not be required when -C is provided"
+    );
+
+    let workspaces = read_workspace_registry(&custom_config_path);
+    assert_eq!(
+        workspaces.len(),
+        1,
+        "Expected one registered workspace in custom config, got {:?}",
+        workspaces
+    );
+    let expected_registered_suffix = Path::new("repos").join("team").join("project");
+    assert!(
+        Path::new(&workspaces[0]).ends_with(&expected_registered_suffix),
+        "Expected registered workspace path to point at repos/team/project, got '{}'",
+        workspaces[0]
+    );
 }
 
 #[test]
@@ -410,6 +633,32 @@ fn test_cli_subcommands_use_dashboard_subheadline() {
         let output = run_cli_with_env(&home, &arg_refs);
         assert_banner_branding(&String::from_utf8_lossy(&output.stdout));
     }
+}
+
+#[test]
+fn test_workspace_list_uses_canonical_banner() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let home = temp.path().join("home");
+    std::fs::create_dir_all(home.join(".config")).expect("Failed to create config dir");
+    std::fs::create_dir_all(home.join(".cache")).expect("Failed to create cache dir");
+
+    let config_path = temp.path().join("config.toml");
+    let config_str = config_path
+        .to_str()
+        .expect("Config path is not valid UTF-8");
+
+    let init_output = run_cli_with_env(&home, &["init", "--path", config_str, "--force"]);
+    assert!(
+        init_output.status.success(),
+        "Init failed: {:?}",
+        init_output
+    );
+
+    let workspace_output = run_cli_with_env(&home, &["-C", config_str, "workspace", "list"]);
+    assert!(workspace_output.status.success(), "workspace list failed");
+    assert_banner_branding(&String::from_utf8_lossy(&workspace_output.stdout));
 }
 
 #[test]

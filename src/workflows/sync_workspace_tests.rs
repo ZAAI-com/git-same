@@ -26,7 +26,7 @@ fn prepared_workspace(with_clone: bool, with_sync: bool) -> PreparedSyncWorkspac
     };
 
     PreparedSyncWorkspace {
-        workspace: WorkspaceConfig::new("ws", "/tmp"),
+        workspace: WorkspaceConfig::new_from_root(std::path::Path::new("/tmp")),
         auth: AuthResult {
             token: "token".to_string(),
             method: ResolvedAuthMethod::GhCli,
@@ -87,7 +87,7 @@ async fn execute_prepared_sync_with_no_work_returns_empty_outcome() {
 #[test]
 fn sync_workspace_request_holds_expected_values() {
     let config = Config::default();
-    let workspace = WorkspaceConfig::new("team", "/tmp/team");
+    let workspace = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/team"));
 
     let request = SyncWorkspaceRequest {
         config: &config,
@@ -104,5 +104,8 @@ fn sync_workspace_request_holds_expected_values() {
     assert!(!request.skip_uncommitted);
     assert_eq!(request.concurrency_override, Some(7));
     assert!(request.create_base_path);
-    assert_eq!(request.workspace.name, "team");
+    assert_eq!(
+        request.workspace.root_path,
+        std::path::PathBuf::from("/tmp/team")
+    );
 }

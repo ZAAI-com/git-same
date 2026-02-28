@@ -60,7 +60,13 @@ async fn run_returns_error_for_unknown_workspace_name() {
     }
 
     let err = result.unwrap_err();
-    assert!(err.to_string().contains("No workspace configured"));
+    assert!(
+        err.to_string().contains("No workspace configured")
+            || err.to_string().contains("No workspace config found")
+            || err.to_string().contains("Configuration error"),
+        "unexpected error: {}",
+        err
+    );
 }
 
 #[test]

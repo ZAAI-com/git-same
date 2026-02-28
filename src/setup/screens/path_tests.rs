@@ -1,5 +1,5 @@
 use super::*;
-use crate::setup::state::{PathBrowseEntry, PathSuggestion, SetupState};
+use crate::setup::state::{PathBrowseEntry, SetupState};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
@@ -26,25 +26,15 @@ fn render_output(state: &SetupState) -> String {
 }
 
 #[test]
-fn render_suggestions_mode_shows_suggestions_block() {
+fn render_path_input_shows_base_path_without_suggestions() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
-    state.path_suggestions_mode = true;
-    state.path_suggestions = vec![
-        PathSuggestion {
-            path: "~/Git-Same/GitHub".to_string(),
-            label: "current directory".to_string(),
-        },
-        PathSuggestion {
-            path: "~/Developer".to_string(),
-            label: "recommended".to_string(),
-        },
-    ];
-    state.path_suggestion_index = 1;
+    state.path_suggestions_mode = false;
+    state.path_browse_mode = false;
 
     let output = render_output(&state);
-    assert!(output.contains("Suggestions:"));
-    assert!(output.contains("~/Developer"));
-    assert!(output.contains("recommended"));
+    assert!(output.contains("Base Path"));
+    assert!(output.contains("~/Git-Same/GitHub"));
+    assert!(!output.contains("Suggestions:"));
 }
 
 #[test]
@@ -72,7 +62,7 @@ fn render_browse_mode_shows_folder_navigator_context() {
     state.path_browse_index = 1;
 
     let output = render_output(&state);
-    assert!(output.contains("Folder Navigator"));
+    assert!(output.contains("Local Folder Navigator"));
     assert!(output.contains("Path:"));
     assert!(output.contains("~/Projects"));
     assert!(output.contains("client"));

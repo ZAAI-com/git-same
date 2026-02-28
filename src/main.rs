@@ -40,12 +40,7 @@ async fn main() -> ExitCode {
             let verbosity = Verbosity::from(cli.verbosity());
             let output = Output::new(verbosity, cli.is_json());
 
-            // Print banner unless quiet or JSON output
-            if !output.is_json() && !cli.is_quiet() {
-                git_same::banner::print_banner();
-            }
-
-            let result = run_command(command, cli.config.as_deref(), &output).await;
+            let result = run_command(command, cli.config.as_deref(), &output, cli.is_quiet()).await;
 
             match result {
                 Ok(()) => ExitCode::SUCCESS,
@@ -65,6 +60,7 @@ async fn main() -> ExitCode {
                 use git_same::config::Config;
 
                 // Auto-create default config if it doesn't exist
+                let mut config_was_created = false;
                 if cli.config.is_none() {
                     let default_path = match Config::default_path() {
                         Ok(path) => path,
@@ -93,6 +89,7 @@ async fn main() -> ExitCode {
                             );
                             return ExitCode::from(2);
                         }
+                        config_was_created = true;
                     }
                 }
 
@@ -102,13 +99,15 @@ async fn main() -> ExitCode {
                 };
 
                 match config {
-                    Ok(config) => match git_same::app::tui::run_tui(config).await {
-                        Ok(()) => ExitCode::SUCCESS,
-                        Err(e) => {
-                            eprintln!("TUI error: {}", e);
-                            ExitCode::from(1)
+                    Ok(config) => {
+                        match git_same::app::tui::run_tui(config, config_was_created).await {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(e) => {
+                                eprintln!("TUI error: {}", e);
+                                ExitCode::from(1)
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         eprintln!("Failed to load config: {}", e);
                         eprintln!("Run 'gisa init' to create a configuration file.");

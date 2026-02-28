@@ -12,7 +12,6 @@ use std::time::Instant;
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    SystemCheck,
     WorkspaceSetup,
     Workspaces,
     Dashboard,
@@ -162,6 +161,7 @@ pub struct CheckEntry {
     pub name: String,
     pub passed: bool,
     pub message: String,
+    pub suggestion: Option<String>,
     pub critical: bool,
 }
 
@@ -243,12 +243,6 @@ pub struct App {
     /// Setup wizard state (active when on SetupWizard screen).
     pub setup_state: Option<SetupState>,
 
-    /// Whether the config file was successfully created by init.
-    pub config_created: bool,
-
-    /// Path where config was written (for display).
-    pub config_path_display: Option<String>,
-
     /// Whether status scan is in progress.
     pub status_loading: bool,
 
@@ -309,7 +303,7 @@ pub struct App {
 
 impl App {
     /// Create a new App with the given config and workspaces.
-    pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>) -> Self {
+    pub fn new(config: Config, workspaces: Vec<WorkspaceConfig>, config_was_created: bool) -> Self {
         let (screen, active_workspace, base_path) = match workspaces.len() {
             0 => (Screen::WorkspaceSetup, None, None),
             1 => {
@@ -319,8 +313,10 @@ impl App {
             }
             _ => {
                 // Check for default workspace
-                if let Some(ref default_name) = config.default_workspace {
-                    if let Some(ws) = workspaces.iter().find(|w| w.name == *default_name) {
+                if let Some(ref default_path) = config.default_workspace {
+                    let expanded = shellexpand::tilde(default_path.as_str());
+                    let default_root = std::path::PathBuf::from(expanded.as_ref());
+                    if let Some(ws) = workspaces.iter().find(|w| w.root_path == default_root) {
                         let bp = Some(ws.expanded_base_path());
                         (Screen::Dashboard, Some(ws.clone()), bp)
                     } else {
@@ -335,7 +331,7 @@ impl App {
         let sync_history = active_workspace
             .as_ref()
             .and_then(|ws| {
-                crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+                crate::cache::SyncHistoryManager::for_workspace(&ws.root_path)
                     .and_then(|m| m.load())
                     .ok()
             })
@@ -370,12 +366,12 @@ impl App {
                 let default_path = std::env::current_dir()
                     .map(|p| state::tilde_collapse(&p.to_string_lossy()))
                     .unwrap_or_else(|_| "~/Git-Same/GitHub".to_string());
-                Some(SetupState::with_first_setup(&default_path, true))
+                let mut setup = SetupState::with_first_setup(&default_path, config_was_created);
+                setup.config_was_created = config_was_created;
+                Some(setup)
             } else {
                 None
             },
-            config_created: false,
-            config_path_display: None,
             status_loading: false,
             last_status_scan: None,
             stat_index: 0,
@@ -403,7 +399,7 @@ impl App {
         if let Some(ws) = self.workspaces.get(index).cloned() {
             self.base_path = Some(ws.expanded_base_path());
             // Load sync history for this workspace
-            self.sync_history = crate::cache::SyncHistoryManager::for_workspace(&ws.name)
+            self.sync_history = crate::cache::SyncHistoryManager::for_workspace(&ws.root_path)
                 .and_then(|m| m.load())
                 .unwrap_or_default();
             self.active_workspace = Some(ws);

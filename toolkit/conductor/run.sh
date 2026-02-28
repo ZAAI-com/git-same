@@ -9,17 +9,48 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_DIR"
 
 CARGO_BIN_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
-GS_COMMAND="$CARGO_BIN_DIR/gisa"
-
-# Install to ensure all binaries are up to date
-echo "Installing with: cargo install --path ."
-cargo install --path .
-echo ""
-
-if [ ! -x "$GS_COMMAND" ]; then
-    echo "ERROR: gisa installation failed."
+ALIAS_FILE="$PROJECT_DIR/toolkit/packaging/binary-aliases.txt"
+if [ ! -r "$ALIAS_FILE" ]; then
+    echo "ERROR: Alias manifest not found or unreadable: $ALIAS_FILE"
     exit 1
 fi
+
+BINARIES=()
+while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] && BINARIES+=("$line")
+done < "$ALIAS_FILE"
+
+if [ ${#BINARIES[@]} -eq 0 ]; then
+    echo "ERROR: Alias manifest contains no aliases: $ALIAS_FILE"
+    exit 1
+fi
+
+PRIMARY_BIN="${BINARIES[0]}"
+GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
+
+# Install primary binary
+echo "Installing with: cargo install --path . --force"
+cargo install --path . --force
+echo ""
+
+if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
+    echo "ERROR: $PRIMARY_BIN installation failed."
+    exit 1
+fi
+
+# Create alias symlinks from manifest (skip primary)
+for alias in "${BINARIES[@]:1}"; do
+    # Replace stale standalone alias binaries with a symlink to the primary binary.
+    if [ -e "$CARGO_BIN_DIR/$alias" ] && [ ! -L "$CARGO_BIN_DIR/$alias" ]; then
+        rm -f "$CARGO_BIN_DIR/$alias"
+    fi
+    ln -sf "$CARGO_BIN_DIR/$PRIMARY_BIN" "$CARGO_BIN_DIR/$alias"
+    echo "  Symlinked: $alias -> $PRIMARY_BIN"
+done
+echo ""
 
 # Warn if gisa is also installed elsewhere (e.g. Homebrew)
 RED='\033[0;31m'

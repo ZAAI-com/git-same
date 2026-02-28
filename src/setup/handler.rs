@@ -5,7 +5,7 @@ use super::state::{
 };
 use crate::auth::{get_auth_for_provider, gh_cli};
 use crate::config::{WorkspaceConfig, WorkspaceManager};
-use crate::provider::{create_provider, Credentials};
+use crate::provider::create_provider;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Handle a key event in the setup wizard.
@@ -35,7 +35,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
     if key.modifiers == KeyModifiers::NONE
         && key.code == KeyCode::Char('q')
-        && !matches!(state.step, SetupStep::SelectPath)
+        && !matches!(state.step, SetupStep::SelectPath | SetupStep::Requirements)
     {
         state.outcome = Some(SetupOutcome::Cancelled);
         state.should_quit = true;
@@ -43,6 +43,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
     if !path_popup_active
         && state.step != SetupStep::SelectPath
+        && state.step != SetupStep::Requirements
         && key.modifiers == KeyModifiers::NONE
         && key.code == KeyCode::Esc
     {
@@ -68,7 +69,7 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
     }
 
     match state.step {
-        SetupStep::Welcome => handle_welcome(state, key),
+        SetupStep::Requirements => handle_requirements(state, key),
         SetupStep::SelectProvider => handle_provider(state, key),
         SetupStep::Authenticate => handle_auth(state, key).await,
         SetupStep::SelectPath => handle_path(state, key),
@@ -80,8 +81,10 @@ pub async fn handle_key(state: &mut SetupState, key: KeyEvent) {
 
 async fn handle_step_forward(state: &mut SetupState) {
     match state.step {
-        SetupStep::Welcome => {
-            state.next_step();
+        SetupStep::Requirements => {
+            if !state.checks_loading && state.requirements_passed() {
+                state.next_step();
+            }
         }
         SetupStep::SelectProvider => {
             if state.provider_choices[state.provider_index].available {
@@ -101,9 +104,10 @@ async fn handle_step_forward(state: &mut SetupState) {
         },
         SetupStep::SelectOrgs => {
             if state.org_loading {
-                do_discover_orgs(state).await;
+                // Discovery is driven externally while loading.
             } else if state.org_error.is_some() {
                 state.org_loading = true;
+                state.org_discovery_in_progress = false;
                 state.org_error = None;
             } else {
                 state.next_step();
@@ -116,11 +120,6 @@ async fn handle_step_forward(state: &mut SetupState) {
                     state.path_cursor = state.base_path.len();
                 }
                 close_path_browse_to_input(state);
-            } else if state.path_suggestions_mode {
-                if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
-                    state.base_path = s.path.clone();
-                    state.path_cursor = state.base_path.len();
-                }
             }
             confirm_path(state);
         }
@@ -138,10 +137,12 @@ async fn handle_step_forward(state: &mut SetupState) {
     }
 }
 
-fn handle_welcome(state: &mut SetupState, key: KeyEvent) {
+fn handle_requirements(state: &mut SetupState, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
-            state.next_step();
+            if !state.checks_loading && state.requirements_passed() {
+                state.next_step();
+            }
         }
         KeyCode::Esc => {
             state.prev_step();
@@ -198,8 +199,8 @@ async fn handle_auth(state: &mut SetupState, key: KeyEvent) {
 }
 
 async fn do_authenticate(state: &mut SetupState) {
-    let provider_entry = state.build_workspace_provider().to_provider_entry();
-    match get_auth_for_provider(&provider_entry) {
+    let ws_provider = state.build_workspace_provider();
+    match get_auth_for_provider(&ws_provider) {
         Ok(auth) => {
             let username = auth.username.or_else(|| gh_cli::get_username().ok());
             state.username = username;
@@ -346,7 +347,7 @@ fn close_path_browse_to_input(state: &mut SetupState) {
     state.path_browse_error = None;
     state.path_browse_info = None;
     state.path_cursor = state.base_path.len();
-    state.path_completions = compute_completions(&state.base_path);
+    state.path_completions.clear();
     state.path_completion_index = 0;
 }
 
@@ -450,12 +451,23 @@ fn move_to_parent_or_collapse_selected_entry(state: &mut SetupState) {
     else {
         return;
     };
+    if selected.depth == 0 {
+        let root_dir = std::path::PathBuf::from(shellexpand::tilde(&selected.path).as_ref());
+        if let Some(parent) = root_dir.parent() {
+            let parent = parent.to_path_buf();
+            set_browse_root(state, parent.clone());
+            state.path_browse_info = Some(format!(
+                "Moved to parent: {}",
+                tilde_collapse(&parent.to_string_lossy())
+            ));
+        } else {
+            state.path_browse_info = Some("Already at filesystem root".to_string());
+        }
+        return;
+    }
     if selected.expanded {
         collapse_selected_entry(state);
         sync_browse_current_dir(state);
-        return;
-    }
-    if selected.depth == 0 {
         return;
     }
     for idx in (0..state.path_browse_index).rev() {
@@ -507,31 +519,11 @@ fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
 
 fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => {
-            if state.path_suggestion_index > 0 {
-                state.path_suggestion_index -= 1;
-            }
-        }
-        KeyCode::Down => {
-            if state.path_suggestion_index + 1 < state.path_suggestions.len() {
-                state.path_suggestion_index += 1;
-            }
+        KeyCode::Left => {
+            state.prev_step();
         }
         KeyCode::Enter => {
-            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
-                state.base_path = s.path.clone();
-                state.path_cursor = state.base_path.len();
-            }
             confirm_path(state);
-        }
-        KeyCode::Tab => {
-            if let Some(s) = state.path_suggestions.get(state.path_suggestion_index) {
-                state.base_path = s.path.clone();
-                state.path_cursor = state.base_path.len();
-            }
-            state.path_suggestions_mode = false;
-            state.path_completions = compute_completions(&state.base_path);
-            state.path_completion_index = 0;
         }
         KeyCode::Char('b') => {
             open_path_browse_mode(state);
@@ -539,23 +531,11 @@ fn handle_path_suggestions(state: &mut SetupState, key: KeyEvent) {
         KeyCode::Esc => {
             state.prev_step();
         }
-        KeyCode::Backspace => {
-            state.path_suggestions_mode = false;
-            if state.path_cursor > 0 {
-                state.path_cursor -= 1;
-                state.base_path.remove(state.path_cursor);
-            }
-            state.path_completions = compute_completions(&state.base_path);
-            state.path_completion_index = 0;
-        }
-        KeyCode::Char(c) => {
-            state.path_suggestions_mode = false;
-            state.base_path.clear();
-            state.base_path.push(c);
-            state.path_cursor = 1;
-            state.path_completions = compute_completions(&state.base_path);
-            state.path_completion_index = 0;
-        }
+        KeyCode::Tab => open_path_browse_mode(state),
+        KeyCode::Up | KeyCode::Down | KeyCode::Right => {}
+        KeyCode::Backspace | KeyCode::Delete => {}
+        KeyCode::Home | KeyCode::End => {}
+        KeyCode::Char(_) => {}
         _ => {}
     }
 }
@@ -567,153 +547,33 @@ fn handle_path_input(state: &mut SetupState, key: KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Tab => {
-            apply_tab_completion(state);
+        KeyCode::Left => {
+            state.prev_step();
         }
         KeyCode::Enter => {
             confirm_path(state);
         }
+        KeyCode::Char('b') => {
+            open_path_browse_mode(state);
+        }
         KeyCode::Esc => {
             state.prev_step();
         }
-        KeyCode::Backspace => {
-            if state.path_cursor > 0 {
-                state.path_cursor -= 1;
-                state.base_path.remove(state.path_cursor);
-                state.path_completions = compute_completions(&state.base_path);
-                state.path_completion_index = 0;
-            }
-        }
-        KeyCode::Delete => {
-            if state.path_cursor < state.base_path.len() {
-                state.base_path.remove(state.path_cursor);
-                state.path_completions = compute_completions(&state.base_path);
-                state.path_completion_index = 0;
-            }
-        }
-        KeyCode::Left => {
-            if state.path_cursor > 0 {
-                state.path_cursor -= 1;
-            }
-        }
-        KeyCode::Right => {
-            if state.path_cursor < state.base_path.len() {
-                state.path_cursor += 1;
-            }
-        }
-        KeyCode::Home => {
-            state.path_cursor = 0;
-        }
-        KeyCode::End => {
-            state.path_cursor = state.base_path.len();
-        }
-        KeyCode::Char(c) => {
-            state.base_path.insert(state.path_cursor, c);
-            state.path_cursor += 1;
-            state.path_completions = compute_completions(&state.base_path);
-            state.path_completion_index = 0;
-        }
+        KeyCode::Up | KeyCode::Down | KeyCode::Right => {}
+        KeyCode::Tab => {}
+        KeyCode::Backspace | KeyCode::Delete => {}
+        KeyCode::Home | KeyCode::End => {}
+        KeyCode::Char(_) => {}
         _ => {}
     }
 }
 
-/// Compute directory completions for the current input path.
-fn compute_completions(input: &str) -> Vec<String> {
-    if input.is_empty() {
-        return Vec::new();
-    }
-    let expanded = shellexpand::tilde(input);
-    let path = std::path::Path::new(expanded.as_ref());
-
-    let (parent, prefix) = if expanded.ends_with('/') {
-        (path.to_path_buf(), String::new())
-    } else {
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| {
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-            });
-        let prefix = path
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_default();
-        (parent, prefix)
-    };
-
-    let mut results = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&parent) {
-        for entry in entries.flatten() {
-            if !entry.path().is_dir() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue;
-            }
-            if prefix.is_empty() || name.starts_with(&prefix) {
-                let full = parent.join(&name);
-                let display = tilde_collapse(&full.to_string_lossy());
-                results.push(format!("{}/", display));
-            }
-        }
-    }
-    results.sort();
-    results
-}
-
-fn apply_tab_completion(state: &mut SetupState) {
-    if state.path_completions.is_empty() {
-        return;
-    }
-    if state.path_completions.len() == 1 {
-        state.base_path = state.path_completions[0].clone();
-        state.path_cursor = state.base_path.len();
-        state.path_completions = compute_completions(&state.base_path);
-        state.path_completion_index = 0;
-    } else {
-        let common = longest_common_prefix(&state.path_completions);
-        if common.len() > state.base_path.len() {
-            state.base_path = common;
-            state.path_cursor = state.base_path.len();
-            state.path_completions = compute_completions(&state.base_path);
-            state.path_completion_index = 0;
-        } else {
-            // Already at common prefix, cycle through completions
-            state.base_path = state.path_completions[state.path_completion_index].clone();
-            state.path_cursor = state.base_path.len();
-            state.path_completion_index =
-                (state.path_completion_index + 1) % state.path_completions.len();
-        }
-    }
-}
-
-fn longest_common_prefix(strings: &[String]) -> String {
-    if strings.is_empty() {
-        return String::new();
-    }
-    let mut prefix: Vec<char> = strings[0].chars().collect();
-    for s in &strings[1..] {
-        let mut matched = 0usize;
-        for (a, b) in prefix.iter().copied().zip(s.chars()) {
-            if a != b {
-                break;
-            }
-            matched += 1;
-        }
-        prefix.truncate(matched);
-        if prefix.is_empty() {
-            break;
-        }
-    }
-    prefix.into_iter().collect()
-}
-
 async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
     if state.org_loading {
-        // Trigger org discovery
-        do_discover_orgs(state).await;
+        // Discovery is triggered by a synthetic Null key in setup CLI mode.
+        if key.code == KeyCode::Null {
+            do_discover_orgs(state).await;
+        }
         return;
     }
 
@@ -747,6 +607,7 @@ async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
             if state.org_error.is_some() {
                 // Retry
                 state.org_loading = true;
+                state.org_discovery_in_progress = false;
                 state.org_error = None;
             } else {
                 state.next_step();
@@ -763,19 +624,31 @@ async fn do_discover_orgs(state: &mut SetupState) {
     let Some(ref token) = state.auth_token else {
         state.org_error = Some("Not authenticated".to_string());
         state.org_loading = false;
+        state.org_discovery_in_progress = false;
         return;
     };
 
-    let provider_entry = state.build_workspace_provider().to_provider_entry();
-    let api_url = provider_entry.effective_api_url();
+    let ws_provider = state.build_workspace_provider();
+    match discover_org_entries(ws_provider, token.clone()).await {
+        Ok(org_entries) => {
+            state.orgs = org_entries;
+            state.org_index = 0;
+            state.org_loading = false;
+            state.org_discovery_in_progress = false;
+        }
+        Err(e) => {
+            state.org_error = Some(e);
+            state.org_loading = false;
+            state.org_discovery_in_progress = false;
+        }
+    }
+}
 
-    let credentials = Credentials {
-        token: token.clone(),
-        api_base_url: api_url,
-        username: state.username.clone(),
-    };
-
-    match create_provider(&provider_entry, &credentials.token) {
+pub(crate) async fn discover_org_entries(
+    ws_provider: crate::config::WorkspaceProvider,
+    token: String,
+) -> Result<Vec<OrgEntry>, String> {
+    match create_provider(&ws_provider, &token) {
         Ok(provider) => match provider.get_organizations().await {
             Ok(orgs) => {
                 let mut org_entries: Vec<OrgEntry> = Vec::new();
@@ -792,19 +665,11 @@ async fn do_discover_orgs(state: &mut SetupState) {
                     });
                 }
                 org_entries.sort_by(|a, b| a.name.cmp(&b.name));
-                state.orgs = org_entries;
-                state.org_index = 0;
-                state.org_loading = false;
+                Ok(org_entries)
             }
-            Err(e) => {
-                state.org_error = Some(e.to_string());
-                state.org_loading = false;
-            }
+            Err(e) => Err(e.to_string()),
         },
-        Err(e) => {
-            state.org_error = Some(e.to_string());
-            state.org_loading = false;
-        }
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -841,7 +706,18 @@ fn handle_complete(state: &mut SetupState, key: KeyEvent) {
 }
 
 fn save_workspace(state: &SetupState) -> Result<(), crate::errors::AppError> {
-    let mut ws = WorkspaceConfig::new(&state.workspace_name, &state.base_path);
+    let expanded = shellexpand::tilde(&state.base_path);
+    let root = std::path::Path::new(expanded.as_ref());
+    std::fs::create_dir_all(root).map_err(|e| {
+        crate::errors::AppError::config(format!(
+            "Failed to create workspace directory '{}': {}",
+            root.display(),
+            e
+        ))
+    })?;
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+
+    let mut ws = WorkspaceConfig::new_from_root(&root);
     ws.provider = state.build_workspace_provider();
     ws.username = state.username.clone().unwrap_or_default();
     ws.orgs = state.selected_orgs();

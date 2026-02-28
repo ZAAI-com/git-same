@@ -9,7 +9,6 @@ fn test_default_config() {
     assert_eq!(config.sync_mode, SyncMode::Fetch);
     assert!(!config.filters.include_archived);
     assert!(!config.filters.include_forks);
-    assert_eq!(config.providers.len(), 1);
 }
 
 #[test]
@@ -37,10 +36,6 @@ include_archived = true
 include_forks = true
 orgs = ["my-org"]
 exclude_repos = ["my-org/skip-this"]
-
-[[providers]]
-kind = "github"
-auth = "gh-cli"
 "#;
 
     let config = Config::parse(content).unwrap();
@@ -53,25 +48,6 @@ auth = "gh-cli"
     assert!(config.filters.include_forks);
     assert_eq!(config.filters.orgs, vec!["my-org"]);
     assert_eq!(config.filters.exclude_repos, vec!["my-org/skip-this"]);
-}
-
-#[test]
-fn test_load_multi_provider_config() {
-    let content = r#"
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-
-[[providers]]
-kind = "github"
-name = "Work"
-auth = "gh-cli"
-"#;
-
-    let config = Config::parse(content).unwrap();
-    assert_eq!(config.providers.len(), 2);
-    assert_eq!(config.providers[0].kind, crate::types::ProviderKind::GitHub);
-    assert_eq!(config.providers[1].name, Some("Work".to_string()));
 }
 
 #[test]
@@ -102,17 +78,6 @@ fn test_validation_rejects_high_concurrency() {
 }
 
 #[test]
-fn test_validation_rejects_empty_providers() {
-    let config = Config {
-        providers: vec![],
-        ..Config::default()
-    };
-    let result = config.validate();
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("provider"));
-}
-
-#[test]
 fn test_sync_mode_from_str() {
     assert_eq!("fetch".parse::<SyncMode>().unwrap(), SyncMode::Fetch);
     assert_eq!("pull".parse::<SyncMode>().unwrap(), SyncMode::Pull);
@@ -128,30 +93,6 @@ fn test_default_toml_is_valid() {
 }
 
 #[test]
-fn test_enabled_providers_filter() {
-    let config = Config {
-        providers: vec![
-            ProviderEntry {
-                enabled: true,
-                ..ProviderEntry::github()
-            },
-            ProviderEntry {
-                enabled: false,
-                ..ProviderEntry::github()
-            },
-            ProviderEntry {
-                enabled: true,
-                ..ProviderEntry::github()
-            },
-        ],
-        ..Config::default()
-    };
-
-    let enabled: Vec<_> = config.enabled_providers().collect();
-    assert_eq!(enabled.len(), 2);
-}
-
-#[test]
 fn test_default_config_has_no_default_workspace() {
     let config = Config::default();
     assert!(config.default_workspace.is_none());
@@ -160,22 +101,16 @@ fn test_default_config_has_no_default_workspace() {
 #[test]
 fn test_parse_config_with_default_workspace() {
     let content = r#"
-default_workspace = "my-ws"
-
-[[providers]]
-kind = "github"
-auth = "gh-cli"
+default_workspace = "~/repos"
 "#;
     let config = Config::parse(content).unwrap();
-    assert_eq!(config.default_workspace, Some("my-ws".to_string()));
+    assert_eq!(config.default_workspace, Some("~/repos".to_string()));
 }
 
 #[test]
 fn test_parse_config_without_default_workspace() {
     let content = r#"
-[[providers]]
-kind = "github"
-auth = "gh-cli"
+concurrency = 4
 "#;
     let config = Config::parse(content).unwrap();
     assert!(config.default_workspace.is_none());
@@ -239,10 +174,6 @@ fn test_save_default_workspace_to_replace_without_sync_mode() {
 structure = "{org}/{repo}"
 concurrency = 8
 default_workspace = "ws-old"
-
-[[providers]]
-kind = "github"
-auth = "gh-cli"
 "#;
     std::fs::write(&path, content).unwrap();
 
@@ -260,4 +191,47 @@ fn test_save_default_workspace_to_nonexistent_file() {
     let result =
         Config::save_default_workspace_to(Path::new("/nonexistent/config.toml"), Some("ws"));
     assert!(result.is_err());
+}
+
+#[test]
+fn test_add_to_registry_at_returns_error_when_config_missing() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("missing-config.toml");
+
+    let err = Config::add_to_registry_at(&path, "~/repos").unwrap_err();
+    assert!(err.to_string().contains("Run 'gisa init' first"));
+}
+
+#[test]
+fn test_add_to_registry_at_adds_path_without_duplicates() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(&path, Config::default_toml()).unwrap();
+
+    Config::add_to_registry_at(&path, "~/repos").unwrap();
+    Config::add_to_registry_at(&path, "~/repos").unwrap();
+
+    let config = Config::load_from(&path).unwrap();
+    assert_eq!(config.workspaces, vec!["~/repos".to_string()]);
+}
+
+#[test]
+fn test_add_to_registry_at_errors_when_workspaces_is_not_array() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+concurrency = 4
+workspaces = "invalid"
+"#,
+    )
+    .unwrap();
+
+    let err = Config::add_to_registry_at(&path, "~/repos").unwrap_err();
+    assert!(err.to_string().contains("workspaces"));
+
+    // Ensure malformed field was not silently rewritten.
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains(r#"workspaces = "invalid""#));
 }

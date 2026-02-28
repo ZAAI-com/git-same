@@ -6,4 +6,8 @@ pub mod confirm;
 pub mod orgs;
 pub mod path;
 pub mod provider;
-pub mod welcome;
+pub mod requirements;
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

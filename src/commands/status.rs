@@ -9,10 +9,10 @@ use crate::output::{format_count, Output};
 
 /// Show status of repositories.
 pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<()> {
-    let mut workspace = WorkspaceManager::resolve(args.workspace.as_deref(), config)?;
+    let workspace = WorkspaceManager::resolve(args.workspace.as_deref(), config)?;
 
     // Ensure base path exists (offer to fix if user moved it)
-    super::ensure_base_path(&mut workspace, output)?;
+    super::ensure_base_path(&workspace, output)?;
     let base_path = workspace.expanded_base_path();
 
     let structure = workspace.structure.as_deref().unwrap_or(&config.structure);

@@ -5,6 +5,7 @@
 
 pub mod init;
 pub mod reset;
+pub mod scan;
 #[cfg(feature = "tui")]
 pub mod setup;
 pub mod status;
@@ -29,13 +30,22 @@ pub async fn run_command(
     command: &Command,
     config_path: Option<&Path>,
     output: &Output,
+    quiet: bool,
 ) -> Result<()> {
+    // Print the canonical CLI banner for all subcommands.
+    if !output.is_json() && !quiet {
+        crate::banner::print_banner();
+    }
+
     // Commands that don't need config
     if let Command::Init(args) = command {
         return run_init(args, output).await;
     }
     if let Command::Reset(args) = command {
         return reset::run(args, output).await;
+    }
+    if let Command::Scan(args) = command {
+        return scan::run(args, config_path, output);
     }
     #[cfg(feature = "tui")]
     if let Command::Setup(args) = command {
@@ -46,7 +56,7 @@ pub async fn run_command(
     let config = load_config(config_path)?;
 
     match command {
-        Command::Init(_) | Command::Reset(_) => unreachable!(),
+        Command::Init(_) | Command::Reset(_) | Command::Scan(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,

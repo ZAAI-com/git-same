@@ -133,13 +133,24 @@ impl DiscoveryOrchestrator {
         git: &G,
     ) -> Vec<(PathBuf, String, String)> {
         let mut repos = Vec::new();
+        let mut visited_dirs = HashSet::new();
+        let mut seen_repos = HashSet::new();
 
         // Determine scan depth based on structure
         // {org}/{repo} -> 2 levels
         // {provider}/{org}/{repo} -> 3 levels
         let depth = RepoPathTemplate::new(self.structure.clone()).scan_depth();
 
-        self.scan_dir(base_path, base_path, git, &mut repos, 0, depth);
+        self.scan_dir(
+            base_path,
+            base_path,
+            git,
+            &mut repos,
+            &mut visited_dirs,
+            &mut seen_repos,
+            0,
+            depth,
+        );
 
         repos
     }
@@ -151,6 +162,8 @@ impl DiscoveryOrchestrator {
         path: &Path,
         git: &G,
         repos: &mut Vec<(PathBuf, String, String)>,
+        visited_dirs: &mut HashSet<PathBuf>,
+        seen_repos: &mut HashSet<PathBuf>,
         current_depth: usize,
         max_depth: usize,
     ) {
@@ -158,16 +171,26 @@ impl DiscoveryOrchestrator {
             return;
         }
 
-        let entries = match std::fs::read_dir(path) {
+        let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        if !visited_dirs.insert(canonical_path.clone()) {
+            return;
+        }
+
+        let entries = match std::fs::read_dir(&canonical_path) {
             Ok(e) => e,
             Err(_) => return,
         };
 
         for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if !entry_path.is_dir() {
+            // Avoid traversing symlinks to directories.
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
                 continue;
             }
+
+            let entry_path = entry.path();
 
             // Skip hidden directories
             if entry.file_name().to_string_lossy().starts_with('.') {
@@ -175,8 +198,16 @@ impl DiscoveryOrchestrator {
             }
 
             if current_depth + 1 == max_depth && git.is_repo(&entry_path) {
+                let canonical_repo =
+                    std::fs::canonicalize(&entry_path).unwrap_or(entry_path.clone());
+                if !seen_repos.insert(canonical_repo.clone()) {
+                    continue;
+                }
+
                 // This is a repo at the expected depth
-                let rel_path = entry_path.strip_prefix(base_path).unwrap_or(&entry_path);
+                let rel_path = canonical_repo
+                    .strip_prefix(base_path)
+                    .unwrap_or(&canonical_repo);
                 let parts: Vec<_> = rel_path.components().collect();
 
                 if parts.len() >= 2 {
@@ -188,7 +219,7 @@ impl DiscoveryOrchestrator {
                         .as_os_str()
                         .to_string_lossy()
                         .to_string();
-                    repos.push((entry_path.clone(), org, repo));
+                    repos.push((canonical_repo, org, repo));
                 }
             } else {
                 // Recurse into subdirectory
@@ -197,6 +228,8 @@ impl DiscoveryOrchestrator {
                     &entry_path,
                     git,
                     repos,
+                    visited_dirs,
+                    seen_repos,
                     current_depth + 1,
                     max_depth,
                 );

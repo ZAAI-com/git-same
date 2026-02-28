@@ -63,11 +63,9 @@ pub async fn prepare_sync_workspace(
     request: SyncWorkspaceRequest<'_>,
     discovery_progress: &dyn DiscoveryProgress,
 ) -> Result<PreparedSyncWorkspace> {
-    let provider_entry = request.workspace.provider.to_provider_entry();
-
     // Authenticate and build provider
-    let auth = get_auth_for_provider(&provider_entry)?;
-    let provider = create_provider(&provider_entry, &auth.token)?;
+    let auth = get_auth_for_provider(&request.workspace.provider)?;
+    let provider = create_provider(&request.workspace.provider, &auth.token)?;
 
     // Build orchestrator from workspace + global config
     let mut filters = request.workspace.filters.clone();
@@ -89,7 +87,7 @@ pub async fn prepare_sync_workspace(
     let mut cache_age_secs = None;
 
     if !request.refresh {
-        if let Ok(cache_manager) = CacheManager::for_workspace(&request.workspace.name) {
+        if let Ok(cache_manager) = CacheManager::for_workspace(&request.workspace.root_path) {
             if let Ok(Some(cache)) = cache_manager.load() {
                 let discovery_options = orchestrator.to_discovery_options();
                 used_cache = true;
@@ -131,18 +129,15 @@ pub async fn prepare_sync_workspace(
             .await
             .map_err(AppError::Provider)?;
 
-        if let Ok(cache_manager) = CacheManager::for_workspace(&request.workspace.name) {
-            let provider_label = provider_entry
-                .name
-                .clone()
-                .unwrap_or_else(|| provider_entry.kind.to_string());
+        if let Ok(cache_manager) = CacheManager::for_workspace(&request.workspace.root_path) {
+            let provider_label = request.workspace.provider.kind.slug().to_string();
             let mut repos_by_provider = HashMap::new();
             repos_by_provider.insert(provider_label, repos.clone());
             let cache =
                 DiscoveryCache::new(auth.username.clone().unwrap_or_default(), repos_by_provider);
             if let Err(e) = cache_manager.save(&cache) {
                 warn!(
-                    workspace = %request.workspace.name,
+                    workspace = %request.workspace.root_path.display(),
                     error = %e,
                     "Failed to save discovery cache"
                 );
@@ -168,7 +163,7 @@ pub async fn prepare_sync_workspace(
         }
     }
 
-    let provider_name = provider_entry.kind.slug().to_string();
+    let provider_name = request.workspace.provider.kind.slug().to_string();
     let git = ShellGit::new();
     let plan = orchestrator.plan_clone(&base_path, repos.clone(), &provider_name, &git);
     let (to_sync, skipped_sync) = orchestrator.plan_sync(
@@ -240,7 +235,7 @@ pub async fn prepare_sync_workspace(
         base_path,
         structure,
         provider_name,
-        provider_prefer_ssh: provider_entry.prefer_ssh,
+        provider_prefer_ssh: request.workspace.provider.prefer_ssh,
         skip_uncommitted: request.skip_uncommitted,
         sync_mode,
         requested_concurrency,

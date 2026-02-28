@@ -45,16 +45,16 @@ pub fn subheadline() -> &'static str {
 
 /// Prints the gisa ASCII art banner to stdout (CLI mode).
 pub fn print_banner() {
-    // Build full art from shared constants
     let version = env!("CARGO_PKG_VERSION");
     let version_display = format!("{:^6}", version);
-    let line5 = format!("{LINE5_PREFIX}{version_display}{LINE5_SUFFIX}");
-    let art = format!(
-        "\n{}\n{}\n{}\n{}\n{}\n{}",
-        LINES[0], LINES[1], LINES[2], LINES[3], line5, LAST_LINE
-    );
 
-    println!("{}", style(art).cyan().bold());
+    println!();
+    for text in &LINES {
+        println!("{}", cli_gradient_line(text, &GRADIENT_STOPS));
+    }
+    println!("{}", cli_line5(&version_display, &GRADIENT_STOPS));
+    println!("{}", cli_gradient_line(LAST_LINE, &GRADIENT_STOPS));
+
     let subtitle = subheadline();
     let visible_len = subtitle.chars().count();
     let pad = if visible_len < ART_WIDTH {
@@ -62,7 +62,93 @@ pub fn print_banner() {
     } else {
         0
     };
-    println!("{}{}\n", " ".repeat(pad + 1), style(subtitle).dim());
+    println!(
+        "{}{}\n",
+        " ".repeat(pad.saturating_sub(1)),
+        style(subtitle).dim()
+    );
+}
+
+fn styled_gradient_chunk(text: &str, r: u8, g: u8, b: u8, force_styling: bool) -> String {
+    let styled = style(text).true_color(r, g, b).bold();
+    if force_styling {
+        format!("{}", styled.force_styling(true))
+    } else {
+        format!("{}", styled)
+    }
+}
+
+fn styled_version_badge(text: &str, r: u8, g: u8, b: u8, force_styling: bool) -> String {
+    let styled = style(text).black().on_true_color(r, g, b).bold();
+    if force_styling {
+        format!("{}", styled.force_styling(true))
+    } else {
+        format!("{}", styled)
+    }
+}
+
+fn cli_gradient_line(text: &str, stops: &[(u8, u8, u8)]) -> String {
+    cli_gradient_line_with_force(text, stops, false)
+}
+
+fn cli_gradient_line_with_force(text: &str, stops: &[(u8, u8, u8)], force_styling: bool) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len().max(1);
+
+    chars
+        .into_iter()
+        .enumerate()
+        .map(|(i, ch)| {
+            let t = i as f64 / (len - 1).max(1) as f64;
+            let (r, g, b) = interpolate_stops(stops, t);
+            styled_gradient_chunk(&ch.to_string(), r, g, b, force_styling)
+        })
+        .collect()
+}
+
+fn cli_line5(version_display: &str, stops: &[(u8, u8, u8)]) -> String {
+    cli_line5_with_force(version_display, stops, false)
+}
+
+fn cli_line5_with_force(
+    version_display: &str,
+    stops: &[(u8, u8, u8)],
+    force_styling: bool,
+) -> String {
+    let prefix_len = LINE5_PREFIX.chars().count();
+    let version_len = version_display.chars().count();
+    let full_len = prefix_len + version_len + LINE5_SUFFIX.chars().count();
+    let denom = (full_len - 1).max(1) as f64;
+
+    let mut out = String::new();
+    for (i, ch) in LINE5_PREFIX.chars().enumerate() {
+        let t = i as f64 / denom;
+        let (r, g, b) = interpolate_stops(stops, t);
+        out.push_str(&styled_gradient_chunk(
+            &ch.to_string(),
+            r,
+            g,
+            b,
+            force_styling,
+        ));
+    }
+
+    let ver_t = prefix_len as f64 / denom;
+    let (vr, vg, vb) = interpolate_stops(stops, ver_t);
+    out.push_str(&styled_version_badge(
+        version_display,
+        vr,
+        vg,
+        vb,
+        force_styling,
+    ));
+
+    let suffix_pos = prefix_len + version_len;
+    let suffix_t = suffix_pos as f64 / denom;
+    let (r, g, b) = interpolate_stops(stops, suffix_t);
+    out.push_str(&styled_gradient_chunk(LINE5_SUFFIX, r, g, b, force_styling));
+
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +165,6 @@ use ratatui::{
 };
 
 /// Linearly interpolate between RGB color stops.
-#[cfg(feature = "tui")]
 pub(crate) fn interpolate_stops(stops: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
     let t = t.clamp(0.0, 1.0);
     let segments = stops.len() - 1;

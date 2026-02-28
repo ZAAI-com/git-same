@@ -110,10 +110,11 @@ pub struct CacheManager {
 }
 
 impl CacheManager {
-    /// Create a cache manager for a specific workspace.
-    pub fn for_workspace(workspace_name: &str) -> Result<Self> {
-        let cache_path = crate::config::WorkspaceManager::cache_path(workspace_name)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    /// Create a cache manager for a specific workspace root path.
+    ///
+    /// Cache is persisted at `<workspace-root>/.git-same/cache.json`.
+    pub fn for_workspace(root: &Path) -> Result<Self> {
+        let cache_path = crate::config::WorkspaceStore::cache_path(root);
         Ok(Self {
             cache_path,
             ttl: DEFAULT_CACHE_TTL,

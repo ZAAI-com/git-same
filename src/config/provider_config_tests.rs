@@ -1,63 +1,54 @@
-use super::*;
+// Provider configuration is now handled by WorkspaceProvider in workspace.rs.
+// These tests verify the WorkspaceProvider API used throughout the codebase.
+
+use crate::config::WorkspaceProvider;
+use crate::types::ProviderKind;
 
 #[test]
-fn test_default_provider_entry() {
-    let entry = ProviderEntry::default();
-    assert_eq!(entry.kind, ProviderKind::GitHub);
-    assert_eq!(entry.auth, AuthMethod::GhCli);
-    assert!(entry.prefer_ssh);
-    assert!(entry.enabled);
+fn test_default_workspace_provider() {
+    let provider = WorkspaceProvider::default();
+    assert_eq!(provider.kind, ProviderKind::GitHub);
+    assert!(provider.prefer_ssh);
+    assert!(provider.api_url.is_none());
 }
 
 #[test]
-fn test_github_factory() {
-    let entry = ProviderEntry::github();
-    assert_eq!(entry.kind, ProviderKind::GitHub);
-    assert_eq!(entry.display_name(), "GitHub");
+fn test_workspace_provider_effective_api_url_default() {
+    let provider = WorkspaceProvider::default();
+    assert_eq!(provider.effective_api_url(), "https://api.github.com");
 }
 
 #[test]
-fn test_effective_api_url_with_override() {
-    let mut entry = ProviderEntry::github();
-    entry.api_url = Some("https://custom-api.example.com".to_string());
-    assert_eq!(entry.effective_api_url(), "https://custom-api.example.com");
-}
-
-#[test]
-fn test_effective_api_url_default() {
-    let entry = ProviderEntry::github();
-    assert_eq!(entry.effective_api_url(), "https://api.github.com");
-}
-
-#[test]
-fn test_validate_valid_config() {
-    let entry = ProviderEntry::github();
-    assert!(entry.validate().is_ok());
-}
-
-#[test]
-fn test_serde_roundtrip() {
-    let entry = ProviderEntry {
+fn test_workspace_provider_effective_api_url_override() {
+    let provider = WorkspaceProvider {
         kind: ProviderKind::GitHub,
-        name: Some("My GitHub".to_string()),
-        auth: AuthMethod::GhCli,
+        api_url: Some("https://github.example.com/api/v3".to_string()),
+        prefer_ssh: true,
+    };
+    assert_eq!(
+        provider.effective_api_url(),
+        "https://github.example.com/api/v3"
+    );
+}
+
+#[test]
+fn test_workspace_provider_display_name() {
+    let provider = WorkspaceProvider::default();
+    assert_eq!(provider.display_name(), "GitHub");
+}
+
+#[test]
+fn test_workspace_provider_serde_roundtrip() {
+    let provider = WorkspaceProvider {
+        kind: ProviderKind::GitHub,
+        api_url: None,
         prefer_ssh: false,
-        ..Default::default()
     };
 
-    let toml = toml::to_string(&entry).unwrap();
-    let parsed: ProviderEntry = toml::from_str(&toml).unwrap();
+    let toml = toml::to_string(&provider).unwrap();
+    let parsed: WorkspaceProvider = toml::from_str(&toml).unwrap();
 
-    assert_eq!(parsed.kind, entry.kind);
-    assert_eq!(parsed.name, entry.name);
-    assert_eq!(parsed.auth, entry.auth);
-    assert_eq!(parsed.prefer_ssh, entry.prefer_ssh);
-}
-
-#[test]
-fn test_auth_method_serde() {
-    assert_eq!(
-        serde_json::to_string(&AuthMethod::GhCli).unwrap(),
-        "\"gh-cli\""
-    );
+    assert_eq!(parsed.kind, provider.kind);
+    assert_eq!(parsed.api_url, provider.api_url);
+    assert_eq!(parsed.prefer_ssh, provider.prefer_ssh);
 }

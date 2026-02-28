@@ -2,22 +2,11 @@
 //!
 //! This module handles authentication with Git hosting providers
 //! using the GitHub CLI (`gh auth token`).
-//!
-//! # Example
-//!
-//! ```no_run
-//! use git_same::auth::{get_auth_for_provider, AuthResult};
-//! use git_same::config::ProviderEntry;
-//!
-//! let provider = ProviderEntry::github();
-//! let auth = get_auth_for_provider(&provider).expect("Failed to authenticate");
-//! println!("Authenticated as {:?} via {}", auth.username, auth.method);
-//! ```
 
 pub mod gh_cli;
 pub mod ssh;
 
-use crate::config::ProviderEntry;
+use crate::config::WorkspaceProvider;
 use crate::errors::AppError;
 use tracing::{debug, warn};
 
@@ -53,7 +42,6 @@ impl std::fmt::Display for ResolvedAuthMethod {
 pub fn get_auth() -> Result<AuthResult, AppError> {
     debug!("Resolving authentication via gh CLI");
 
-    // Try gh CLI
     let gh_installed = gh_cli::is_installed();
     let gh_authenticated = gh_installed && gh_cli::is_authenticated();
     debug!(gh_installed, gh_authenticated, "Checking GitHub CLI status");
@@ -78,7 +66,6 @@ pub fn get_auth() -> Result<AuthResult, AppError> {
         }
     }
 
-    // No authentication found - provide helpful error message
     let ssh_note = if ssh::has_ssh_keys() {
         "\n\nNote: SSH keys detected. While SSH keys work for git clone/push,\n\
          you still need a provider API token for repository discovery.\n\
@@ -98,8 +85,8 @@ pub fn get_auth() -> Result<AuthResult, AppError> {
     )))
 }
 
-/// Get authentication for a specific provider configuration.
-pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, AppError> {
+/// Get authentication for a specific workspace provider configuration.
+pub fn get_auth_for_provider(provider: &WorkspaceProvider) -> Result<AuthResult, AppError> {
     debug!(
         api_url = provider.api_url.as_deref().unwrap_or("default"),
         "Resolving authentication for provider"
@@ -122,7 +109,6 @@ pub fn get_auth_for_provider(provider: &ProviderEntry) -> Result<AuthResult, App
         }
     }
 
-    // Default gh auth
     if !gh_cli::is_installed() {
         debug!("gh CLI not installed");
         return Err(AppError::auth(

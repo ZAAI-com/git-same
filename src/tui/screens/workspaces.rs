@@ -99,18 +99,13 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
         KeyCode::Char('d') if app.workspace_index < num_ws => {
             // Set default workspace
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
-                let ws_name = ws.name.clone();
-                let new_default_name = match next_default_workspace_name(
-                    app.config.default_workspace.as_deref(),
-                    &ws_name,
-                ) {
-                    Some(name) => name,
-                    None => {
-                        return;
-                    }
-                };
-
-                let new_default = Some(new_default_name);
+                let ws_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+                let current_default = app.config.default_workspace.as_deref();
+                if current_default == Some(ws_path.as_str()) {
+                    // Already default, do nothing
+                    return;
+                }
+                let new_default = Some(ws_path);
                 let tx = backend_tx.clone();
                 let default_clone = new_default.clone();
                 tokio::spawn(async move {
@@ -137,17 +132,6 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             }
         }
         _ => {}
-    }
-}
-
-fn next_default_workspace_name(
-    current_default: Option<&str>,
-    selected_workspace: &str,
-) -> Option<String> {
-    if current_default == Some(selected_workspace) {
-        None
-    } else {
-        Some(selected_workspace.to_string())
     }
 }
 
@@ -247,14 +231,16 @@ fn render_workspace_nav(app: &App, frame: &mut Frame, area: Rect) {
         let is_active = app
             .active_workspace
             .as_ref()
-            .map(|aw| aw.name == ws.name)
+            .map(|aw| aw.root_path == ws.root_path)
             .unwrap_or(false);
-        let is_default = app.config.default_workspace.as_deref() == Some(ws.name.as_str());
+        let ws_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+        let is_default = app.config.default_workspace.as_deref() == Some(ws_path.as_str());
 
-        let folder_name = std::path::Path::new(&ws.base_path)
+        let folder_name = ws
+            .root_path
             .file_name()
             .and_then(|f| f.to_str())
-            .unwrap_or(&ws.base_path);
+            .unwrap_or(ws_path.as_str());
 
         let (marker, style) = if selected {
             (
@@ -330,28 +316,31 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
         .fg(Color::Rgb(37, 99, 235))
         .add_modifier(Modifier::BOLD);
 
+    let ws_tilde_path = crate::config::workspace::tilde_collapse_path(&ws.root_path);
+
     let is_default = app
         .config
         .default_workspace
         .as_deref()
-        .map(|d| d == ws.name)
+        .map(|d| d == ws_tilde_path)
         .unwrap_or(false);
 
     let is_active = app
         .active_workspace
         .as_ref()
-        .map(|aw| aw.name == ws.name)
+        .map(|aw| aw.root_path == ws.root_path)
         .unwrap_or(false);
 
-    let full_path = ws.expanded_base_path().display().to_string();
+    let full_path = ws.root_path.display().to_string();
 
-    let config_file = WorkspaceManager::workspace_dir(&ws.name)
-        .map(|d| d.join("workspace-config.toml").display().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let config_file = WorkspaceManager::dot_dir(&ws.root_path)
+        .join("config.toml")
+        .display()
+        .to_string();
 
-    let cache_file = WorkspaceManager::cache_path(&ws.name)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let cache_file = WorkspaceManager::cache_path(&ws.root_path)
+        .display()
+        .to_string();
 
     let username = if ws.username.is_empty() {
         "\u{2014}".to_string()
@@ -376,15 +365,17 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     let default_label = if is_default { "Yes" } else { "No" };
     let active_label = if is_active { "Yes" } else { "No" };
 
-    let folder_name = std::path::Path::new(&ws.base_path)
+    let folder_name_owned = ws
+        .root_path
         .file_name()
         .and_then(|f| f.to_str())
-        .unwrap_or(&ws.base_path);
+        .unwrap_or(ws_tilde_path.as_str())
+        .to_string();
 
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Workspace: {}", folder_name),
+            format!("  Workspace: {}", folder_name_owned),
             section_style,
         )),
         Line::from(""),
@@ -423,7 +414,7 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     lines.push(detail_row_with_hint(
         area,
         "Path",
-        &ws.base_path,
+        &ws_tilde_path,
         None,
         dim,
         val_style,

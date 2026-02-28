@@ -1,4 +1,4 @@
-//! Step 4: Base path input screen with suggestions, tab completion, and live preview.
+//! Step 4: Base path screen with folder navigation and live preview.
 
 use crate::setup::state::SetupState;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -36,10 +36,10 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         Color::Cyan
     };
     let muted = Color::DarkGray;
-    let input_text_color = if popup_open || state.path_suggestions_mode {
+    let input_text_color = if popup_open {
         Color::DarkGray
     } else {
-        Color::Yellow
+        Color::White
     };
 
     // Title and info (above input)
@@ -52,12 +52,15 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             "  Repos will be organized as: <path>/<org>/<repo>",
             Style::default().fg(muted),
         )),
+        Line::from(Span::styled(
+            "  Base path starts at terminal folder. Press [b] to change it.",
+            Style::default().fg(muted),
+        )),
     ];
     frame.render_widget(Paragraph::new(title_lines), chunks[0]);
 
     // Path input with styled border
     let input_style = Style::default().fg(input_text_color);
-    let cursor_pos = state.path_cursor.min(state.base_path.len());
 
     let input_line = Line::from(vec![
         Span::styled("  ", Style::default()),
@@ -83,13 +86,6 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             .border_style(Style::default().fg(border_color)),
     );
     frame.render_widget(input, chunks[1]);
-
-    // Show cursor in input mode
-    if !state.path_suggestions_mode && !state.path_browse_mode {
-        let cursor_x = chunks[1].x + 1 + 2 + cursor_pos as u16;
-        let cursor_y = chunks[1].y + 1;
-        frame.set_cursor_position((cursor_x, cursor_y));
-    }
 
     // Suggestions or completions list
     if state.path_suggestions_mode && !state.path_suggestions.is_empty() {
@@ -131,7 +127,6 @@ fn render_browse_popup(state: &SetupState, frame: &mut Frame, area: Rect) {
     frame.render_widget(Clear, popup_area);
 
     let popup = Block::default()
-        .title(" Folder Navigator ")
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
         .border_style(Style::default().fg(Color::Cyan));
@@ -140,12 +135,15 @@ fn render_browse_popup(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     let show_message = state.path_browse_error.is_some() || state.path_browse_info.is_some();
     let rows = Layout::vertical([
+        Constraint::Length(3), // header
         Constraint::Length(1), // path
         Constraint::Min(3),    // tree
         Constraint::Length(if show_message { 1 } else { 0 }),
         Constraint::Length(1), // footer
     ])
     .split(inner);
+
+    render_popup_header(frame, rows[0]);
 
     let path_line = Line::from(vec![
         Span::styled("Path: ", Style::default().fg(Color::DarkGray)),
@@ -156,9 +154,9 @@ fn render_browse_popup(state: &SetupState, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
-    frame.render_widget(Paragraph::new(path_line), rows[0]);
+    frame.render_widget(Paragraph::new(path_line), rows[1]);
 
-    render_browse_tree(state, frame, rows[1]);
+    render_browse_tree(state, frame, rows[2]);
 
     if show_message {
         let message = state
@@ -179,12 +177,29 @@ fn render_browse_popup(state: &SetupState, frame: &mut Frame, area: Rect) {
         if let Some((msg, style)) = message {
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(msg, style))),
-                rows[2],
+                rows[3],
             );
         }
     }
 
-    render_popup_footer(frame, rows[3]);
+    render_popup_footer(frame, rows[4]);
+}
+
+fn render_popup_header(frame: &mut Frame, area: Rect) {
+    let header = Paragraph::new("Local Folder Navigator")
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+    frame.render_widget(header, area);
 }
 
 fn render_browse_tree(state: &SetupState, frame: &mut Frame, area: Rect) {

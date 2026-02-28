@@ -44,13 +44,17 @@ brew install zaai-com/tap/git-same
 
 ## Available Commands
 
-The tool can be invoked using any of these names (all installed by default):
+The tool can be invoked using any of these names:
 
-- `git-same` - Main command
-- `gitsame` - No hyphen variant
-- `gitsa` - Short form
-- `gisa` - Shortest variant
-- `git same` - Git subcommand (requires git-same in PATH)
+| Command    | Description                    |
+|------------|--------------------------------|
+| `git-same` | Primary binary                 |
+| `gitsame`  | No-hyphen alias (symlink)      |
+| `gitsa`    | Short alias (symlink)          |
+| `gisa`     | Shortest alias (symlink)       |
+| `git same` | Git subcommand (requires git-same in PATH) |
+
+> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary — run `toolkit/conductor/run.sh` to create alias symlinks. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
 
 ## Quick Start
 
@@ -100,7 +104,7 @@ gisa sync
 
 ## Configuration
 
-Edit `~/.config/git-same/config.toml` to customize behavior:
+Global behavior is configured in `~/.config/git-same/config.toml`:
 
 ```toml
 # Directory structure: {org}/{repo} or {provider}/{org}/{repo}
@@ -111,6 +115,12 @@ concurrency = 4
 
 # Default sync mode: fetch or pull
 sync_mode = "fetch"
+
+# Optional default workspace root path
+# default_workspace = "~/Git-Same/GitHub"
+
+# Registered workspace root paths
+# workspaces = ["~/Git-Same/GitHub"]
 
 [clone]
 # Clone depth (0 = full history)
@@ -131,37 +141,27 @@ include_forks = false
 
 # Filter by organizations (empty = all)
 orgs = []
-
-# Default provider (GitHub.com)
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-prefer_ssh = true
-enabled = true
 ```
 
-`base_path` is workspace-specific (`WorkspaceConfig.base_path`) and is set during
-`gisa setup` (or via workspace config files), not in the global `Config`.
-
-### Multi-Provider Setup
+Provider and workspace-specific settings are stored inside each workspace at
+`<workspace-root>/.git-same/config.toml`:
 
 ```toml
-# GitHub.com
-[[providers]]
-kind = "github"
-auth = "gh-cli"
-prefer_ssh = true
-enabled = true
+username = "my-user"
+orgs = ["my-org"]
 
-# GitHub Enterprise
-[[providers]]
-kind = "github-enterprise"
-name = "Work GitHub"
-api_url = "https://github.company.com/api/v3"
-auth = "gh-cli"
+[provider]
+kind = "github"
 prefer_ssh = true
-enabled = true
-base_path = "~/work/code"
+```
+
+For GitHub Enterprise, configure the workspace provider:
+
+```toml
+[provider]
+kind = "github-enterprise"
+api_url = "https://github.company.com/api/v3"
+prefer_ssh = true
 ```
 
 Authenticate GitHub Enterprise once with:
@@ -200,7 +200,7 @@ Sync repositories — discover, clone new, fetch/pull existing:
 gisa sync [OPTIONS]
 
 Options:
-  -w, --workspace <NAME>      Workspace to sync
+  -w, --workspace <WORKSPACE> Workspace to sync (path or unique folder name)
       --pull                  Use pull instead of fetch for existing repos
   -n, --dry-run               Show what would be done
   -c, --concurrency <N>       Number of parallel operations (1-32)
@@ -216,7 +216,7 @@ Show status of local repositories:
 gisa status [OPTIONS]
 
 Options:
-  -w, --workspace <NAME>      Workspace to check
+  -w, --workspace <WORKSPACE> Workspace to check (path or unique folder name)
   -o, --org <ORG>...          Filter by organization (repeatable)
   -d, --uncommitted                 Show only repositories with uncommitted changes
   -b, --behind                Show only repositories behind upstream
@@ -229,7 +229,7 @@ Manage workspaces:
 
 ```bash
 gisa workspace list              # List configured workspaces
-gisa workspace default [NAME]    # Set default workspace
+gisa workspace default [WORKSPACE] # Set default workspace (path or unique folder name)
 gisa workspace default --clear   # Clear default workspace
 ```
 
@@ -300,7 +300,7 @@ cargo build
 cargo build --release
 ```
 
-Binaries are output to `target/release/` (or `target/debug/`): `git-same`, `gitsame`, `gitsa`, `gisa`.
+The binary is output to `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
 
 ### Running tests
 
@@ -339,7 +339,7 @@ cargo fmt --all -- --check
 cargo install --path .
 ```
 
-This installs all 4 binary aliases (`git-same`, `gitsame`, `gitsa`, `gisa`). Make sure `~/.cargo/bin` is in your `$PATH`.
+This installs the `git-same` binary. To also create the alias symlinks (`gitsame`, `gitsa`, `gisa`), run `toolkit/conductor/run.sh` or install via Homebrew. Make sure `~/.cargo/bin` is in your `$PATH`.
 
 ### Rebuilding
 
@@ -359,7 +359,10 @@ cargo uninstall git-same
 
 # Remove config and cache
 rm -rf ~/.config/git-same/
-rm -rf ~/.cache/git-same/
+
+# Workspace-local cache/history live under each workspace:
+# <workspace-root>/.git-same/cache.json
+# <workspace-root>/.git-same/sync-history.json
 ```
 
 ## License

@@ -15,7 +15,7 @@ use chrono::DateTime;
 use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::banner::render_banner;
+use crate::banner::{render_animated_banner, render_banner};
 use crate::tui::app::{App, Operation, OperationState, RepoEntry, Screen};
 use crate::tui::event::AppEvent;
 
@@ -66,7 +66,7 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             app.navigate_to(Screen::Workspaces);
         }
         KeyCode::Char('i') => {
-            app.navigate_to(Screen::SystemCheck);
+            app.navigate_to(Screen::Settings);
         }
         KeyCode::Char('/') => {
             app.filter_active = true;
@@ -246,6 +246,20 @@ pub(crate) fn format_timestamp(raw: &str) -> String {
     }
 }
 
+fn sync_banner_phase(app: &App) -> Option<f64> {
+    match &app.operation_state {
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            ..
+        }
+        | OperationState::Running {
+            operation: Operation::Sync,
+            ..
+        } => Some((app.tick_count as f64 / 50.0).fract()),
+        _ => None,
+    }
+}
+
 pub fn render(app: &mut App, frame: &mut Frame) {
     let chunks = Layout::vertical([
         Constraint::Length(6), // Banner
@@ -258,7 +272,11 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     ])
     .split(frame.area());
 
-    render_banner(frame, chunks[0]);
+    if let Some(phase) = sync_banner_phase(app) {
+        render_animated_banner(frame, chunks[0], phase);
+    } else {
+        render_banner(frame, chunks[0]);
+    }
     render_tagline(frame, chunks[1]);
     render_config_reqs(app, frame, chunks[2]);
     render_workspace_info(app, frame, chunks[3]);
@@ -342,10 +360,11 @@ fn render_workspace_info(app: &App, frame: &mut Frame, area: Rect) {
         .add_modifier(Modifier::BOLD);
     match &app.active_workspace {
         Some(ws) => {
-            let folder_name = std::path::Path::new(&ws.base_path)
+            let folder_name = ws
+                .root_path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&ws.base_path)
+                .unwrap_or_else(|| ws.root_path.to_str().unwrap_or("workspace"))
                 .to_string();
 
             render_info_line(
@@ -1077,10 +1096,13 @@ fn render_bottom_actions(app: &App, frame: &mut Frame, area: Rect) {
         }
         _ => app.active_workspace.as_ref().and_then(|ws| {
             ws.last_synced.as_ref().map(|ts| {
-                let folder_name = std::path::Path::new(&ws.base_path)
+                let folder_name_owned = ws
+                    .root_path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or(&ws.base_path);
+                    .unwrap_or_else(|| ws.root_path.to_str().unwrap_or("workspace"))
+                    .to_string();
+                let folder_name = folder_name_owned.as_str();
                 let formatted = format_timestamp(ts);
                 Line::from(vec![
                     Span::styled("Synced ", dim),

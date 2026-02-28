@@ -26,11 +26,10 @@ fn test_reset_target_not_empty_with_workspaces() {
         config_dir: PathBuf::from("/some/dir"),
         config_file: None,
         workspaces: vec![WorkspaceDetail {
-            name: "ws1".to_string(),
-            base_path: "~/github".to_string(),
+            root_path: PathBuf::from("/tmp/ws1"),
             orgs: vec!["org1".to_string()],
             last_synced: None,
-            dir: PathBuf::from("/some/dir/ws1"),
+            dot_dir: PathBuf::from("/tmp/ws1/.git-same"),
             cache_size: None,
         }],
     };
@@ -71,11 +70,10 @@ fn test_format_bytes() {
 #[test]
 fn test_display_workspace_detail_no_panic() {
     let ws = WorkspaceDetail {
-        name: "test".to_string(),
-        base_path: "~/github".to_string(),
+        root_path: PathBuf::from("/tmp/test"),
         orgs: vec!["org1".to_string(), "org2".to_string()],
         last_synced: Some("2026-02-24T10:00:00Z".to_string()),
-        dir: PathBuf::from("/tmp/test"),
+        dot_dir: PathBuf::from("/tmp/test/.git-same"),
         cache_size: Some(12345),
     };
     let output = Output::new(crate::output::Verbosity::Quiet, false);
@@ -88,11 +86,10 @@ fn test_display_detailed_targets_everything() {
         config_dir: PathBuf::from("/tmp/test"),
         config_file: Some(PathBuf::from("/tmp/test/config.toml")),
         workspaces: vec![WorkspaceDetail {
-            name: "ws1".to_string(),
-            base_path: "~/github".to_string(),
+            root_path: PathBuf::from("/tmp/ws1"),
             orgs: Vec::new(),
             last_synced: None,
-            dir: PathBuf::from("/tmp/test/ws1"),
+            dot_dir: PathBuf::from("/tmp/ws1/.git-same"),
             cache_size: None,
         }],
     };

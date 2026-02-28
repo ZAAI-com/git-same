@@ -1,78 +1,86 @@
-//! Workspace resolution and naming rules (policy concern only).
+//! Workspace resolution rules (policy concern only).
 
 use super::parser::Config;
+use super::workspace::tilde_collapse_path;
 use super::workspace::WorkspaceConfig;
 use super::workspace_store::WorkspaceStore;
 use crate::errors::AppError;
-use crate::types::ProviderKind;
 use std::path::Path;
 
 /// Workspace policy helpers.
 pub struct WorkspacePolicy;
 
 impl WorkspacePolicy {
-    /// Derive a workspace name from a base path and provider.
-    pub fn name_from_path(path: &Path, provider: ProviderKind) -> String {
-        let lossy = path.to_string_lossy();
-        let expanded = shellexpand::tilde(&lossy);
-        let path = Path::new(expanded.as_ref());
-
-        let last_component = path
-            .components()
-            .filter_map(|c| {
-                if let std::path::Component::Normal(s) = c {
-                    s.to_str()
-                } else {
-                    None
-                }
-            })
-            .next_back()
-            .unwrap_or("workspace");
-
-        let prefix = match provider {
-            ProviderKind::GitHub => "github",
-            ProviderKind::GitHubEnterprise => "ghe",
-            ProviderKind::GitLab => "gitlab",
-            ProviderKind::GitLabSelfManaged => "glsm",
-            ProviderKind::Codeberg => "codeberg",
-            ProviderKind::Bitbucket => "bitbucket",
-        };
-        format!("{}-{}", prefix, last_component)
-            .to_lowercase()
-            .replace([' ', '_'], "-")
-    }
-
-    /// Return a unique workspace name, appending `-2`, `-3`, etc. on collision.
-    pub fn unique_name(base: &str) -> Result<String, AppError> {
-        let dir = WorkspaceStore::workspace_dir(base)?;
-        if !dir.exists() {
-            return Ok(base.to_string());
-        }
-
-        for suffix in 2..=100 {
-            let candidate = format!("{}-{}", base, suffix);
-            let candidate_dir = WorkspaceStore::workspace_dir(&candidate)?;
-            if !candidate_dir.exists() {
-                return Ok(candidate);
+    /// Walk up from `start` to find the nearest `.git-same/config.toml`.
+    ///
+    /// Returns the workspace root (parent of `.git-same/`) if found.
+    pub fn detect_from_cwd(start: &Path) -> Option<std::path::PathBuf> {
+        let mut current = start.to_path_buf();
+        loop {
+            let config = WorkspaceStore::config_path(&current);
+            if config.exists() {
+                return Some(current);
+            }
+            if !current.pop() {
+                break;
             }
         }
-
-        Err(AppError::config(format!(
-            "Could not find a unique workspace name based on '{}'",
-            base
-        )))
+        None
     }
 
     /// Resolve which workspace to use.
+    ///
+    /// Priority:
+    /// 1. Explicit `--workspace <path|name>` argument
+    /// 2. CWD auto-detection (walk up looking for `.git-same/`)
+    /// 3. Global `default_workspace` path
+    /// 4. Single-workspace auto-select
+    /// 5. Error
     pub fn resolve(name: Option<&str>, config: &Config) -> Result<WorkspaceConfig, AppError> {
+        // 1. Explicit selector (path or unique folder name)
         if let Some(value) = name {
-            return WorkspaceStore::load(value).or_else(|_| WorkspaceStore::load_by_path(value));
+            let expanded = shellexpand::tilde(value);
+            let root = Path::new(expanded.as_ref());
+            match WorkspaceStore::load(root) {
+                Ok(ws) => return Ok(ws),
+                Err(path_err) => {
+                    let workspaces = WorkspaceStore::list()?;
+                    match Self::resolve_selector_from_list(value, workspaces) {
+                        Ok(ws) => return Ok(ws),
+                        Err(selector_err) => {
+                            let is_ambiguous = selector_err.to_string().contains("ambiguous");
+                            if is_ambiguous {
+                                return Err(selector_err);
+                            }
+                            if Self::looks_like_path(value) {
+                                return Err(path_err);
+                            }
+                            return Err(AppError::config(format!(
+                                "No workspace matched selector '{}'. Use 'gisa workspace list' and \
+                                 pass a workspace folder name or path.",
+                                value
+                            )));
+                        }
+                    }
+                }
+            }
         }
 
-        if let Some(ref default) = config.default_workspace {
-            return WorkspaceStore::load(default);
+        // 2. CWD auto-detection
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Some(root) = Self::detect_from_cwd(&cwd) {
+                return WorkspaceStore::load(&root);
+            }
         }
 
+        // 3. Global default_workspace
+        if let Some(ref default_path) = config.default_workspace {
+            let expanded = shellexpand::tilde(default_path);
+            let root = Path::new(expanded.as_ref());
+            return WorkspaceStore::load(root);
+        }
+
+        // 4. Single-workspace auto-select (or error)
         let workspaces = WorkspaceStore::list()?;
         Self::resolve_from_list(workspaces)
     }
@@ -92,12 +100,54 @@ impl WorkspacePolicy {
             _ => {
                 let labels: Vec<String> = workspaces.iter().map(|w| w.display_label()).collect();
                 Err(AppError::config(format!(
-                    "Multiple workspaces configured. Use --workspace <path> to select one, \
-                     or set a default with 'gisa workspace default <path>': {}",
+                    "Multiple workspaces configured. Use --workspace <path|name> to select one, \
+                     or set a default with 'gisa workspace default <path|name>': {}",
                     labels.join(", ")
                 )))
             }
         }
+    }
+
+    fn resolve_selector_from_list(
+        selector: &str,
+        workspaces: Vec<WorkspaceConfig>,
+    ) -> Result<WorkspaceConfig, AppError> {
+        let matches: Vec<WorkspaceConfig> = workspaces
+            .into_iter()
+            .filter(|ws| {
+                let folder_name_matches = ws
+                    .root_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name == selector)
+                    .unwrap_or(false);
+                let path_matches = ws.root_path.to_string_lossy() == selector;
+                let tilde_path_matches = tilde_collapse_path(&ws.root_path) == selector;
+                folder_name_matches || path_matches || tilde_path_matches
+            })
+            .collect();
+
+        match matches.len() {
+            1 => Ok(matches
+                .into_iter()
+                .next()
+                .expect("single selector match exists")),
+            0 => Err(AppError::config("No workspace matched selector")),
+            _ => {
+                let labels: Vec<String> = matches.iter().map(|ws| ws.display_label()).collect();
+                Err(AppError::config(format!(
+                    "Workspace selector '{}' is ambiguous. Use an explicit path instead: {}",
+                    selector,
+                    labels.join(", ")
+                )))
+            }
+        }
+    }
+
+    fn looks_like_path(value: &str) -> bool {
+        value.contains(std::path::MAIN_SEPARATOR)
+            || value.starts_with('.')
+            || value.starts_with('~')
     }
 }
 

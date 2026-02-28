@@ -10,7 +10,7 @@ use ratatui::Frame;
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // Title
-        Constraint::Length(9), // Summary card
+        Constraint::Length(8), // Summary card
         Constraint::Min(3),    // Info + error
     ])
     .split(area);
@@ -64,10 +64,6 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             Span::styled("  Organizations ", label_style),
             Span::styled(&orgs_display, value_style),
         ]),
-        Line::from(vec![
-            Span::styled("  Workspace     ", label_style),
-            Span::styled(&state.workspace_name, value_style),
-        ]),
     ];
 
     let summary = Paragraph::new(summary_lines).block(
@@ -81,10 +77,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let mut info_lines: Vec<Line> = Vec::new();
     info_lines.push(Line::raw(""));
     info_lines.push(Line::from(Span::styled(
-        format!(
-            "  Config will be saved to: ~/.config/git-same/workspaces/{}/",
-            state.workspace_name
-        ),
+        format!("  Config will be saved to: {}/.git-same/", state.base_path),
         Style::default().fg(Color::DarkGray),
     )));
     info_lines.push(Line::raw(""));
