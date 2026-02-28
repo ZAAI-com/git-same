@@ -19,9 +19,11 @@ fn git_same_binary() -> PathBuf {
 
 fn command_with_temp_env(home: &Path) -> Command {
     let mut cmd = Command::new(git_same_binary());
+    let config_dir = home.join(".config").join("git-same");
     cmd.env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("XDG_CACHE_HOME", home.join(".cache"))
+        .env("GIT_SAME_CONFIG_DIR", &config_dir) // Windows: dirs-sys ignores HOME/APPDATA
         .env("NO_COLOR", "1");
     cmd
 }
@@ -571,8 +573,14 @@ fn test_scan_register_uses_custom_config_path() {
 
 #[test]
 fn test_missing_config_suggests_init() {
+    use tempfile::TempDir;
+
+    let temp = TempDir::new().expect("Failed to create temp dir");
+    let nonexistent = temp.path().join("nonexistent-gisa-config.toml");
+    let path_str = nonexistent.to_str().expect("Path is valid UTF-8");
+
     let output = Command::new(git_same_binary())
-        .args(["-C", "/tmp/nonexistent-gisa-config.toml", "sync"])
+        .args(["-C", path_str, "sync"])
         .output()
         .expect("Failed to execute git-same");
 
