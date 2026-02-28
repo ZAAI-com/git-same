@@ -12,6 +12,16 @@ use crate::types::{ActionPlan, OwnedRepo};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+/// Mutable context for directory scanning (keeps `scan_dir` under Clippy’s argument limit).
+struct ScanDirContext<'a, G: GitOperations> {
+    base_path: &'a Path,
+    git: &'a G,
+    repos: &'a mut Vec<(PathBuf, String, String)>,
+    visited_dirs: &'a mut HashSet<PathBuf>,
+    seen_repos: &'a mut HashSet<PathBuf>,
+    max_depth: usize,
+}
+
 /// Orchestrates repository discovery.
 pub struct DiscoveryOrchestrator {
     /// Filter options
@@ -140,17 +150,15 @@ impl DiscoveryOrchestrator {
         // {org}/{repo} -> 2 levels
         // {provider}/{org}/{repo} -> 3 levels
         let depth = RepoPathTemplate::new(self.structure.clone()).scan_depth();
-
-        self.scan_dir(
-            base_path,
+        let mut ctx = ScanDirContext {
             base_path,
             git,
-            &mut repos,
-            &mut visited_dirs,
-            &mut seen_repos,
-            0,
-            depth,
-        );
+            repos: &mut repos,
+            visited_dirs: &mut visited_dirs,
+            seen_repos: &mut seen_repos,
+            max_depth: depth,
+        };
+        self.scan_dir(base_path, 0, &mut ctx);
 
         repos
     }
@@ -158,21 +166,16 @@ impl DiscoveryOrchestrator {
     /// Recursively scans directories for git repos.
     fn scan_dir<G: GitOperations>(
         &self,
-        base_path: &Path,
         path: &Path,
-        git: &G,
-        repos: &mut Vec<(PathBuf, String, String)>,
-        visited_dirs: &mut HashSet<PathBuf>,
-        seen_repos: &mut HashSet<PathBuf>,
         current_depth: usize,
-        max_depth: usize,
+        ctx: &mut ScanDirContext<'_, G>,
     ) {
-        if current_depth >= max_depth {
+        if current_depth >= ctx.max_depth {
             return;
         }
 
         let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        if !visited_dirs.insert(canonical_path.clone()) {
+        if !ctx.visited_dirs.insert(canonical_path.clone()) {
             return;
         }
 
@@ -197,16 +200,16 @@ impl DiscoveryOrchestrator {
                 continue;
             }
 
-            if current_depth + 1 == max_depth && git.is_repo(&entry_path) {
+            if current_depth + 1 == ctx.max_depth && ctx.git.is_repo(&entry_path) {
                 let canonical_repo =
                     std::fs::canonicalize(&entry_path).unwrap_or(entry_path.clone());
-                if !seen_repos.insert(canonical_repo.clone()) {
+                if !ctx.seen_repos.insert(canonical_repo.clone()) {
                     continue;
                 }
 
                 // This is a repo at the expected depth
                 let rel_path = canonical_repo
-                    .strip_prefix(base_path)
+                    .strip_prefix(ctx.base_path)
                     .unwrap_or(&canonical_repo);
                 let parts: Vec<_> = rel_path.components().collect();
 
@@ -219,20 +222,11 @@ impl DiscoveryOrchestrator {
                         .as_os_str()
                         .to_string_lossy()
                         .to_string();
-                    repos.push((canonical_repo, org, repo));
+                    ctx.repos.push((canonical_repo, org, repo));
                 }
             } else {
                 // Recurse into subdirectory
-                self.scan_dir(
-                    base_path,
-                    &entry_path,
-                    git,
-                    repos,
-                    visited_dirs,
-                    seen_repos,
-                    current_depth + 1,
-                    max_depth,
-                );
+                self.scan_dir(&entry_path, current_depth + 1, ctx);
             }
         }
     }
