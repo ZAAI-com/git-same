@@ -6,9 +6,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn git_same_binary() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("target/debug/git-same");
-    path
+    std::env::var_os("CARGO_BIN_EXE_git_same")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            path.push("target/debug/git-same");
+            #[cfg(target_os = "windows")]
+            path.set_extension("exe");
+            path
+        })
 }
 
 fn command_with_temp_env(home: &Path) -> Command {
