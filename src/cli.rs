@@ -13,8 +13,29 @@ use std::path::PathBuf;
 /// Also works as: git same (git subcommand)
 #[derive(Parser, Debug)]
 #[command(name = "git-same")]
-#[command(version, about, long_about = None)]
+#[command(version, about)]
 #[command(propagate_version = true)]
+#[command(
+    long_about = "Mirror GitHub structure /orgs/repos/ to local file system.\n\n\
+        Git-Same discovers your GitHub organization and user repository structures \
+        and mirrors them locally. It creates a directory tree matching /org/repo/ \
+        layout, clones new repositories in parallel, and keeps existing clones \
+        in sync.\n\n\
+        Run without a subcommand to launch the interactive TUI.\n\
+        Config: ~/.config/git-same/config.toml\n\
+        Auth: uses `gh auth token` (GitHub CLI required)",
+    after_help = "\
+Examples (quick-start):
+  gisa init                  Create default config
+  gisa setup                 Interactive workspace wizard
+  gisa sync                  Clone new + fetch existing repos
+  gisa status                See which repos have changes
+
+  gisa                       Launch interactive TUI
+
+Aliases: git-same, gitsame, gitsa, gisa
+Also works as: git same (git subcommand)"
+)]
 pub struct Cli {
     /// Increase verbosity (-v, -vv, -vvv)
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
@@ -40,24 +61,109 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Initialize git-same configuration
+    #[command(
+        long_about = "Initialize git-same configuration.\n\n\
+            Creates the config file at the default location \
+            (~/.config/git-same/config.toml) or a custom path. This is the first \
+            step before configuring workspaces. If a config file already exists, \
+            use --force to overwrite it.",
+        after_help = "\
+Examples:
+  gisa init                  Create config at default location
+  gisa init --force          Overwrite existing config
+  gisa init --path ./my.toml Create config at a custom path"
+    )]
     Init(InitArgs),
 
     /// Configure a workspace (interactive wizard)
+    #[command(
+        long_about = "Launch an interactive wizard to configure a new workspace. \
+            The wizard prompts for a base directory, GitHub organizations or users \
+            to mirror, clone method (SSH/HTTPS), and filter rules. Run this after \
+            `gisa init` to set up your first workspace, or again to add more.",
+        after_help = "\
+Examples:
+  gisa setup                 Start the interactive wizard
+  gisa setup --name work     Pre-set the workspace name to 'work'"
+    )]
     Setup(SetupArgs),
 
     /// Sync repositories (discover, clone new, fetch/pull existing)
+    #[command(
+        long_about = "Discover repositories from configured GitHub organizations, \
+            clone any new repositories, and fetch (or pull) existing ones. Discovery \
+            results are cached; use --refresh to force re-discovery. Repositories \
+            with uncommitted changes are skipped by default to avoid conflicts.",
+        after_help = "\
+Examples:
+  gisa sync                         Sync the default workspace
+  gisa sync -w work                 Sync a specific workspace
+  gisa sync --pull                  Pull instead of fetch
+  gisa sync --dry-run               Preview what would happen
+  gisa sync --concurrency 8         Use 8 parallel operations
+  gisa sync --refresh               Ignore cache, re-discover repos
+  gisa sync --no-skip-uncommitted   Don't skip dirty repos"
+    )]
     Sync(SyncCmdArgs),
 
     /// Show status of local repositories
+    #[command(
+        long_about = "Scan local repositories in a workspace and report their git \
+            status. Shows which repos have uncommitted changes, which are behind \
+            upstream, and provides an overview of workspace health. Useful before \
+            and after syncing.",
+        after_help = "\
+Examples:
+  gisa status                       Status of default workspace
+  gisa status -w work               Status of a specific workspace
+  gisa status --uncommitted         Show only repos with changes
+  gisa status --behind              Show only repos behind upstream
+  gisa status --detailed            Verbose per-repo status
+  gisa status --org my-org          Filter to one organization"
+    )]
     Status(StatusArgs),
 
     /// Manage workspaces (list, set default)
+    #[command(
+        long_about = "Manage git-same workspaces. A workspace maps a local \
+            directory to one or more GitHub organizations or users. Use \
+            subcommands to list all configured workspaces or get/set the default.",
+        after_help = "\
+Examples:
+  gisa workspace list               List all workspaces
+  gisa workspace default            Show the current default
+  gisa workspace default my-ws      Set 'my-ws' as default
+  gisa workspace default --clear    Clear the default"
+    )]
     Workspace(WorkspaceArgs),
 
     /// Reset gisa — remove all config, workspaces, and cache
+    #[command(
+        long_about = "Remove all git-same configuration, workspace metadata, and \
+            cached discovery data. Cloned repositories on disk are NOT deleted — \
+            only git-same's own config and cache files are removed. You will be \
+            prompted for confirmation unless --force is used.",
+        after_help = "\
+Examples:
+  gisa reset                 Reset with confirmation prompt
+  gisa reset --force         Reset without confirmation"
+    )]
     Reset(ResetArgs),
 
     /// Scan a directory tree for unregistered workspaces (.git-same/ folders)
+    #[command(
+        long_about = "Walk a directory tree looking for .git-same/ marker folders \
+            that indicate existing workspace roots not yet registered in your \
+            config. Useful when you have repos organized in org/repo layout and \
+            want git-same to adopt them. Use --register to automatically add \
+            discovered workspaces.",
+        after_help = "\
+Examples:
+  gisa scan                         Scan current directory
+  gisa scan ~/projects              Scan a specific directory
+  gisa scan --depth 3               Limit search depth
+  gisa scan ~/projects --register   Auto-register found workspaces"
+    )]
     Scan(ScanArgs),
 }
 
@@ -144,8 +250,23 @@ pub struct WorkspaceArgs {
 #[derive(Subcommand, Debug)]
 pub enum WorkspaceCommand {
     /// List configured workspaces
+    #[command(
+        long_about = "Display all configured workspaces with their base paths, \
+            associated organizations, and which one is set as the default."
+    )]
     List,
     /// Set or show the default workspace
+    #[command(
+        long_about = "Set or display the default workspace. The default workspace \
+            is used by commands like `sync` and `status` when no --workspace flag \
+            is given. Pass a workspace name to set it, use --clear to unset, or \
+            omit arguments to show the current default.",
+        after_help = "\
+Examples:
+  gisa workspace default             Show current default
+  gisa workspace default work        Set 'work' as default
+  gisa workspace default --clear     Clear the default"
+    )]
     Default(WorkspaceDefaultArgs),
 }
 
