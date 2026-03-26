@@ -40,17 +40,17 @@ brew install zaai-com/tap/git-same
 <details>
 <summary>Other installation methods</summary>
 
-### From crates.io
+#### From crates.io
 
 ```bash
 cargo install git-same
 ```
 
-### GitHub Releases
+#### GitHub Releases
 
 Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64).
 
-### From source
+#### From source
 
 ```bash
 git clone https://github.com/zaai-com/git-same
