@@ -10,21 +10,25 @@ Mirror your GitHub org structure to the local filesystem — parallel clone, inc
 ## What It Does
 
 ```
-                GitHub                                           Local
-┌─────────────────────────────────────────┐       ┌─────────────────────────────────────────┐
-│  github.com/zaai-com/git-same           │ ───── │  ~/GitHub/zaai-com/git-same/            │
-│  github.com/zaai-com/GreenHub           │ ───── │  ~/GitHub/zaai-com/GreenHub/            │
-│  github.com/zaai-com/ZAAI-AgentBox      │ ───── │  ~/GitHub/zaai-com/ZAAI-AgentBox/       │
-│  github.com/zaai-com/MyDomains          │ ───── │  ~/GitHub/zaai-com/MyDomains/           │
-│                                         │       │                                         │
-│  github.com/zaai-agents/...             │ ───── │  ~/GitHub/zaai-agents/.../              │
-│                                         │       │                                         │
-│  github.com/Manuel-Forks/chatml         │ ───── │  ~/GitHub/Manuel-Forks/chatml/          │
-│  github.com/Manuel-Forks/netfluss       │ ───── │  ~/GitHub/Manuel-Forks/netfluss/        │
-│  github.com/Manuel-Forks/gstack         │ ───── │  ~/GitHub/Manuel-Forks/gstack/          │
-└─────────────────────────────────────────┘       └─────────────────────────────────────────┘
-
-                  git-same sync  ←  one command, parallel, incremental
+┌─────────────────────────────────────┬────────┬───────────────────────────┐
+│ GITHUB PLATFORM                     │        │ LOCAL FILE SYSTEM         │
+│ https://github.com                  │  Sync  │ /users/m/same-github/     │
+╞═════════════════════════════════════╧════════╧═══════════════════════════╡
+│ github.com/manuelgruber               <<==>>   manuelgruber/             │
+│ github.com/manuelgruber/.github       <<==>>   manuelgruber/.github/     │
+│ github.com/manuelgruber/dotfiles      <<==>>   manuelgruber/dotfiles/    │
+├──────────────────────────────────────────────────────────────────────────┤
+│ github.com/zaai-com                   <<==>>   zaai-com/                 │
+│ github.com/zaai-com/powernight        <<==>>   zaai-com/powernight/      │
+│ github.com/zaai-com/clean-autofill    <<==>>   zaai-com/clean-autofill/  │
+│ github.com/zaai-com/git-same          <<==>>   zaai-com/git-same/        │
+│ github.com/zaai-com/jekyll-aeo        <<==>>   zaai-com/jekyll-aeo/      │
+├──────────────────────────────────────────────────────────────────────────┤
+│ github.com/company1                   <<==>>   company1/                 │
+│ github.com/company1/example.ai        <<==>>   company1/example.ai/      │
+├─────────────────────────────────────┬────────┬───────────────────────────┤
+│ 3 orgs · 7 repos                    │        │ 3 dirs · 7 repos          │
+└─────────────────────────────────────┴────────┴───────────────────────────┘
 ```
 
 One command discovers every repo across your GitHub orgs and mirrors them locally — cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
@@ -414,76 +418,3 @@ MIT License - see [LICENSE](../LICENSE) for details
 - [ ] Repo groups
 - [ ] Web dashboard
 
----
-
-## Diagram Option A — Flat rows with tree
-
-```
-GitHub                                                       <<== Sync ==>>  /users/m/engineering/same-github/
-                                                                             │
-https://github.com/manuelgruber                              <<==  Org ==>>  ├── manuelgruber/
-https://github.com/manuelgruber/ManuelGruber                 <<== Repo ==>>  │   ├── ManuelGruber/
-https://github.com/manuelgruber/manuelgruber.github.io       <<== Repo ==>>  │   ├── manuelgruber.github.io/
-https://github.com/manuelgruber/dotfiles                     <<== Repo ==>>  │   └── dotfiles/
-                                                                             │
-https://github.com/ZAAI-com                                  <<==  Org ==>>  ├── ZAAI-com/
-https://github.com/ZAAI-com/PowerNight                       <<== Repo ==>>  │   ├── PowerNight/
-https://github.com/ZAAI-com/Clean-Autofill                   <<== Repo ==>>  │   ├── Clean-Autofill/
-https://github.com/ZAAI-com/git-same                         <<== Repo ==>>  │   ├── git-same/
-https://github.com/ZAAI-com/Jekyll-AEO                       <<== Repo ==>>  │   └── Jekyll-AEO/
-                                                                             │
-https://github.com/company1                                  <<==  Org ==>>  └── company1/
-https://github.com/company1/example.ai                       <<== Repo ==>>      └── example.ai/
-
-3 orgs · 10 repos                                                            3 dirs · 10 repos · all in sync
-```
-
-## Diagram Option B — Bordered table
-
-```
-┌──────────────────────────────────────────────────────────┬────────────────┬────────────────────────────────┐
-│ GitHub                                                   │ <<== Sync ==>> │ /users/m/.../same-github/      │
-├──────────────────────────────────────────────────────────┼────────────────┼────────────────────────────────┤
-│ https://github.com/manuelgruber                          │ <<==  Org ==>> │ manuelgruber/                  │
-│   /manuelgruber/ManuelGruber                             │ <<== Repo ==>> │   ManuelGruber/                │
-│   /manuelgruber/manuelgruber.github.io                   │ <<== Repo ==>> │   manuelgruber.github.io/      │
-│   /manuelgruber/dotfiles                                 │ <<== Repo ==>> │   dotfiles/                    │
-├──────────────────────────────────────────────────────────┼────────────────┼────────────────────────────────┤
-│ https://github.com/ZAAI-com                              │ <<==  Org ==>> │ ZAAI-com/                      │
-│   /ZAAI-com/PowerNight                                   │ <<== Repo ==>> │   PowerNight/                  │
-│   /ZAAI-com/Clean-Autofill                               │ <<== Repo ==>> │   Clean-Autofill/              │
-│   /ZAAI-com/git-same                                     │ <<== Repo ==>> │   git-same/                    │
-│   /ZAAI-com/Jekyll-AEO                                   │ <<== Repo ==>> │   Jekyll-AEO/                  │
-├──────────────────────────────────────────────────────────┼────────────────┼────────────────────────────────┤
-│ https://github.com/company1                              │ <<==  Org ==>> │ company1/                      │
-│   /company1/example.ai                                   │ <<== Repo ==>> │   example.ai/                  │
-├──────────────────────────────────────────────────────────┼────────────────┼────────────────────────────────┤
-│ 3 orgs · 10 repos                                        │                │ 3 dirs · 10 repos              │
-└──────────────────────────────────────────────────────────┴────────────────┴────────────────────────────────┘
-```
-
-## Diagram Option C — Double-line panels
-
-```
-╔══════════════════════════════════════════════════════════╗                ╔════════════════════════════════╗
-║  GITHUB                                                  ║                ║  LOCAL FILESYSTEM              ║
-║                                                          ║  <<== Sync ==>>║  /users/m/.../same-github/     ║
-╠══════════════════════════════════════════════════════════╣                ╠════════════════════════════════╣
-║                                                          ║                ║                                ║
-║  https://github.com/manuelgruber                         ║  <<==  Org ==>>║  manuelgruber/                 ║
-║    ├── /ManuelGruber                                     ║  <<== Repo ==>>║    ├── ManuelGruber/           ║
-║    ├── /manuelgruber.github.io                           ║  <<== Repo ==>>║    ├── manuelgruber.github.io/ ║
-║    └── /dotfiles                                         ║  <<== Repo ==>>║    └── dotfiles/               ║
-║                                                          ║                ║                                ║
-║  https://github.com/ZAAI-com                             ║  <<==  Org ==>>║  ZAAI-com/                     ║
-║    ├── /PowerNight                                       ║  <<== Repo ==>>║    ├── PowerNight/             ║
-║    ├── /Clean-Autofill                                   ║  <<== Repo ==>>║    ├── Clean-Autofill/         ║
-║    ├── /git-same                                         ║  <<== Repo ==>>║    ├── git-same/               ║
-║    └── /Jekyll-AEO                                       ║  <<== Repo ==>>║    └── Jekyll-AEO/             ║
-║                                                          ║                ║                                ║
-║  https://github.com/company1                             ║  <<==  Org ==>>║  company1/                     ║
-║    └── /example.ai                                       ║  <<== Repo ==>>║    └── example.ai/             ║
-║                                                          ║                ║                                ║
-║  3 orgs · 10 repos                                       ║                ║  3 dirs · 10 repos · in sync   ║
-╚══════════════════════════════════════════════════════════╝                ╚════════════════════════════════╝
-```
