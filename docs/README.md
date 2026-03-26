@@ -13,20 +13,20 @@ Mirror your GitHub org structure to the local filesystem — parallel clone, inc
 ┌─────────────────────────────────────┬────────┬───────────────────────────┐
 │ GITHUB PLATFORM                     │        │ LOCAL FILE SYSTEM         │
 │ https://github.com                  │  Sync  │ /users/m/same-github/     │
-╞═════════════════════════════════════╧════════╧═══════════════════════════╡
-│ github.com/manuelgruber               <<==>>   manuelgruber/             │
-│ github.com/manuelgruber/.github       <<==>>   manuelgruber/.github/     │
-│ github.com/manuelgruber/dotfiles      <<==>>   manuelgruber/dotfiles/    │
-├──────────────────────────────────────────────────────────────────────────┤
-│ github.com/zaai-com                   <<==>>   zaai-com/                 │
-│ github.com/zaai-com/powernight        <<==>>   zaai-com/powernight/      │
-│ github.com/zaai-com/clean-autofill    <<==>>   zaai-com/clean-autofill/  │
-│ github.com/zaai-com/git-same          <<==>>   zaai-com/git-same/        │
-│ github.com/zaai-com/jekyll-aeo        <<==>>   zaai-com/jekyll-aeo/      │
-├──────────────────────────────────────────────────────────────────────────┤
-│ github.com/company1                   <<==>>   company1/                 │
-│ github.com/company1/example.ai        <<==>>   company1/example.ai/      │
-├─────────────────────────────────────┬────────┬───────────────────────────┤
+╞═════════════════════════════════════╪════════╪═══════════════════════════╡
+│ github.com/manuelgruber             │ <<==>> │ manuelgruber/             │
+│ github.com/manuelgruber/.github     │ <<==>> │ manuelgruber/.github/     │
+│ github.com/manuelgruber/dotfiles    │ <<==>> │ manuelgruber/dotfiles/    │
+├─────────────────────────────────────┼────────┼───────────────────────────┤
+│ github.com/zaai-com                 │ <<==>> │ zaai-com/                 │
+│ github.com/zaai-com/powernight      │ <<==>> │ zaai-com/powernight/      │
+│ github.com/zaai-com/clean-autofill  │ <<==>> │ zaai-com/clean-autofill/  │
+│ github.com/zaai-com/git-same        │ <<==>> │ zaai-com/git-same/        │
+│ github.com/zaai-com/jekyll-aeo      │ <<==>> │ zaai-com/jekyll-aeo/      │
+├─────────────────────────────────────┼────────┼───────────────────────────┤
+│ github.com/company1                 │ <<==>> │ company1/                 │
+│ github.com/company1/example.ai      │ <<==>> │ company1/example.ai/      │
+├─────────────────────────────────────┼────────┼───────────────────────────┤
 │ 3 orgs · 7 repos                    │        │ 3 dirs · 7 repos          │
 └─────────────────────────────────────┴────────┴───────────────────────────┘
 ```
