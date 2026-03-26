@@ -2,11 +2,6 @@
 
 Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
 
-[![Crates.io](https://img.shields.io/crates/v/git-same.svg)](https://crates.io/crates/git-same)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml/badge.svg)](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml)
-[![Homebrew](https://img.shields.io/badge/homebrew-zaai--com%2Ftap-blue)](https://github.com/zaai-com/homebrew-tap)
-
 ## What It Does
 
 ```
@@ -44,32 +39,14 @@ One command discovers every repo across your GitHub orgs and mirrors them locall
 
 ![CLI Sync](assets/cli-sync.png)
 
-## Quick Start
-
-### Interactive (TUI)
-
-```bash
-git-same
-```
-
-Launches the full terminal UI with dashboard, sync, status, and workspace management, all via keyboard shortcuts.
-
-### CLI
-
-```bash
-git-same init          # 1. Create user config
-git-same setup         # 2. Configure workspace (interactive wizard)
-git-same sync          # 3. Clone new repos, fetch/pull existing
-git-same status        # 4. Check repo status across orgs
-```
-
 ## Installation
-
-### Homebrew
 
 ```bash
 brew install zaai-com/tap/git-same
 ```
+
+<details>
+<summary>Other installation methods</summary>
 
 ### From crates.io
 
@@ -89,21 +66,26 @@ cd git-same
 cargo install --path .
 ```
 
-## Aliases
+</details>
 
-Git-Same installs multiple binary names so you can use whichever you prefer:
+## Quick Start
 
-| Command    | Description                                    |
-|------------|------------------------------------------------|
-| `git-same` | Primary binary (always available)              |
-| `gitsame`  | No-hyphen alias (symlink)                      |
-| `gitsa`    | Short alias (symlink)                          |
-| `gisa`     | Shortest alias (symlink)                       |
-| `git same` | Git subcommand (requires git-same in PATH)     |
+**Interactive (TUI)**
 
-> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+```bash
+git-same
+```
 
-All examples in this README use `git-same`, but any alias works interchangeably.
+Launches the full terminal UI with dashboard, sync, status, and workspace management, all via keyboard shortcuts.
+
+**CLI**
+
+```bash
+git-same init          # 1. Create user config
+git-same setup         # 2. Configure workspace (interactive wizard)
+git-same sync          # 3. Clone new repos, fetch/pull existing
+git-same status        # 4. Check repo status across orgs
+```
 
 ## Commands
 
@@ -186,6 +168,43 @@ Remove all config, workspaces, and cache:
 git-same reset [-f | --force]
 ```
 
+## Aliases
+
+Git-Same installs multiple binary names so you can use whichever you prefer:
+
+| Command    | Description                                    |
+|------------|------------------------------------------------|
+| `git-same` | Primary binary (always available)              |
+| `gitsame`  | No-hyphen alias (symlink)                      |
+| `gitsa`    | Short alias (symlink)                          |
+| `gisa`     | Shortest alias (symlink)                       |
+| `git same` | Git subcommand (requires git-same in PATH)     |
+
+> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+
+All examples in this README use `git-same`, but any alias works interchangeably.
+
+## Requirements
+
+Git-Same depends on two external tools at runtime:
+
+- **[`git`](https://git-scm.com/)** — Git-Same shells out to `git` for all repository operations — clone, fetch, pull, and status. Without it, no git operations can run.
+- **[`gh`](https://cli.github.com/) (GitHub CLI)** — Git-Same calls `gh auth token` to obtain GitHub API tokens for repo discovery and `gh api user` to resolve your username. Without it, Git-Same cannot authenticate with the GitHub API.
+
+### Installing and authenticating `gh`
+
+```bash
+# Install GitHub CLI
+brew install gh  # macOS
+# or: sudo apt install gh  # Ubuntu
+
+# Authenticate
+gh auth login
+
+# Git-Same will now use your gh credentials
+git-same sync
+```
+
 ## TUI Mode
 
 Running `git-same` without a subcommand launches the interactive terminal UI.
@@ -206,90 +225,6 @@ Running `git-same` without a subcommand launches the interactive terminal UI.
 | **Repo Status** | Table of local repos with git status | `[←] [↑] [↓] [→]`: Move, `/`: Filter, `D`: Uncommitted, `B`: Behind, `r`: Refresh |
 | **Org Browser** | Browse discovered repos by organization | `[←] [↑] [↓] [→]`: Move |
 | **Settings** | View workspace settings | `Esc`: Back |
-
-## Authentication
-
-Git-Same uses GitHub CLI (`gh`) for authentication:
-
-```bash
-# Install GitHub CLI
-brew install gh  # macOS
-# or: sudo apt install gh  # Ubuntu
-
-# Authenticate
-gh auth login
-
-# Git-Same will now use your gh credentials
-git-same sync
-```
-
-For GitHub Enterprise, configure the workspace provider:
-
-```toml
-[provider]
-kind = "github-enterprise"
-api_url = "https://github.company.com/api/v3"
-prefer_ssh = true
-```
-
-Authenticate GitHub Enterprise once with:
-
-```bash
-gh auth login --hostname github.company.com
-```
-
-## Configuration
-
-Global behavior is configured in `~/.config/git-same/config.toml`:
-
-```toml
-# Directory structure: {org}/{repo} or {provider}/{org}/{repo}
-structure = "{org}/{repo}"
-
-# Number of concurrent clone/sync operations
-concurrency = 4
-
-# Default sync mode: fetch or pull
-sync_mode = "fetch"
-
-# Optional default workspace root path
-# default_workspace = "~/Git-Same/GitHub"
-
-# Registered workspace root paths
-# workspaces = ["~/Git-Same/GitHub"]
-
-[clone]
-# Clone depth (0 = full history)
-depth = 0
-
-# Default branch to clone (empty = provider's default)
-branch = ""
-
-# Recursively clone submodules
-recurse_submodules = false
-
-[filters]
-# Include archived repositories
-include_archived = false
-
-# Include forked repositories
-include_forks = false
-
-# Filter by organizations (empty = all)
-orgs = []
-```
-
-Provider and workspace-specific settings are stored inside each workspace at
-`<workspace-root>/.git-same/config.toml`:
-
-```toml
-username = "my-user"
-orgs = ["my-org"]
-
-[provider]
-kind = "github"
-prefer_ssh = true
-```
 
 ## Examples
 
@@ -317,90 +252,6 @@ git-same status --uncommitted
 git-same sync --dry-run
 ```
 
-## Development
-
-### Building from source
-
-```bash
-git clone https://github.com/zaai-com/git-same
-cd git-same
-
-# Development build
-cargo build
-
-# Release build (optimized, stripped, with LTO)
-cargo build --release
-```
-
-The binary is output to `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
-
-### Running tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run with all features enabled
-cargo test --all-features
-
-# Run tests that require GitHub authentication
-cargo test -- --ignored
-
-# Run with verbose output
-cargo test -- --nocapture
-```
-
-### Test file organization
-
-Unit tests use colocated test files. Each `foo.rs` has a companion `foo_tests.rs` in the same directory, linked via `#[path]` attribute. Integration tests live in `tests/`.
-
-### Linting and formatting
-
-```bash
-# Lint
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Check formatting
-cargo fmt --all -- --check
-```
-
-### Installing locally
-
-```bash
-# Install from source to ~/.cargo/bin/
-cargo install --path .
-```
-
-This installs the `git-same` binary. Install via Homebrew to get all aliases automatically. Make sure `~/.cargo/bin` is in your `$PATH`.
-
-### Rebuilding
-
-```bash
-# Incremental rebuild
-cargo build --release
-
-# Clean rebuild
-cargo clean && cargo build --release
-```
-
-### Uninstalling
-
-```bash
-# Remove binaries
-cargo uninstall git-same
-
-# Remove config and cache
-rm -rf ~/.config/git-same/
-
-# Workspace-local cache/history live under each workspace:
-# <workspace-root>/.git-same/cache.json
-# <workspace-root>/.git-same/sync-history.json
-```
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR on [GitHub](https://github.com/zaai-com/git-same).
-
 ## License
 
 MIT License - see [LICENSE](../LICENSE) for details
@@ -417,4 +268,3 @@ MIT License - see [LICENSE](../LICENSE) for details
 - [ ] Bitbucket support
 - [ ] Repo groups
 - [ ] Web dashboard
-
