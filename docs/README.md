@@ -1,34 +1,59 @@
 # Git-Same
 
-Mirror GitHub structure /orgs/repos/ to local file system
+Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
 
-[![Crates.io](https://img.shields.io/crates/v/git-same.svg)](https://crates.io/crates/git-same)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml/badge.svg)](https://github.com/zaai-com/git-same/actions/workflows/S1-Test-CI.yml)
+| ![TUI Dashboard (dark mode)](screenshots/tui-dashboard-dark.png) |
+|:---:|
 
-## Features
+| ![TUI Dashboard (light mode)](screenshots/tui-dashboard-light.png) |
+|:---:|
 
-- **Interactive TUI**: Full terminal UI with dashboard, workspace management, and live progress
-- **Multi-Provider Support**: Works with GitHub and GitHub Enterprise (GitLab and Bitbucket planned)
-- **Parallel Operations**: Clones and syncs repositories concurrently
-- **Smart Filtering**: Filter by archived status, forks, organizations
-- **Incremental Sync**: Only fetches/pulls what has changed
-- **Progress Reporting**: Beautiful progress bars and status updates
-- **Multiple Aliases**: Install once, use with your preferred command name
+## What It Does
+
+```
++--------------------------------------+------------+------------------------------------+
+│ GITHUB PLATFORM                      │    Sync    │ LOCAL FILE SYSTEM                  │
+│ github.com                           │            │ /users/m/same-github/              │
++--------------------------------------+------------+------------------------------------+
+│ github.com/manuelgruber              │   <<==>>   │ manuelgruber/                      │
+│ github.com/manuelgruber/.github      │   <<==>>   │ manuelgruber/.github/              │
+│ github.com/manuelgruber/dotfiles     │   <<==>>   │ manuelgruber/dotfiles/             │
++--------------------------------------+------------+------------------------------------+
+│ github.com/zaai-com                  │   <<==>>   │ zaai-com/                          │
+│ github.com/zaai-com/powernight       │   <<==>>   │ zaai-com/powernight/               │
+│ github.com/zaai-com/clean-autofill   │   <<==>>   │ zaai-com/clean-autofill/           │
+│ github.com/zaai-com/git-same         │   <<==>>   │ zaai-com/git-same/                 │
+│ github.com/zaai-com/jekyll-aeo       │   <<==>>   │ zaai-com/jekyll-aeo/               │
++--------------------------------------+------------+------------------------------------+
+│ github.com/company1                  │   <<==>>   │ company1/                          │
+│ github.com/company1/example.ai       │   <<==>>   │ company1/example.ai/               │
++--------------------------------------+------------+------------------------------------+
+│ 3 orgs · 7 repos                     │            │ 3 dirs · 7 repos                   │
++--------------------------------------+------------+------------------------------------+
+```
+
+One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
 
 ## Installation
 
-### From crates.io
+```bash
+brew install zaai-com/tap/git-same
+```
+
+<details>
+<summary>Other installation methods</summary>
+
+#### From crates.io
 
 ```bash
 cargo install git-same
 ```
 
-### GitHub Releases
+#### GitHub Releases
 
 Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64).
 
-### From source
+#### From source
 
 ```bash
 git clone https://github.com/zaai-com/git-same
@@ -36,168 +61,68 @@ cd git-same
 cargo install --path .
 ```
 
-### Homebrew
-
-```bash
-brew install zaai-com/tap/git-same
-```
-
-## Available Commands
-
-The tool can be invoked using any of these names:
-
-| Command    | Description                    |
-|------------|--------------------------------|
-| `git-same` | Primary binary                 |
-| `gitsame`  | No-hyphen alias (symlink)      |
-| `gitsa`    | Short alias (symlink)          |
-| `gisa`     | Shortest alias (symlink)       |
-| `git same` | Git subcommand (requires git-same in PATH) |
-
-> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary — run `toolkit/conductor/run.sh` to create alias symlinks. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+</details>
 
 ## Quick Start
 
-### Interactive (TUI)
-
-Run `gisa` with no arguments to launch the interactive terminal UI:
+**Interactive (TUI)**
 
 ```bash
-gisa
+git-same
 ```
 
-The TUI provides a dashboard with workspace management, sync operations, repo status, and settings — all accessible via keyboard shortcuts.
+Launches the full terminal UI with dashboard, sync, status, and workspace management, all via keyboard shortcuts.
 
-### CLI
+**CLI**
 
 ```bash
-# 1. Initialize configuration
-gisa init
-
-# 2. Set up a workspace (interactive wizard)
-gisa setup
-
-# 3. Sync repositories (discover, clone new, fetch/pull existing)
-gisa sync
-
-# 4. Check repository status
-gisa status
-gisa status --uncommitted
-gisa status --behind
-```
-
-## Authentication
-
-Git-Same uses GitHub CLI (`gh`) for authentication:
-
-```bash
-# Install GitHub CLI
-brew install gh  # macOS
-# or: sudo apt install gh  # Ubuntu
-
-# Authenticate
-gh auth login
-
-# Git-Same will now use your gh credentials
-gisa sync
-```
-
-## Configuration
-
-Global behavior is configured in `~/.config/git-same/config.toml`:
-
-```toml
-# Directory structure: {org}/{repo} or {provider}/{org}/{repo}
-structure = "{org}/{repo}"
-
-# Number of concurrent clone/sync operations
-concurrency = 4
-
-# Default sync mode: fetch or pull
-sync_mode = "fetch"
-
-# Optional default workspace root path
-# default_workspace = "~/Git-Same/GitHub"
-
-# Registered workspace root paths
-# workspaces = ["~/Git-Same/GitHub"]
-
-[clone]
-# Clone depth (0 = full history)
-depth = 0
-
-# Default branch to clone (empty = provider's default)
-branch = ""
-
-# Recursively clone submodules
-recurse_submodules = false
-
-[filters]
-# Include archived repositories
-include_archived = false
-
-# Include forked repositories
-include_forks = false
-
-# Filter by organizations (empty = all)
-orgs = []
-```
-
-Provider and workspace-specific settings are stored inside each workspace at
-`<workspace-root>/.git-same/config.toml`:
-
-```toml
-username = "my-user"
-orgs = ["my-org"]
-
-[provider]
-kind = "github"
-prefer_ssh = true
-```
-
-For GitHub Enterprise, configure the workspace provider:
-
-```toml
-[provider]
-kind = "github-enterprise"
-api_url = "https://github.company.com/api/v3"
-prefer_ssh = true
-```
-
-Authenticate GitHub Enterprise once with:
-
-```bash
-gh auth login --hostname github.company.com
+git-same init          # 1. Create user config
+git-same setup         # 2. Configure workspace (interactive wizard)
+git-same sync          # 3. Clone new repos, fetch/pull existing
+git-same status        # 4. Check repo status across orgs
 ```
 
 ## Commands
 
-### `init`
+| Command | Description |
+|---------|-------------|
+| `git-same init` | Create config file with sensible defaults |
+| `git-same setup` | Interactive wizard to configure a workspace |
+| `git-same sync` | Discover, clone new, fetch/pull existing repos |
+| `git-same status` | Show git status across all local repos |
+| `git-same workspace` | List workspaces, set default |
+| `git-same reset` | Remove all config, workspaces, and cache |
+| `git-same scan` | Discover repos without cloning or syncing |
+
+### `git-same init`
 
 Initialize git-same configuration:
 
 ```bash
-gisa init [-p <config-path>] [-f | --force]
+git-same init [-p <config-path>] [-f | --force]
 ```
 
 Creates a config file at `~/.config/git-same/config.toml` with sensible defaults.
 
-### `setup`
+### `git-same setup`
 
 Configure a workspace (interactive wizard):
 
 ```bash
-gisa setup [--name <NAME>]
+git-same setup [--name <NAME>]
 ```
 
 Walks through provider selection, authentication, org filters, and base path.
 
-### `sync`
+| ![Setup Wizard: org selection](screenshots/tui-setup-workspace.png) |
+|:---:|
 
-Sync repositories — discover, clone new, fetch/pull existing:
+### `git-same sync`
+
+Sync repositories: discover, clone new, fetch/pull existing:
 
 ```bash
-gisa sync [OPTIONS]
+git-same sync [OPTIONS]
 
 Options:
   -w, --workspace <WORKSPACE> Workspace to sync (path or unique folder name)
@@ -208,12 +133,27 @@ Options:
       --no-skip-uncommitted         Don't skip repos with uncommitted changes
 ```
 
-### `status`
+**Discovering repos**
+
+| ![Sync: discovering repos](screenshots/tui-sync-discovery.png) |
+|:---:|
+
+**Cloning & fetching**
+
+| ![Sync: cloning and fetching](screenshots/tui-sync-running.png) |
+|:---:|
+
+**Completed**
+
+| ![Sync: completed](screenshots/tui-sync-completed.png) |
+|:---:|
+
+### `git-same status`
 
 Show status of local repositories:
 
 ```bash
-gisa status [OPTIONS]
+git-same status [OPTIONS]
 
 Options:
   -w, --workspace <WORKSPACE> Workspace to check (path or unique folder name)
@@ -223,27 +163,67 @@ Options:
       --detailed              Show detailed status information
 ```
 
-### `workspace`
+| ![CLI status output](screenshots/cli-status.png) |
+|:---:|
+
+### `git-same workspace`
 
 Manage workspaces:
 
 ```bash
-gisa workspace list              # List configured workspaces
-gisa workspace default [WORKSPACE] # Set default workspace (path or unique folder name)
-gisa workspace default --clear   # Clear default workspace
+git-same workspace list              # List configured workspaces
+git-same workspace default [WORKSPACE] # Set default workspace (path or unique folder name)
+git-same workspace default --clear   # Clear default workspace
 ```
 
-### `reset`
+### `git-same reset`
 
 Remove all config, workspaces, and cache:
 
 ```bash
-gisa reset [-f | --force]
+git-same reset [-f | --force]
+```
+
+## Aliases
+
+Git-Same installs multiple binary names so you can use whichever you prefer:
+
+| Command    | Description                                    |
+|------------|------------------------------------------------|
+| `git-same` | Primary binary (always available)              |
+| `gitsame`  | No-hyphen alias (symlink)                      |
+| `gitsa`    | Short alias (symlink)                          |
+| `gisa`     | Shortest alias (symlink)                       |
+| `git same` | Git subcommand (requires git-same in PATH)     |
+
+> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+
+All examples in this README use `git-same`, but any alias works interchangeably.
+
+## Requirements
+
+Git-Same depends on two external tools at runtime:
+
+- **[`git`](https://git-scm.com/)** — Git-Same shells out to `git` for all repository operations — clone, fetch, pull, and status. Without it, no git operations can run.
+- **[`gh`](https://cli.github.com/) (GitHub CLI)** — Git-Same calls `gh auth token` to obtain GitHub API tokens for repo discovery and `gh api user` to resolve your username. Without it, Git-Same cannot authenticate with the GitHub API.
+
+### Installing and authenticating `gh`
+
+```bash
+# Install GitHub CLI
+brew install gh  # macOS
+# or: sudo apt install gh  # Ubuntu
+
+# Authenticate
+gh auth login
+
+# Git-Same will now use your gh credentials
+git-same sync
 ```
 
 ## TUI Mode
 
-Running `gisa` without a subcommand launches the interactive terminal UI.
+Running `git-same` without a subcommand launches the interactive terminal UI.
 
 ### Screens
 
@@ -264,114 +244,30 @@ Running `gisa` without a subcommand launches the interactive terminal UI.
 ### Sync all repositories in default workspace
 
 ```bash
-gisa sync
+git-same sync
 ```
 
 ### Sync with pull mode for a specific workspace
 
 ```bash
-gisa sync --workspace work --pull
+git-same sync --workspace work --pull
 ```
 
 ### Check which repositories have uncommitted changes
 
 ```bash
-gisa status --uncommitted
+git-same status --uncommitted
 ```
 
 ### Dry run to see what would be synced
 
 ```bash
-gisa sync --dry-run
-```
-
-## Development
-
-### Building from source
-
-```bash
-git clone https://github.com/zaai-com/git-same
-cd git-same
-
-# Development build
-cargo build
-
-# Release build (optimized, stripped, with LTO)
-cargo build --release
-```
-
-The binary is output to `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
-
-### Running tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run with all features enabled
-cargo test --all-features
-
-# Run tests that require GitHub authentication
-cargo test -- --ignored
-
-# Run with verbose output
-cargo test -- --nocapture
-```
-
-### Test file organization
-
-Unit tests use colocated test files — each `foo.rs` has a companion `foo_tests.rs` in the same directory, linked via `#[path]` attribute. Integration tests live in `tests/`.
-
-### Linting and formatting
-
-```bash
-# Lint
-cargo clippy --all-targets --all-features -- -D warnings
-
-# Check formatting
-cargo fmt --all -- --check
-```
-
-### Installing locally
-
-```bash
-# Install from source to ~/.cargo/bin/
-cargo install --path .
-```
-
-This installs the `git-same` binary. To also create the alias symlinks (`gitsame`, `gitsa`, `gisa`), run `toolkit/conductor/run.sh` or install via Homebrew. Make sure `~/.cargo/bin` is in your `$PATH`.
-
-### Rebuilding
-
-```bash
-# Incremental rebuild
-cargo build --release
-
-# Clean rebuild
-cargo clean && cargo build --release
-```
-
-### Uninstalling
-
-```bash
-# Remove binaries
-cargo uninstall git-same
-
-# Remove config and cache
-rm -rf ~/.config/git-same/
-
-# Workspace-local cache/history live under each workspace:
-# <workspace-root>/.git-same/cache.json
-# <workspace-root>/.git-same/sync-history.json
+git-same sync --dry-run
 ```
 
 ## License
 
 MIT License - see [LICENSE](../LICENSE) for details
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR on [GitHub](https://github.com/zaai-com/git-same).
 
 ## Roadmap
 
