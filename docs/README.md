@@ -2,6 +2,9 @@
 
 Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
 
+| ![TUI Dashboard (light mode)](screenshots/tui-dashboard-light.png) | ![TUI Dashboard (dark mode)](screenshots/tui-dashboard-dark.png) |
+|:---:|:---:|
+
 ## What It Does
 
 ```
@@ -27,17 +30,6 @@ Mirror your GitHub org structure to the local filesystem: parallel clone, increm
 ```
 
 One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
-
-## Screenshots
-
-<!-- TODO: Add screenshots, see docs/assets/ for filenames -->
-
-| | |
-|---|---|
-| ![TUI Dashboard](assets/tui-dashboard.png) | ![TUI Sync Progress](assets/tui-sync-progress.png) |
-| TUI Dashboard: stats, repo table, quick actions | Sync Progress: live progress, worker slots, throughput |
-
-![CLI Sync](assets/cli-sync.png)
 
 ## Installation
 
@@ -119,6 +111,9 @@ git-same setup [--name <NAME>]
 
 Walks through provider selection, authentication, org filters, and base path.
 
+| ![Setup Wizard: org selection](screenshots/tui-setup-orgs.png) |
+|:---:|
+
 ### `git-same sync`
 
 Sync repositories: discover, clone new, fetch/pull existing:
@@ -135,6 +130,21 @@ Options:
       --no-skip-uncommitted         Don't skip repos with uncommitted changes
 ```
 
+**Discovering repos**
+
+| ![Sync: discovering repos](screenshots/tui-sync-discovery.png) |
+|:---:|
+
+**Cloning & fetching**
+
+| ![Sync: cloning and fetching](screenshots/tui-sync-running.png) |
+|:---:|
+
+**Completed**
+
+| ![Sync: completed](screenshots/tui-sync-completed.png) |
+|:---:|
+
 ### `git-same status`
 
 Show status of local repositories:
@@ -149,6 +159,9 @@ Options:
   -b, --behind                Show only repositories behind upstream
       --detailed              Show detailed status information
 ```
+
+| ![CLI status output](screenshots/cli-status.png) |
+|:---:|
 
 ### `git-same workspace`
 
@@ -208,9 +221,6 @@ git-same sync
 ## TUI Mode
 
 Running `git-same` without a subcommand launches the interactive terminal UI.
-
-<!-- TODO: Add TUI workspace screenshot -->
-<!-- ![TUI Workspaces](assets/tui-workspaces.png) -->
 
 ### Screens
 
