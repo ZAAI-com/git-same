@@ -2,8 +2,11 @@
 
 Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
 
-| ![TUI Dashboard (light mode)](screenshots/tui-dashboard-light.png) | ![TUI Dashboard (dark mode)](screenshots/tui-dashboard-dark.png) |
-|:---:|:---:|
+| ![TUI Dashboard (dark mode)](screenshots/tui-dashboard-dark.png) |
+|:---:|
+
+| ![TUI Dashboard (light mode)](screenshots/tui-dashboard-light.png) |
+|:---:|
 
 ## What It Does
 
@@ -111,7 +114,7 @@ git-same setup [--name <NAME>]
 
 Walks through provider selection, authentication, org filters, and base path.
 
-| ![Setup Wizard: org selection](screenshots/tui-setup-orgs.png) |
+| ![Setup Wizard: org selection](screenshots/tui-setup-workspace.png) |
 |:---:|
 
 ### `git-same sync`
