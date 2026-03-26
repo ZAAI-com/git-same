@@ -1,6 +1,6 @@
 # Git-Same
 
-Mirror your GitHub org structure to the local filesystem — parallel clone, incremental sync, TUI dashboard.
+Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
 
 [![Crates.io](https://img.shields.io/crates/v/git-same.svg)](https://crates.io/crates/git-same)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -10,37 +10,37 @@ Mirror your GitHub org structure to the local filesystem — parallel clone, inc
 ## What It Does
 
 ```
-┌─────────────────────────────────────┬────────┬───────────────────────────┐
-│ GITHUB PLATFORM                     │        │ LOCAL FILE SYSTEM         │
-│ https://github.com                  │  Sync  │ /users/m/same-github/     │
-╞═════════════════════════════════════╪════════╪═══════════════════════════╡
-│ github.com/manuelgruber             │ <<==>> │ manuelgruber/             │
-│ github.com/manuelgruber/.github     │ <<==>> │ manuelgruber/.github/     │
-│ github.com/manuelgruber/dotfiles    │ <<==>> │ manuelgruber/dotfiles/    │
-├─────────────────────────────────────┼────────┼───────────────────────────┤
-│ github.com/zaai-com                 │ <<==>> │ zaai-com/                 │
-│ github.com/zaai-com/powernight      │ <<==>> │ zaai-com/powernight/      │
-│ github.com/zaai-com/clean-autofill  │ <<==>> │ zaai-com/clean-autofill/  │
-│ github.com/zaai-com/git-same        │ <<==>> │ zaai-com/git-same/        │
-│ github.com/zaai-com/jekyll-aeo      │ <<==>> │ zaai-com/jekyll-aeo/      │
-├─────────────────────────────────────┼────────┼───────────────────────────┤
-│ github.com/company1                 │ <<==>> │ company1/                 │
-│ github.com/company1/example.ai      │ <<==>> │ company1/example.ai/      │
-├─────────────────────────────────────┼────────┼───────────────────────────┤
-│ 3 orgs · 7 repos                    │        │ 3 dirs · 7 repos          │
-└─────────────────────────────────────┴────────┴───────────────────────────┘
++--------------------------------------+------------+------------------------------------+
+│ GITHUB PLATFORM                      │    Sync    │ LOCAL FILE SYSTEM                  │
+│ github.com                           │            │ /users/m/same-github/              │
++--------------------------------------+------------+------------------------------------+
+│ github.com/manuelgruber              │   <<==>>   │ manuelgruber/                      │
+│ github.com/manuelgruber/.github      │   <<==>>   │ manuelgruber/.github/              │
+│ github.com/manuelgruber/dotfiles     │   <<==>>   │ manuelgruber/dotfiles/             │
++--------------------------------------+------------+------------------------------------+
+│ github.com/zaai-com                  │   <<==>>   │ zaai-com/                          │
+│ github.com/zaai-com/powernight       │   <<==>>   │ zaai-com/powernight/               │
+│ github.com/zaai-com/clean-autofill   │   <<==>>   │ zaai-com/clean-autofill/           │
+│ github.com/zaai-com/git-same         │   <<==>>   │ zaai-com/git-same/                 │
+│ github.com/zaai-com/jekyll-aeo       │   <<==>>   │ zaai-com/jekyll-aeo/               │
++--------------------------------------+------------+------------------------------------+
+│ github.com/company1                  │   <<==>>   │ company1/                          │
+│ github.com/company1/example.ai       │   <<==>>   │ company1/example.ai/               │
++--------------------------------------+------------+------------------------------------+
+│ 3 orgs · 7 repos                     │            │ 3 dirs · 7 repos                   │
++--------------------------------------+------------+------------------------------------+
 ```
 
-One command discovers every repo across your GitHub orgs and mirrors them locally — cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
+One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
 
 ## Screenshots
 
-<!-- TODO: Add screenshots — see docs/assets/ for filenames -->
+<!-- TODO: Add screenshots, see docs/assets/ for filenames -->
 
 | | |
 |---|---|
 | ![TUI Dashboard](assets/tui-dashboard.png) | ![TUI Sync Progress](assets/tui-sync-progress.png) |
-| TUI Dashboard — stats, repo table, quick actions | Sync Progress — live progress, worker slots, throughput |
+| TUI Dashboard: stats, repo table, quick actions | Sync Progress: live progress, worker slots, throughput |
 
 ![CLI Sync](assets/cli-sync.png)
 
@@ -52,12 +52,12 @@ One command discovers every repo across your GitHub orgs and mirrors them locall
 git-same
 ```
 
-Launches the full terminal UI with dashboard, sync, status, and workspace management — all via keyboard shortcuts.
+Launches the full terminal UI with dashboard, sync, status, and workspace management, all via keyboard shortcuts.
 
 ### CLI
 
 ```bash
-git-same init          # 1. Create config
+git-same init          # 1. Create user config
 git-same setup         # 2. Configure workspace (interactive wizard)
 git-same sync          # 3. Clone new repos, fetch/pull existing
 git-same status        # 4. Check repo status across orgs
@@ -117,7 +117,7 @@ All examples in this README use `git-same`, but any alias works interchangeably.
 | `git-same reset` | Remove all config, workspaces, and cache |
 | `git-same scan` | Discover repos without cloning or syncing |
 
-### `init`
+### `git-same init`
 
 Initialize git-same configuration:
 
@@ -127,7 +127,7 @@ git-same init [-p <config-path>] [-f | --force]
 
 Creates a config file at `~/.config/git-same/config.toml` with sensible defaults.
 
-### `setup`
+### `git-same setup`
 
 Configure a workspace (interactive wizard):
 
@@ -137,9 +137,9 @@ git-same setup [--name <NAME>]
 
 Walks through provider selection, authentication, org filters, and base path.
 
-### `sync`
+### `git-same sync`
 
-Sync repositories — discover, clone new, fetch/pull existing:
+Sync repositories: discover, clone new, fetch/pull existing:
 
 ```bash
 git-same sync [OPTIONS]
@@ -153,7 +153,7 @@ Options:
       --no-skip-uncommitted         Don't skip repos with uncommitted changes
 ```
 
-### `status`
+### `git-same status`
 
 Show status of local repositories:
 
@@ -168,7 +168,7 @@ Options:
       --detailed              Show detailed status information
 ```
 
-### `workspace`
+### `git-same workspace`
 
 Manage workspaces:
 
@@ -178,7 +178,7 @@ git-same workspace default [WORKSPACE] # Set default workspace (path or unique f
 git-same workspace default --clear   # Clear default workspace
 ```
 
-### `reset`
+### `git-same reset`
 
 Remove all config, workspaces, and cache:
 
@@ -352,7 +352,7 @@ cargo test -- --nocapture
 
 ### Test file organization
 
-Unit tests use colocated test files — each `foo.rs` has a companion `foo_tests.rs` in the same directory, linked via `#[path]` attribute. Integration tests live in `tests/`.
+Unit tests use colocated test files. Each `foo.rs` has a companion `foo_tests.rs` in the same directory, linked via `#[path]` attribute. Integration tests live in `tests/`.
 
 ### Linting and formatting
 
