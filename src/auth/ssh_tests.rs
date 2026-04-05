@@ -16,12 +16,6 @@ fn test_get_ssh_key_files() {
 }
 
 #[test]
-fn test_has_ssh_agent() {
-    // This test just checks that the function runs without panicking
-    let _ = has_ssh_agent();
-}
-
-#[test]
 #[ignore] // Ignore by default as it requires network access
 fn test_has_github_ssh_access() {
     // This test requires actual SSH configuration

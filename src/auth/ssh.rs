@@ -91,11 +91,6 @@ pub fn get_ssh_key_files() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Check if SSH agent is running.
-pub fn has_ssh_agent() -> bool {
-    std::env::var("SSH_AUTH_SOCK").is_ok()
-}
-
 #[cfg(test)]
 #[path = "ssh_tests.rs"]
 mod tests;

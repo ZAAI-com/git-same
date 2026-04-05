@@ -24,7 +24,7 @@ pub struct CheckResult {
 /// Run all requirement checks.
 ///
 /// Returns a list of check results for: git, gh CLI, gh authentication,
-/// SSH keys, and SSH GitHub access.
+/// and SSH GitHub access.
 pub async fn check_requirements() -> Vec<CheckResult> {
     match tokio::task::spawn_blocking(check_requirements_sync).await {
         Ok(results) => results,
@@ -44,7 +44,6 @@ pub fn check_requirements_sync() -> Vec<CheckResult> {
         check_git_installed(),
         check_gh_installed(),
         check_gh_authenticated(),
-        check_ssh_keys(),
         check_ssh_github_access(),
     ]
 }
@@ -134,34 +133,6 @@ fn check_gh_authenticated() -> CheckResult {
             message: "not authenticated".to_string(),
             suggestion: Some("Run: gh auth login".to_string()),
             critical: true,
-        }
-    }
-}
-
-/// Check if SSH keys are present.
-fn check_ssh_keys() -> CheckResult {
-    if ssh::has_ssh_keys() {
-        let keys = ssh::get_ssh_key_files();
-        let key_names: Vec<String> = keys
-            .iter()
-            .filter_map(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
-            .collect();
-        CheckResult {
-            name: "SSH Keys".to_string(),
-            passed: true,
-            message: key_names.join(", "),
-            suggestion: None,
-            critical: false,
-        }
-    } else {
-        CheckResult {
-            name: "SSH Keys".to_string(),
-            passed: false,
-            message: "no SSH keys found in ~/.ssh".to_string(),
-            suggestion: Some(
-                "Generate a key: ssh-keygen -t ed25519 -C \"your_email@example.com\"".to_string(),
-            ),
-            critical: false,
         }
     }
 }
