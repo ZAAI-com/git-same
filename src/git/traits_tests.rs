@@ -75,6 +75,67 @@ fn test_repo_status_can_fast_forward() {
     assert!(!diverged.can_fast_forward());
 }
 
+#[test]
+fn test_branch_info_synced() {
+    let branch = BranchInfo {
+        name: "main".to_string(),
+        upstream: Some("origin/main".to_string()),
+        ahead: 0,
+        behind: 0,
+        is_synced: true,
+    };
+    assert!(branch.is_synced);
+    assert_eq!(branch.name, "main");
+}
+
+#[test]
+fn test_branch_info_no_upstream() {
+    let branch = BranchInfo {
+        name: "local-only".to_string(),
+        upstream: None,
+        ahead: 0,
+        behind: 0,
+        is_synced: false,
+    };
+    assert!(!branch.is_synced);
+}
+
+#[test]
+fn test_remote_info() {
+    let remote = RemoteInfo {
+        name: "origin".to_string(),
+        fetch_url: "git@github.com:user/repo.git".to_string(),
+        push_url: "git@github.com:user/repo.git".to_string(),
+    };
+    assert_eq!(remote.name, "origin");
+    assert_eq!(remote.fetch_url, remote.push_url);
+}
+
+#[test]
+fn test_worktree_info() {
+    let wt = WorktreeInfo {
+        path: Path::new("/tmp/worktree").to_path_buf(),
+        branch: Some("feature".to_string()),
+        is_bare: false,
+        is_detached: false,
+    };
+    assert_eq!(wt.branch.as_deref(), Some("feature"));
+    assert!(!wt.is_bare);
+    assert!(!wt.is_detached);
+}
+
+#[test]
+fn test_worktree_info_detached() {
+    let wt = WorktreeInfo {
+        path: Path::new("/tmp/worktree").to_path_buf(),
+        branch: None,
+        is_bare: false,
+        is_detached: true,
+    };
+    assert!(wt.branch.is_none());
+    assert!(wt.is_detached);
+}
+
 mod mock_tests {
     use super::mock::*;
     use super::*;
@@ -169,6 +230,51 @@ mod mock_tests {
 
         assert!(mock.is_repo(Path::new("/tmp/repo")));
         assert!(!mock.is_repo(Path::new("/tmp/not-a-repo")));
+    }
+
+    #[test]
+    fn test_mock_list_branches() {
+        let mock = MockGit::new();
+        let branches = mock.list_branches(Path::new("/tmp/repo")).unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].name, "main");
+        assert!(branches[0].is_synced);
+    }
+
+    #[test]
+    fn test_mock_list_remotes() {
+        let mock = MockGit::new();
+        let remotes = mock.list_remotes(Path::new("/tmp/repo")).unwrap();
+        assert_eq!(remotes.len(), 1);
+        assert_eq!(remotes[0].name, "origin");
+    }
+
+    #[test]
+    fn test_mock_list_worktrees() {
+        let mock = MockGit::new();
+        let worktrees = mock.list_worktrees(Path::new("/tmp/repo")).unwrap();
+        assert!(worktrees.is_empty());
+    }
+
+    #[test]
+    fn test_mock_commit_count() {
+        let mock = MockGit::new();
+        let count = mock.commit_count(Path::new("/tmp/repo")).unwrap();
+        assert_eq!(count, 42);
+    }
+
+    #[test]
+    fn test_mock_stash_count() {
+        let mock = MockGit::new();
+        let count = mock.stash_count(Path::new("/tmp/repo")).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_mock_list_ignored_files() {
+        let mock = MockGit::new();
+        let files = mock.list_ignored_files(Path::new("/tmp/repo")).unwrap();
+        assert!(files.is_empty());
     }
 
     #[test]

@@ -89,6 +89,35 @@ fn test_parse_status_mixed() {
     assert_eq!(status.behind, 2);
 }
 
+// Unit tests for parse_track_info
+#[test]
+fn test_parse_track_info_empty() {
+    let (ahead, behind) = ShellGit::parse_track_info("");
+    assert_eq!(ahead, 0);
+    assert_eq!(behind, 0);
+}
+
+#[test]
+fn test_parse_track_info_ahead() {
+    let (ahead, behind) = ShellGit::parse_track_info("[ahead 5]");
+    assert_eq!(ahead, 5);
+    assert_eq!(behind, 0);
+}
+
+#[test]
+fn test_parse_track_info_behind() {
+    let (ahead, behind) = ShellGit::parse_track_info("[behind 3]");
+    assert_eq!(ahead, 0);
+    assert_eq!(behind, 3);
+}
+
+#[test]
+fn test_parse_track_info_diverged() {
+    let (ahead, behind) = ShellGit::parse_track_info("[ahead 2, behind 7]");
+    assert_eq!(ahead, 2);
+    assert_eq!(behind, 7);
+}
+
 // Integration tests that require actual git repo
 #[test]
 #[ignore] // Run with: cargo test -- --ignored
@@ -119,4 +148,70 @@ fn test_status_real() {
     let status = status.unwrap();
     // Should have a branch
     assert!(!status.branch.is_empty());
+}
+
+#[test]
+#[ignore]
+fn test_list_branches_real() {
+    let git = ShellGit::new();
+    let branches = git.list_branches(Path::new("."));
+    assert!(branches.is_ok());
+    let branches = branches.unwrap();
+    // Should have at least one branch
+    assert!(!branches.is_empty());
+    // At least one branch should have a name
+    assert!(!branches[0].name.is_empty());
+}
+
+#[test]
+#[ignore]
+fn test_list_remotes_real() {
+    let git = ShellGit::new();
+    let remotes = git.list_remotes(Path::new("."));
+    assert!(remotes.is_ok());
+    let remotes = remotes.unwrap();
+    // Should have at least one remote (origin)
+    assert!(!remotes.is_empty());
+    assert_eq!(remotes[0].name, "origin");
+    assert!(!remotes[0].fetch_url.is_empty());
+}
+
+#[test]
+#[ignore]
+fn test_list_worktrees_real() {
+    let git = ShellGit::new();
+    let worktrees = git.list_worktrees(Path::new("."));
+    assert!(worktrees.is_ok());
+    let worktrees = worktrees.unwrap();
+    // Should have at least the main worktree
+    assert!(!worktrees.is_empty());
+    assert!(worktrees[0].path.exists());
+}
+
+#[test]
+#[ignore]
+fn test_commit_count_real() {
+    let git = ShellGit::new();
+    let count = git.commit_count(Path::new("."));
+    assert!(count.is_ok());
+    // Should have at least 1 commit
+    assert!(count.unwrap() > 0);
+}
+
+#[test]
+#[ignore]
+fn test_stash_count_real() {
+    let git = ShellGit::new();
+    let count = git.stash_count(Path::new("."));
+    assert!(count.is_ok());
+    // Just check it doesn't error; count could be 0
+}
+
+#[test]
+#[ignore]
+fn test_list_ignored_files_real() {
+    let git = ShellGit::new();
+    let files = git.list_ignored_files(Path::new("."));
+    assert!(files.is_ok());
+    // Just check it doesn't error; could be empty
 }

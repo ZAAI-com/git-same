@@ -11,8 +11,13 @@
 //! - [`OpResult`] - Result of a single operation
 //! - [`OpSummary`] - Summary statistics for batch operations
 
+pub mod finder_status;
 mod provider;
 mod repo;
 
+pub use finder_status::{
+    Badge, FinderBranchInfo, FinderRemoteInfo, FinderRepoStatus, FinderStatus, FinderWorkspaceInfo,
+    FinderWorktreeInfo, OrgFolderInfo,
+};
 pub use provider::ProviderKind;
 pub use repo::{ActionPlan, OpResult, OpSummary, Org, OwnedRepo, Repo, SkippedRepo};

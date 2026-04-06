@@ -150,6 +150,23 @@ Examples:
     )]
     Reset(ResetArgs),
 
+    /// Run background daemon for Finder/file manager extension
+    #[command(
+        long_about = "Run a background daemon that monitors workspace repositories and \
+            writes status data for the macOS Finder extension (or other file manager \
+            plugins). The daemon periodically scans repos, computes badge colors, and \
+            writes status to ~/.config/git-same/finder/status.json. It also listens \
+            on a Unix socket for refresh requests from the extension.",
+        after_help = "\
+Examples:
+  gisa daemon                      Start daemon (daemonizes by default)
+  gisa daemon --foreground         Run in foreground (useful for debugging)
+  gisa daemon --interval 60        Poll every 60 seconds
+  gisa daemon --status             Check if daemon is running
+  gisa daemon --stop               Stop a running daemon"
+    )]
+    Daemon(DaemonArgs),
+
     /// Scan a directory tree for unregistered workspaces (.git-same/ folders)
     #[command(
         long_about = "Walk a directory tree looking for .git-same/ marker folders \
@@ -288,6 +305,26 @@ pub struct ResetArgs {
     /// Skip confirmation prompt
     #[arg(short, long)]
     pub force: bool,
+}
+
+/// Arguments for the daemon command
+#[derive(Args, Debug)]
+pub struct DaemonArgs {
+    /// Run in foreground instead of daemonizing
+    #[arg(long)]
+    pub foreground: bool,
+
+    /// Polling interval in seconds
+    #[arg(long, default_value = "30")]
+    pub interval: u64,
+
+    /// Stop a running daemon
+    #[arg(long)]
+    pub stop: bool,
+
+    /// Show daemon status (running, PID, last scan)
+    #[arg(long)]
+    pub status: bool,
 }
 
 /// Arguments for the scan command

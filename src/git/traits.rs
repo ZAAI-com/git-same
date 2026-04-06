@@ -4,7 +4,7 @@
 //! allowing for both real and mock implementations for testing.
 
 use crate::errors::GitError;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Options for cloning a repository.
 #[derive(Debug, Clone, Default)]
@@ -73,6 +73,45 @@ impl RepoStatus {
     pub fn can_fast_forward(&self) -> bool {
         !self.is_uncommitted && self.ahead == 0 && self.behind > 0
     }
+}
+
+/// Information about a local branch and its upstream tracking status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchInfo {
+    /// Local branch name
+    pub name: String,
+    /// Upstream tracking branch (e.g., "origin/main")
+    pub upstream: Option<String>,
+    /// Commits ahead of upstream
+    pub ahead: u32,
+    /// Commits behind upstream
+    pub behind: u32,
+    /// Whether branch is fully synced (ahead == 0 && behind == 0 && has upstream)
+    pub is_synced: bool,
+}
+
+/// Information about a git remote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteInfo {
+    /// Remote name (e.g., "origin")
+    pub name: String,
+    /// Fetch URL
+    pub fetch_url: String,
+    /// Push URL (may differ from fetch URL)
+    pub push_url: String,
+}
+
+/// Information about a git worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeInfo {
+    /// Absolute path to the worktree
+    pub path: PathBuf,
+    /// Branch checked out in this worktree
+    pub branch: Option<String>,
+    /// Whether this is a bare repository
+    pub is_bare: bool,
+    /// Whether HEAD is detached
+    pub is_detached: bool,
 }
 
 /// Result of a fetch operation.
@@ -152,6 +191,44 @@ pub trait GitOperations: Send + Sync {
     /// * `repo_path` - Path to the local repository
     /// * `limit` - Maximum number of commits to return
     fn recent_commits(&self, repo_path: &Path, limit: usize) -> Result<Vec<String>, GitError>;
+
+    /// Lists all local branches with their upstream tracking status.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn list_branches(&self, repo_path: &Path) -> Result<Vec<BranchInfo>, GitError>;
+
+    /// Lists all configured remotes with their URLs.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, GitError>;
+
+    /// Lists all worktrees for a repository.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn list_worktrees(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, GitError>;
+
+    /// Gets the total number of commits on the current branch.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn commit_count(&self, repo_path: &Path) -> Result<u64, GitError>;
+
+    /// Gets the number of stash entries.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn stash_count(&self, repo_path: &Path) -> Result<usize, GitError>;
+
+    /// Lists ignored files that exist on disk.
+    ///
+    /// Returns file paths relative to the repository root.
+    ///
+    /// # Arguments
+    /// * `repo_path` - Path to the local repository
+    fn list_ignored_files(&self, repo_path: &Path) -> Result<Vec<String>, GitError>;
 }
 
 /// A mock implementation of GitOperations for testing.
@@ -386,6 +463,40 @@ pub mod mock {
             _repo_path: &Path,
             _limit: usize,
         ) -> Result<Vec<String>, GitError> {
+            Ok(Vec::new())
+        }
+
+        fn list_branches(&self, _repo_path: &Path) -> Result<Vec<BranchInfo>, GitError> {
+            Ok(vec![BranchInfo {
+                name: self.config.default_status.branch.clone(),
+                upstream: Some(format!("origin/{}", self.config.default_status.branch)),
+                ahead: 0,
+                behind: 0,
+                is_synced: true,
+            }])
+        }
+
+        fn list_remotes(&self, _repo_path: &Path) -> Result<Vec<RemoteInfo>, GitError> {
+            Ok(vec![RemoteInfo {
+                name: "origin".to_string(),
+                fetch_url: "git@github.com:example/repo.git".to_string(),
+                push_url: "git@github.com:example/repo.git".to_string(),
+            }])
+        }
+
+        fn list_worktrees(&self, _repo_path: &Path) -> Result<Vec<WorktreeInfo>, GitError> {
+            Ok(Vec::new())
+        }
+
+        fn commit_count(&self, _repo_path: &Path) -> Result<u64, GitError> {
+            Ok(42)
+        }
+
+        fn stash_count(&self, _repo_path: &Path) -> Result<usize, GitError> {
+            Ok(0)
+        }
+
+        fn list_ignored_files(&self, _repo_path: &Path) -> Result<Vec<String>, GitError> {
             Ok(Vec::new())
         }
     }

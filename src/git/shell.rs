@@ -4,7 +4,10 @@
 //! by invoking git commands through the shell.
 
 use crate::errors::GitError;
-use crate::git::traits::{CloneOptions, FetchResult, GitOperations, PullResult, RepoStatus};
+use crate::git::traits::{
+    BranchInfo, CloneOptions, FetchResult, GitOperations, PullResult, RemoteInfo, RepoStatus,
+    WorktreeInfo,
+};
 use std::path::Path;
 use std::process::{Command, Output};
 use tracing::{debug, trace};
@@ -105,6 +108,26 @@ impl ShellGit {
             unstaged_count,
             untracked_count,
         }
+    }
+
+    /// Parses the %(upstream:track) format from for-each-ref.
+    /// Format: "[ahead N]", "[behind N]", "[ahead N, behind M]", or "" (synced/no upstream).
+    fn parse_track_info(track: &str) -> (u32, u32) {
+        let mut ahead = 0;
+        let mut behind = 0;
+        if let Some(start) = track.find('[') {
+            if let Some(end) = track.find(']') {
+                let content = &track[start + 1..end];
+                for part in content.split(", ") {
+                    if let Some(n) = part.strip_prefix("ahead ") {
+                        ahead = n.parse().unwrap_or(0);
+                    } else if let Some(n) = part.strip_prefix("behind ") {
+                        behind = n.parse().unwrap_or(0);
+                    }
+                }
+            }
+        }
+        (ahead, behind)
     }
 
     /// Parses branch info from git status -b --porcelain output.
@@ -350,6 +373,187 @@ impl GitOperations for ShellGit {
     fn recent_commits(&self, repo_path: &Path, limit: usize) -> Result<Vec<String>, GitError> {
         let limit_arg = format!("-{}", limit);
         let output = self.run_git_output(&["log", "--oneline", &limit_arg], Some(repo_path))?;
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+        Ok(output.lines().map(|l| l.to_string()).collect())
+    }
+
+    fn list_branches(&self, repo_path: &Path) -> Result<Vec<BranchInfo>, GitError> {
+        // Use for-each-ref to get branch name, upstream, and tracking status in one call
+        let output = self.run_git_output(
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)",
+                "refs/heads/",
+            ],
+            Some(repo_path),
+        )?;
+
+        let mut branches = Vec::new();
+        for line in output.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.splitn(3, '\t').collect();
+            let name = parts.first().unwrap_or(&"").to_string();
+            if name.is_empty() {
+                continue;
+            }
+
+            let upstream_raw = parts.get(1).unwrap_or(&"").to_string();
+            let upstream = if upstream_raw.is_empty() {
+                None
+            } else {
+                Some(upstream_raw)
+            };
+
+            let track = parts.get(2).unwrap_or(&"");
+            let (ahead, behind) = Self::parse_track_info(track);
+            let is_synced = upstream.is_some() && ahead == 0 && behind == 0;
+
+            branches.push(BranchInfo {
+                name,
+                upstream,
+                ahead,
+                behind,
+                is_synced,
+            });
+        }
+        Ok(branches)
+    }
+
+    fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, GitError> {
+        let output = self.run_git_output(&["remote", "-v"], Some(repo_path))?;
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // git remote -v outputs pairs: "origin\turl (fetch)" and "origin\turl (push)"
+        // Collect into a map keyed by remote name
+        let mut remotes: std::collections::BTreeMap<String, (String, String)> =
+            std::collections::BTreeMap::new();
+
+        for line in output.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let name = parts[0].to_string();
+            let url = parts[1].to_string();
+            let kind = parts[2]; // "(fetch)" or "(push)"
+
+            let entry = remotes
+                .entry(name)
+                .or_insert_with(|| (String::new(), String::new()));
+            if kind == "(fetch)" {
+                entry.0 = url;
+            } else if kind == "(push)" {
+                entry.1 = url;
+            }
+        }
+
+        Ok(remotes
+            .into_iter()
+            .map(|(name, (fetch_url, push_url))| RemoteInfo {
+                name,
+                fetch_url: fetch_url.clone(),
+                push_url: if push_url.is_empty() {
+                    fetch_url
+                } else {
+                    push_url
+                },
+            })
+            .collect())
+    }
+
+    fn list_worktrees(&self, repo_path: &Path) -> Result<Vec<WorktreeInfo>, GitError> {
+        let output = self.run_git_output(&["worktree", "list", "--porcelain"], Some(repo_path))?;
+        if output.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Porcelain format: blocks separated by blank lines
+        // Each block: "worktree <path>\nHEAD <sha>\nbranch refs/heads/<name>\n"
+        // Or: "worktree <path>\nHEAD <sha>\ndetached\n"
+        // Or: "worktree <path>\nbare\n"
+        let mut worktrees = Vec::new();
+        let mut current_path: Option<std::path::PathBuf> = None;
+        let mut current_branch: Option<String> = None;
+        let mut is_bare = false;
+        let mut is_detached = false;
+
+        for line in output.lines() {
+            if line.is_empty() {
+                // End of a worktree block
+                if let Some(path) = current_path.take() {
+                    worktrees.push(WorktreeInfo {
+                        path,
+                        branch: current_branch.take(),
+                        is_bare,
+                        is_detached,
+                    });
+                }
+                is_bare = false;
+                is_detached = false;
+                continue;
+            }
+
+            if let Some(path_str) = line.strip_prefix("worktree ") {
+                current_path = Some(std::path::PathBuf::from(path_str));
+            } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+                // Strip "refs/heads/" prefix to get short branch name
+                current_branch = Some(
+                    branch_ref
+                        .strip_prefix("refs/heads/")
+                        .unwrap_or(branch_ref)
+                        .to_string(),
+                );
+            } else if line == "bare" {
+                is_bare = true;
+            } else if line == "detached" {
+                is_detached = true;
+            }
+        }
+
+        // Handle last block (porcelain output may not end with blank line)
+        if let Some(path) = current_path.take() {
+            worktrees.push(WorktreeInfo {
+                path,
+                branch: current_branch.take(),
+                is_bare,
+                is_detached,
+            });
+        }
+
+        Ok(worktrees)
+    }
+
+    fn commit_count(&self, repo_path: &Path) -> Result<u64, GitError> {
+        let output = self.run_git_output(&["rev-list", "--count", "HEAD"], Some(repo_path))?;
+        output.parse().map_err(|_| {
+            GitError::command_failed(
+                "git rev-list --count HEAD",
+                format!("Could not parse commit count: '{}'", output),
+            )
+        })
+    }
+
+    fn stash_count(&self, repo_path: &Path) -> Result<usize, GitError> {
+        let output = self.run_git_output(&["stash", "list"], Some(repo_path));
+        match output {
+            Ok(s) if s.is_empty() => Ok(0),
+            Ok(s) => Ok(s.lines().count()),
+            // git stash list returns error on repos with no stashes in some git versions
+            Err(_) => Ok(0),
+        }
+    }
+
+    fn list_ignored_files(&self, repo_path: &Path) -> Result<Vec<String>, GitError> {
+        let output = self.run_git_output(
+            &["ls-files", "--others", "--ignored", "--exclude-standard"],
+            Some(repo_path),
+        )?;
         if output.is_empty() {
             return Ok(Vec::new());
         }
