@@ -3,7 +3,7 @@
 //! Provides reusable requirement checks for both the CLI `init` command
 //! and the TUI init screen.
 
-use crate::auth::{gh_cli, ssh};
+use crate::auth::gh_cli;
 use std::process::Command;
 
 /// Result of a single requirement check.
@@ -139,24 +139,68 @@ fn check_gh_authenticated() -> CheckResult {
 
 /// Check if SSH access to GitHub works.
 fn check_ssh_github_access() -> CheckResult {
-    if ssh::has_github_ssh_access() {
-        CheckResult {
-            name: "SSH GitHub".to_string(),
+    use crate::auth::ssh::{probe_github_ssh, SshProbeResult};
+
+    let name = "SSH GitHub".to_string();
+    let critical = false;
+
+    match probe_github_ssh() {
+        SshProbeResult::Authenticated => CheckResult {
+            name,
             passed: true,
             message: "authenticated".to_string(),
             suggestion: None,
-            critical: false,
-        }
-    } else {
-        CheckResult {
-            name: "SSH GitHub".to_string(),
+            critical,
+        },
+        SshProbeResult::SshNotFound => CheckResult {
+            name,
             passed: false,
-            message: "cannot reach github.com via SSH".to_string(),
+            message: "ssh not found in PATH".to_string(),
+            suggestion: Some("Install OpenSSH: https://git-scm.com/downloads".to_string()),
+            critical,
+        },
+        SshProbeResult::PermissionDenied => CheckResult {
+            name,
+            passed: false,
+            message: "permission denied (no valid SSH key)".to_string(),
             suggestion: Some(
                 "Add your SSH key to GitHub: https://github.com/settings/keys".to_string(),
             ),
-            critical: false,
-        }
+            critical,
+        },
+        SshProbeResult::HostKeyVerificationFailed => CheckResult {
+            name,
+            passed: false,
+            message: "host key verification failed".to_string(),
+            suggestion: Some(
+                "Run 'ssh -T git@github.com' once to accept GitHub's host key".to_string(),
+            ),
+            critical,
+        },
+        SshProbeResult::ConnectionTimeout => CheckResult {
+            name,
+            passed: false,
+            message: "connection to github.com timed out".to_string(),
+            suggestion: Some("Check your network connection or firewall settings".to_string()),
+            critical,
+        },
+        SshProbeResult::DnsFailure => CheckResult {
+            name,
+            passed: false,
+            message: "cannot resolve github.com".to_string(),
+            suggestion: Some("Check your DNS settings and internet connection".to_string()),
+            critical,
+        },
+        SshProbeResult::Unknown(stderr) => CheckResult {
+            name,
+            passed: false,
+            message: format!(
+                "SSH check failed: {}",
+                stderr.lines().next().unwrap_or("unknown error")
+            ),
+            suggestion: Some("Run 'ssh -vT git@github.com' for detailed diagnostics".to_string()),
+            critical,
+        },
     }
 }
 
