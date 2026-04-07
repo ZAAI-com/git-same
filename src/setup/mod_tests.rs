@@ -50,7 +50,7 @@ fn apply_requirements_check_results_updates_state_and_clears_loading() {
 
     let results = vec![
         sample_check("Git", true, true),
-        sample_check("SSH Keys", false, false),
+        sample_check("SSH GitHub", false, false),
     ];
     apply_requirements_check_results(&mut state, results);
 
@@ -58,7 +58,7 @@ fn apply_requirements_check_results_updates_state_and_clears_loading() {
     assert_eq!(state.check_results.len(), 2);
     assert_eq!(state.check_results[0].name, "Git");
     assert!(state.check_results[0].passed);
-    assert_eq!(state.check_results[1].name, "SSH Keys");
+    assert_eq!(state.check_results[1].name, "SSH GitHub");
     assert!(!state.check_results[1].passed);
 }
 

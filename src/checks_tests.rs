@@ -16,13 +16,6 @@ fn test_check_gh_installed_runs() {
 }
 
 #[test]
-fn test_check_ssh_keys_runs() {
-    let result = check_ssh_keys();
-    assert_eq!(result.name, "SSH Keys");
-    assert!(!result.critical);
-}
-
-#[test]
 fn test_check_result_fields() {
     let result = CheckResult {
         name: "Test".to_string(),
@@ -38,10 +31,9 @@ fn test_check_result_fields() {
 #[tokio::test]
 async fn test_check_requirements_returns_all_checks() {
     let results = check_requirements().await;
-    assert_eq!(results.len(), 5);
+    assert_eq!(results.len(), 4);
     assert_eq!(results[0].name, "Git");
     assert_eq!(results[1].name, "GitHub CLI");
     assert_eq!(results[2].name, "GitHub Auth");
-    assert_eq!(results[3].name, "SSH Keys");
-    assert_eq!(results[4].name, "SSH GitHub");
+    assert_eq!(results[3].name, "SSH GitHub");
 }
