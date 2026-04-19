@@ -192,15 +192,28 @@ async fn handle_auth(state: &mut SetupState, key: KeyEvent) {
 
 async fn do_authenticate(state: &mut SetupState) {
     let ws_provider = state.build_workspace_provider();
-    match get_auth_for_provider(&ws_provider) {
+    // Auth shells out to `gh`; run it on the blocking pool so the TUI event
+    // loop keeps rendering instead of freezing on a stalled subprocess.
+    let result = tokio::task::spawn_blocking(move || match get_auth_for_provider(&ws_provider) {
         Ok(auth) => {
             let username = auth.username.or_else(|| gh_cli::get_username().ok());
+            Ok((auth.token, username))
+        }
+        Err(e) => Err(e.to_string()),
+    })
+    .await;
+
+    match result {
+        Ok(Ok((token, username))) => {
             state.username = username;
-            state.auth_token = Some(auth.token);
+            state.auth_token = Some(token);
             state.auth_status = AuthStatus::Success;
         }
+        Ok(Err(e)) => {
+            state.auth_status = AuthStatus::Failed(e);
+        }
         Err(e) => {
-            state.auth_status = AuthStatus::Failed(e.to_string());
+            state.auth_status = AuthStatus::Failed(format!("Auth task failed: {}", e));
         }
     }
 }

@@ -63,8 +63,13 @@ pub async fn prepare_sync_workspace(
     request: SyncWorkspaceRequest<'_>,
     discovery_progress: &dyn DiscoveryProgress,
 ) -> Result<PreparedSyncWorkspace> {
-    // Authenticate and build provider
-    let auth = get_auth_for_provider(&request.workspace.provider)?;
+    // Authenticate and build provider. The auth path shells out to `gh`, which
+    // can stall on network or SSH issues; run it on the blocking pool so the
+    // async runtime stays responsive.
+    let provider_cfg = request.workspace.provider.clone();
+    let auth = tokio::task::spawn_blocking(move || get_auth_for_provider(&provider_cfg))
+        .await
+        .map_err(|e| AppError::auth(format!("Auth task failed: {}", e)))??;
     let provider = create_provider(&request.workspace.provider, &auth.token)?;
 
     // Build orchestrator from workspace + global config

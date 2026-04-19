@@ -1,6 +1,11 @@
 use super::*;
 
 #[test]
+fn test_gh_command_timeout_is_ten_seconds() {
+    assert_eq!(GH_COMMAND_TIMEOUT.as_secs(), 10);
+}
+
+#[test]
 fn test_is_installed_returns_bool() {
     // This test just verifies the function runs without panicking
     // The actual result depends on whether gh is installed
