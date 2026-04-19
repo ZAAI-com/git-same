@@ -41,6 +41,7 @@
 //! git same sync
 //! ```
 
+pub mod api;
 pub mod app;
 pub mod auth;
 pub mod banner;

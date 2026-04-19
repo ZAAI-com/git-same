@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Mutable context for directory scanning (keeps `scan_dir` under Clippy’s argument limit).
-struct ScanDirContext<'a, G: GitOperations> {
+struct ScanDirContext<'a, G: GitOperations + ?Sized> {
     base_path: &'a Path,
     git: &'a G,
     repos: &'a mut Vec<(PathBuf, String, String)>,
@@ -137,7 +137,7 @@ impl DiscoveryOrchestrator {
     }
 
     /// Scans local filesystem for cloned repositories.
-    pub fn scan_local<G: GitOperations>(
+    pub fn scan_local<G: GitOperations + ?Sized>(
         &self,
         base_path: &Path,
         git: &G,
@@ -164,7 +164,7 @@ impl DiscoveryOrchestrator {
     }
 
     /// Recursively scans directories for git repos.
-    fn scan_dir<G: GitOperations>(
+    fn scan_dir<G: GitOperations + ?Sized>(
         &self,
         path: &Path,
         current_depth: usize,
