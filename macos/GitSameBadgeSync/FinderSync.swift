@@ -98,13 +98,28 @@ class FinderSync: FIFinderSync {
         }
 
         let path = targetURL.path
+        let status = statusReader.currentStatus
+        let timestamp = status?.timestamp
 
         if let repoStatus = statusReader.repoStatus(forPath: path) {
-            return ContextMenuBuilder.build(for: repoStatus, socketClient: socketClient)
+            return ContextMenuBuilder.build(
+                for: repoStatus,
+                timestamp: timestamp,
+                socketClient: socketClient
+            )
         }
 
         if let orgFolder = statusReader.orgFolder(forPath: path) {
-            return ContextMenuBuilder.build(for: orgFolder)
+            let orgRepos = (status?.repos ?? []).filter {
+                $0.org == orgFolder.org && $0.workspace == orgFolder.workspace
+            }
+            let workspaceInfo = status?.workspaces.first { $0.name == orgFolder.workspace }
+            return ContextMenuBuilder.build(
+                for: orgFolder,
+                repos: orgRepos,
+                workspaceInfo: workspaceInfo,
+                timestamp: timestamp
+            )
         }
 
         return NSMenu()
