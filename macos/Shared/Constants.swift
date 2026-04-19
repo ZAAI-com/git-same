@@ -4,16 +4,23 @@
 import Foundation
 
 enum GitSameBadgeConstants {
+    /// Real $HOME, bypassing the sandbox container redirect that
+    /// FileManager.default.homeDirectoryForCurrentUser applies.
+    static var realHomeDirectory: String {
+        if let pw = getpwuid(getuid()), let home = pw.pointee.pw_dir {
+            return String(cString: home)
+        }
+        return NSHomeDirectory()
+    }
+
     /// Path to the status JSON file.
     static var statusFilePath: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/.config/git-same/finder/status.json"
+        return "\(realHomeDirectory)/.config/git-same/finder/status.json"
     }
 
     /// Path to the Unix socket for refresh requests.
     static var socketPath: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/.config/git-same/finder/finder.sock"
+        return "\(realHomeDirectory)/.config/git-same/finder/finder.sock"
     }
 
     /// Path to the git-same binary.

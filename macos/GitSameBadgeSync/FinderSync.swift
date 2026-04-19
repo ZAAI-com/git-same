@@ -3,6 +3,9 @@
 
 import Cocoa
 import FinderSync
+import os
+
+private let gsbLog = OSLog(subsystem: "com.zaai.git-same.GitSameBadge.FinderSync", category: "ext")
 
 class FinderSync: FIFinderSync {
 
@@ -11,43 +14,53 @@ class FinderSync: FIFinderSync {
 
     override init() {
         super.init()
+        os_log("FinderSync init entered", log: gsbLog, type: .default)
+        NSLog("GitSameBadge: FinderSync init")
 
-        // Register badge images
         BadgeManager.registerBadges()
 
-        // Start watching the status file
         statusReader.onStatusUpdate = { [weak self] in
             self?.updateMonitoredDirectories()
         }
         statusReader.startWatching()
+
+        // StatusReader reads the file eagerly in its init but only invokes
+        // onStatusUpdate on subsequent file-change events. Without this call,
+        // directoryURLs stays empty until the daemon next rewrites the file,
+        // so Finder never asks us for badges.
+        updateMonitoredDirectories()
     }
 
     // MARK: - Monitored Directories
 
     private func updateMonitoredDirectories() {
-        guard let status = statusReader.currentStatus else { return }
+        guard let status = statusReader.currentStatus else {
+            NSLog("GitSameBadge: updateMonitoredDirectories: no status yet")
+            return
+        }
 
         var urls = Set<URL>()
-
-        // Add workspace roots
         for workspace in status.workspaces {
             urls.insert(URL(fileURLWithPath: workspace.root))
         }
-
-        // Add custom folders
         for folder in status.customFolders ?? [] {
             urls.insert(URL(fileURLWithPath: folder))
         }
 
         FIFinderSyncController.default().directoryURLs = urls
+        let joined = urls.map { $0.path }.joined(separator: ",")
+        os_log("setDirectoryURLs count=%d paths=%{public}@",
+               log: gsbLog, type: .default, urls.count, joined)
+        NSLog("GitSameBadge: setDirectoryURLs count=%d paths=%@", urls.count, joined)
     }
 
     // MARK: - Badge Identifiers
 
     override func requestBadgeIdentifier(for url: URL) {
         let path = url.path
+        os_log("requestBadgeIdentifier path=%{public}@", log: gsbLog, type: .default, path)
+        NSLog("GitSameBadge: requestBadgeIdentifier for %@", path)
 
-        // Check if it's an org folder
         if statusReader.isOrgFolder(path: path) {
             FIFinderSyncController.default().setBadgeIdentifier(
                 GitSameBadgeConstants.BadgeID.org, for: url
@@ -55,7 +68,6 @@ class FinderSync: FIFinderSync {
             return
         }
 
-        // Check if it's a git repo
         if let repoStatus = statusReader.repoStatus(forPath: path) {
             let badgeID: String
             switch repoStatus.badge {
