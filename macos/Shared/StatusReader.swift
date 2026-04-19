@@ -16,8 +16,8 @@ class StatusReader {
     /// Lookup cache for repo status by path.
     private var reposByPath: [String: FinderRepoStatus] = [:]
 
-    /// Lookup cache for org folders.
-    private var orgPaths: Set<String> = []
+    /// Lookup cache for org folders by path.
+    private var orgFoldersByPath: [String: OrgFolderInfo] = [:]
 
     private var fileMonitor: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
@@ -85,14 +85,14 @@ class StatusReader {
                 repoMap[repo.path] = repo
             }
 
-            var orgSet: Set<String> = []
+            var orgMap: [String: OrgFolderInfo] = [:]
             for org in status.orgFolders ?? [] {
-                orgSet.insert(org.path)
+                orgMap[org.path] = org
             }
 
             self.currentStatus = status
             self.reposByPath = repoMap
-            self.orgPaths = orgSet
+            self.orgFoldersByPath = orgMap
         } catch {
             // Ignore parse errors (file might be mid-write, though atomic rename should prevent this)
         }
@@ -105,7 +105,12 @@ class StatusReader {
 
     /// Check if the given path is an org folder.
     func isOrgFolder(path: String) -> Bool {
-        return orgPaths.contains(path)
+        return orgFoldersByPath[path] != nil
+    }
+
+    /// Get the org-folder info for the given path, if any.
+    func orgFolder(forPath path: String) -> OrgFolderInfo? {
+        return orgFoldersByPath[path]
     }
 
     deinit {

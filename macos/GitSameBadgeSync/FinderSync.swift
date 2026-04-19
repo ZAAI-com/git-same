@@ -103,6 +103,10 @@ class FinderSync: FIFinderSync {
             return ContextMenuBuilder.build(for: repoStatus, socketClient: socketClient)
         }
 
+        if let orgFolder = statusReader.orgFolder(forPath: path) {
+            return ContextMenuBuilder.build(for: orgFolder)
+        }
+
         return NSMenu()
     }
 
