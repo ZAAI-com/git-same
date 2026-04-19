@@ -97,4 +97,19 @@ class FinderSync: FIFinderSync {
 
         return NSMenu()
     }
+
+    // MARK: - Context Menu Actions
+
+    @objc func refreshStatus(_ sender: Any?) {
+        socketClient.send("REFRESH_ALL") { _ in }
+    }
+
+    @objc func openInTerminal(_ sender: Any?) {
+        guard let targetURL = FIFinderSyncController.default().targetedURL() else { return }
+        NSWorkspace.shared.open(
+            [targetURL],
+            withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
 }

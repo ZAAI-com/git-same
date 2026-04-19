@@ -65,6 +65,11 @@ pub async fn run(args: &DaemonArgs, config: &Config, output: &Output) -> Result<
     // Main daemon loop
     let interval = tokio::time::Duration::from_secs(args.interval);
 
+    // Listen for SIGTERM in addition to SIGINT so `gisa daemon --stop`
+    // (which sends SIGTERM) triggers clean socket cleanup.
+    #[cfg(unix)]
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+
     loop {
         tokio::select! {
             // Wait for the polling interval
@@ -98,9 +103,15 @@ pub async fn run(args: &DaemonArgs, config: &Config, output: &Output) -> Result<
                     }
                 }
             },
-            // Handle shutdown signal
+            // Handle shutdown signals (SIGINT from ctrl-c, SIGTERM from `daemon --stop`)
             _ = tokio::signal::ctrl_c() => {
-                info!("Received shutdown signal");
+                info!("Received SIGINT");
+                output.info("Daemon shutting down...");
+                socket_listener.cleanup();
+                break;
+            },
+            _ = sigterm.recv() => {
+                info!("Received SIGTERM");
                 output.info("Daemon shutting down...");
                 socket_listener.cleanup();
                 break;
@@ -173,49 +184,13 @@ async fn handle_socket_connection(
 }
 
 /// Show daemon status.
-fn show_status(ipc_config: &IpcConfig, output: &Output) -> Result<()> {
+///
+/// User-facing diagnostic output is printed directly so it is not suppressed
+/// by the default Quiet verbosity: `--status` must always answer.
+fn show_status(ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
     let status_path = ipc_config.status_file_path();
     if !status_path.exists() {
-        output.info("Daemon is not running (no status file found)");
-        return Ok(());
-    }
-
-    let writer = StatusFileWriter::new(status_path);
-    match writer.read() {
-        Ok(status) => {
-            // Check if the PID is still alive
-            let pid = status.daemon_pid;
-            let is_alive = is_process_alive(pid);
-
-            if is_alive {
-                output.info(&format!("Daemon is running (PID: {})", pid));
-            } else {
-                output.info(&format!("Daemon is not running (stale PID: {})", pid));
-            }
-            output.info(&format!("Last scan: {}", status.timestamp));
-            output.info(&format!("Repos monitored: {}", status.repos.len()));
-            output.info(&format!(
-                "Workspaces: {}",
-                status
-                    .workspaces
-                    .iter()
-                    .map(|w| w.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        Err(e) => {
-            output.warn(&format!("Could not read status file: {}", e));
-        }
-    }
-    Ok(())
-}
-
-/// Stop a running daemon.
-fn stop_daemon(ipc_config: &IpcConfig, output: &Output) -> Result<()> {
-    let status_path = ipc_config.status_file_path();
-    if !status_path.exists() {
-        output.info("No daemon is running");
+        println!("Daemon is not running (no status file found)");
         return Ok(());
     }
 
@@ -224,19 +199,54 @@ fn stop_daemon(ipc_config: &IpcConfig, output: &Output) -> Result<()> {
         Ok(status) => {
             let pid = status.daemon_pid;
             if is_process_alive(pid) {
-                // Send SIGTERM via kill command
+                println!("Daemon is running (PID: {})", pid);
+            } else {
+                println!("Daemon is not running (stale PID: {})", pid);
+            }
+            println!("Last scan: {}", status.timestamp);
+            println!("Repos monitored: {}", status.repos.len());
+            println!(
+                "Workspaces: {}",
+                status
+                    .workspaces
+                    .iter()
+                    .map(|w| w.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        Err(e) => {
+            eprintln!("Could not read status file: {}", e);
+        }
+    }
+    Ok(())
+}
+
+/// Stop a running daemon.
+fn stop_daemon(ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
+    let status_path = ipc_config.status_file_path();
+    if !status_path.exists() {
+        println!("No daemon is running");
+        return Ok(());
+    }
+
+    let writer = StatusFileWriter::new(status_path);
+    match writer.read() {
+        Ok(status) => {
+            let pid = status.daemon_pid;
+            if is_process_alive(pid) {
                 let _ = std::process::Command::new("kill")
                     .args(["-TERM", &pid.to_string()])
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .status();
-                output.info(&format!("Sent stop signal to daemon (PID: {})", pid));
+                println!("Sent stop signal to daemon (PID: {})", pid);
             } else {
-                output.info("Daemon is not running (stale status file)");
+                println!("Daemon is not running (stale status file)");
             }
         }
         Err(_) => {
-            output.info("Could not read daemon status");
+            println!("Could not read daemon status");
         }
     }
     Ok(())
