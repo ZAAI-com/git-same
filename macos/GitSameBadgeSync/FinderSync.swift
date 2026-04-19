@@ -15,7 +15,6 @@ class FinderSync: FIFinderSync {
     override init() {
         super.init()
         os_log("FinderSync init entered", log: gsbLog, type: .default)
-        NSLog("GitSameBadge: FinderSync init")
 
         BadgeManager.registerBadges()
 
@@ -35,7 +34,7 @@ class FinderSync: FIFinderSync {
 
     private func updateMonitoredDirectories() {
         guard let status = statusReader.currentStatus else {
-            NSLog("GitSameBadge: updateMonitoredDirectories: no status yet")
+            os_log("updateMonitoredDirectories: no status yet", log: gsbLog, type: .default)
             return
         }
 
@@ -51,15 +50,12 @@ class FinderSync: FIFinderSync {
         let joined = urls.map { $0.path }.joined(separator: ",")
         os_log("setDirectoryURLs count=%d paths=%{public}@",
                log: gsbLog, type: .default, urls.count, joined)
-        NSLog("GitSameBadge: setDirectoryURLs count=%d paths=%@", urls.count, joined)
     }
 
     // MARK: - Badge Identifiers
 
     override func requestBadgeIdentifier(for url: URL) {
         let path = url.path
-        os_log("requestBadgeIdentifier path=%{public}@", log: gsbLog, type: .default, path)
-        NSLog("GitSameBadge: requestBadgeIdentifier for %@", path)
 
         if statusReader.isOrgFolder(path: path) {
             FIFinderSyncController.default().setBadgeIdentifier(
