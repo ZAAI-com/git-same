@@ -4,6 +4,7 @@
 //! using the GitHub CLI (`gh auth token`).
 
 pub mod gh_cli;
+pub(crate) mod process;
 pub mod ssh;
 
 use crate::config::WorkspaceProvider;

@@ -2,58 +2,18 @@
 //!
 //! Uses the `gh` CLI tool to obtain authentication tokens securely.
 
+use crate::auth::process::run_with_timeout;
 use crate::errors::AppError;
-use std::process::{Command, Output, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Output;
+use std::time::Duration;
 
 /// Maximum time to wait for any `gh` subprocess to complete.
 pub(crate) const GH_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Run a `gh` subcommand with a hard timeout, killing the child on expiry.
-///
-/// Prevents the async runtime from being blocked indefinitely if `gh` stalls
-/// (e.g. on network issues, interactive prompts, or a wedged SSH agent).
+/// Run a `gh` subcommand with a hard timeout, mapping I/O errors to `AppError`.
 fn run_gh_with_timeout(args: &[&str]) -> Result<Output, AppError> {
-    let mut child = Command::new("gh")
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| AppError::auth(format!("Failed to spawn 'gh {}': {}", args.join(" "), e)))?;
-
-    let deadline = Instant::now() + GH_COMMAND_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                return child.wait_with_output().map_err(|e| {
-                    AppError::auth(format!(
-                        "Failed to read output of 'gh {}': {}",
-                        args.join(" "),
-                        e
-                    ))
-                });
-            }
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(AppError::auth(format!(
-                        "'gh {}' timed out after {}s",
-                        args.join(" "),
-                        GH_COMMAND_TIMEOUT.as_secs()
-                    )));
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => {
-                return Err(AppError::auth(format!(
-                    "Failed to wait on 'gh {}': {}",
-                    args.join(" "),
-                    e
-                )));
-            }
-        }
-    }
+    run_with_timeout("gh", args, GH_COMMAND_TIMEOUT)
+        .map_err(|e| AppError::auth(format!("'gh {}' failed: {}", args.join(" "), e)))
 }
 
 /// Check if the GitHub CLI is installed.

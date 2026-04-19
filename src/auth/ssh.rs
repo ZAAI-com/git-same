@@ -4,8 +4,17 @@
 //! NOT GitHub API calls. This module detects if SSH keys are configured
 //! so we can provide better error messages and suggest SSH clone URLs.
 
+use crate::auth::process::run_with_timeout;
+use std::io;
 use std::path::PathBuf;
-use std::process::Command;
+use std::time::Duration;
+
+/// Maximum wall-clock time to wait for the SSH probe subprocess.
+///
+/// The SSH `ConnectTimeout=5` option only guards the TCP handshake; the
+/// authentication exchange that follows can still stall (e.g. on an
+/// unresponsive agent). This is an outer safety net that kills the process.
+pub(crate) const SSH_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Outcome of probing SSH connectivity to GitHub.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,22 +57,23 @@ fn parse_ssh_probe_output(stderr: &str) -> SshProbeResult {
 
 /// Probe SSH connectivity to GitHub and return a diagnostic result.
 ///
-/// Uses BatchMode to avoid interactive prompts. ConnectTimeout=5 prevents
-/// hanging on network issues.
+/// Uses BatchMode to avoid interactive prompts. `ConnectTimeout=5` guards
+/// the TCP connect; [`SSH_PROBE_TIMEOUT`] is an outer wall-clock limit that
+/// kills the process if the subsequent handshake stalls.
 pub fn probe_github_ssh() -> SshProbeResult {
-    let output = Command::new("ssh")
-        .args([
-            "-T",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=5",
-            "git@github.com",
-        ])
-        .output();
+    let args = [
+        "-T",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "git@github.com",
+    ];
 
-    match output {
+    match run_with_timeout("ssh", &args, SSH_PROBE_TIMEOUT) {
         Ok(o) => parse_ssh_probe_output(&String::from_utf8_lossy(&o.stderr)),
+        Err(e) if e.kind() == io::ErrorKind::TimedOut => SshProbeResult::ConnectionTimeout,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => SshProbeResult::SshNotFound,
         Err(_) => SshProbeResult::SshNotFound,
     }
 }

@@ -6,7 +6,7 @@
 use reqwest::header::AUTHORIZATION;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::errors::ProviderError;
 
@@ -18,6 +18,12 @@ const MAX_RETRIES: u32 = 3;
 
 /// Initial backoff in ms. Doubles each retry: 1s -> 2s -> 4s.
 const INITIAL_BACKOFF_MS: u64 = 1000;
+
+/// Hard wall-clock budget for a full paginated fetch.
+///
+/// Retries, rate-limit sleeps, and per-page requests all count against this
+/// budget. Prevents discovery from running for an unbounded amount of time.
+pub(crate) const PAGINATION_DEADLINE: Duration = Duration::from_secs(300);
 
 /// Parses the GitHub Link header to find the next page URL.
 ///
@@ -89,6 +95,7 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
     token: &str,
     initial_url: &str,
 ) -> Result<Vec<T>, ProviderError> {
+    let deadline = Instant::now() + PAGINATION_DEADLINE;
     let mut results = Vec::new();
     let mut url = Some(format!(
         "{}{}per_page=100",
@@ -103,6 +110,14 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
         let mut backoff_ms = INITIAL_BACKOFF_MS;
 
         let (next_url_opt, items) = loop {
+            if Instant::now() >= deadline {
+                return Err(ProviderError::Network(format!(
+                    "Pagination exceeded {}s budget for '{}'",
+                    PAGINATION_DEADLINE.as_secs(),
+                    initial_url
+                )));
+            }
+
             let response = match client
                 .get(&current_url)
                 .header(AUTHORIZATION, format!("Bearer {}", token))
@@ -131,12 +146,13 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
                             .and_then(|h| h.to_str().ok())
                             .unwrap_or("unknown");
 
-                        // Try to parse reset time and wait
+                        // Try to parse reset time and wait, but only if the
+                        // reset window fits inside the remaining budget.
                         if let Some(wait_time) = calculate_wait_time(reset) {
-                            if retry_count < MAX_RETRIES {
+                            let wait_with_buffer = wait_time + Duration::from_secs(5);
+                            let fits_budget = Instant::now() + wait_with_buffer < deadline;
+                            if retry_count < MAX_RETRIES && fits_budget {
                                 retry_count += 1;
-                                // Add a small buffer to the wait time
-                                let wait_with_buffer = wait_time + Duration::from_secs(5);
                                 tokio::time::sleep(wait_with_buffer).await;
                                 continue; // Retry the request
                             }
