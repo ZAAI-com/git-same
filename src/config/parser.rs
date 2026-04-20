@@ -46,6 +46,78 @@ pub struct FilterOptions {
     pub exclude_repos: Vec<String>,
 }
 
+/// Finder-badge discovery configuration.
+///
+/// Controls how the daemon finds ambient git repositories outside any
+/// configured workspace. Ambient repos get a neutral gray badge until the
+/// user opens their context menu, which triggers an on-demand upgrade.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinderConfig {
+    /// Roots to walk when looking for ambient git repos. Defaults to `["~"]`
+    /// (the user's home directory).
+    #[serde(default = "default_finder_scan_roots")]
+    pub scan_roots: Vec<String>,
+
+    /// Maximum directory depth to descend during the ambient walk.
+    #[serde(default = "default_finder_max_depth")]
+    pub max_depth: usize,
+
+    /// Directory names to skip during the ambient walk. Load-bearing for
+    /// performance: without entries like `node_modules` and `target`, the
+    /// scan times balloon on developer machines.
+    #[serde(default = "default_finder_excludes")]
+    pub exclude_dirs: Vec<String>,
+
+    /// Feature flag: when false, the daemon skips the ambient scan and only
+    /// workspace repos get badged (pre-change behaviour).
+    #[serde(default = "default_true")]
+    pub show_ambient: bool,
+}
+
+impl Default for FinderConfig {
+    fn default() -> Self {
+        Self {
+            scan_roots: default_finder_scan_roots(),
+            max_depth: default_finder_max_depth(),
+            exclude_dirs: default_finder_excludes(),
+            show_ambient: true,
+        }
+    }
+}
+
+fn default_finder_scan_roots() -> Vec<String> {
+    vec!["~".to_string()]
+}
+
+fn default_finder_max_depth() -> usize {
+    8
+}
+
+fn default_finder_excludes() -> Vec<String> {
+    vec![
+        "node_modules".into(),
+        "target".into(),
+        "build".into(),
+        "dist".into(),
+        "DerivedData".into(),
+        "Pods".into(),
+        "Library".into(),
+        ".cache".into(),
+        ".cargo".into(),
+        ".rustup".into(),
+        ".npm".into(),
+        ".yarn".into(),
+        ".venv".into(),
+        ".Trash".into(),
+        ".git-same".into(),
+        ".zsh_sessions".into(),
+    ]
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// Sync mode for existing repositories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -105,6 +177,10 @@ pub struct Config {
     /// Registry of known workspace root paths (tilde-collapsed).
     #[serde(default)]
     pub workspaces: Vec<String>,
+
+    /// Finder badge daemon configuration (ambient repo discovery).
+    #[serde(default)]
+    pub finder: FinderConfig,
 }
 
 fn default_structure() -> String {
@@ -130,6 +206,7 @@ impl Default for Config {
             clone: ConfigCloneOptions::default(),
             filters: FilterOptions::default(),
             workspaces: Vec::new(),
+            finder: FinderConfig::default(),
         }
     }
 }
@@ -250,6 +327,27 @@ include_forks = false
 
 # Exclude specific repos
 # exclude_repos = ["org/repo-to-skip"]
+
+[finder]
+# Show a neutral gray R-badge on every git repository found under
+# `scan_roots`, even outside a configured workspace. Right-clicking a gray
+# repo upgrades it to the normal color (green/blue/orange/red).
+show_ambient = true
+
+# Roots to walk for ambient repos. "~" expands to your home directory.
+# If you change this, update the FinderSync extension entitlements
+# (macos/GitSameBadgeSync/GitSameBadgeSync.entitlements) and re-sign.
+scan_roots = ["~"]
+
+# Maximum directory depth for the ambient walk.
+max_depth = 8
+
+# Directory names skipped during the ambient walk. Critical for performance.
+exclude_dirs = [
+    "node_modules", "target", "build", "dist", "DerivedData", "Pods",
+    "Library", ".cache", ".cargo", ".rustup", ".npm", ".yarn", ".venv",
+    ".Trash", ".git-same", ".zsh_sessions",
+]
 "#
     }
 

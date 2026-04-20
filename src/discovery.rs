@@ -232,6 +232,113 @@ impl DiscoveryOrchestrator {
     }
 }
 
+/// Walks the given roots and returns every git repository root found.
+///
+/// A directory is a repo if it contains a `.git` entry (directory for normal
+/// repos, or a file for worktree/submodule gitlinks). Once a repo is found we
+/// stop descending into it — we only care about repo roots, not files inside.
+///
+/// - `max_depth` caps recursion depth (the root itself is depth 0).
+/// - `exclude` is matched against directory **names** (not full paths), so
+///   passing `"node_modules"` skips every `node_modules/` no matter where it
+///   sits. Pass lowercase for case-insensitive matching if needed; current
+///   behaviour is exact match.
+/// - Symlinks and cycles are handled via a visited-set of canonical paths.
+/// - Permission-denied or I/O errors are silently skipped.
+///
+/// Returns canonical paths in the order they were discovered, deduplicated.
+pub fn find_git_repos(
+    roots: &[PathBuf],
+    max_depth: usize,
+    exclude: &HashSet<String>,
+) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    let mut found_set: HashSet<PathBuf> = HashSet::new();
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+
+    for root in roots {
+        let Ok(canonical_root) = std::fs::canonicalize(root) else {
+            continue;
+        };
+        walk_for_repos(
+            &canonical_root,
+            0,
+            max_depth,
+            exclude,
+            &mut found,
+            &mut found_set,
+            &mut visited,
+        );
+    }
+
+    found
+}
+
+fn walk_for_repos(
+    path: &Path,
+    depth: usize,
+    max_depth: usize,
+    exclude: &HashSet<String>,
+    found: &mut Vec<PathBuf>,
+    found_set: &mut HashSet<PathBuf>,
+    visited: &mut HashSet<PathBuf>,
+) {
+    if !visited.insert(path.to_path_buf()) {
+        return;
+    }
+
+    // A repo is identified by the presence of a `.git` entry (dir or file).
+    // `symlink_metadata` is cheaper than `metadata` and doesn't follow links.
+    if std::fs::symlink_metadata(path.join(".git")).is_ok() {
+        if found_set.insert(path.to_path_buf()) {
+            found.push(path.to_path_buf());
+        }
+        return; // don't descend into a repo's own tree
+    }
+
+    if depth >= max_depth {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Skip excluded names and hidden dirs (hidden dirs rarely contain
+        // repos we care about; `.git-same`, `.Trash` etc. already excluded
+        // by name list but this is a belt-and-braces).
+        if exclude.contains(name_str.as_ref()) {
+            continue;
+        }
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        let child = entry.path();
+        let canonical_child = std::fs::canonicalize(&child).unwrap_or(child);
+        walk_for_repos(
+            &canonical_child,
+            depth + 1,
+            max_depth,
+            exclude,
+            found,
+            found_set,
+            visited,
+        );
+    }
+}
+
 /// Merges discovered repos from multiple providers.
 pub fn merge_repos(repos_by_provider: Vec<(String, Vec<OwnedRepo>)>) -> Vec<(String, OwnedRepo)> {
     let mut result = Vec::new();

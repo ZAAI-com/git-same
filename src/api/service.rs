@@ -5,15 +5,17 @@
 //! backend and a config, then invoke `scan_all()`, `scan_workspace()`, or
 //! `scan_repo()`.
 
+use crate::api::{AmbientUpgradeCache, OwnerTypeCache};
 use crate::config::{Config, WorkspaceConfig, WorkspaceStore};
-use crate::discovery::DiscoveryOrchestrator;
+use crate::discovery::{find_git_repos, DiscoveryOrchestrator};
 use crate::errors::Result;
 use crate::git::GitOperations;
 use crate::types::finder_status::{
-    compute_badge, matches_important_pattern, FinderBranchInfo, FinderRemoteInfo, FinderRepoStatus,
-    FinderStatus, FinderWorkspaceInfo, FinderWorktreeInfo, OrgFolderInfo,
-    DEFAULT_IMPORTANT_IGNORED_PATTERNS,
+    compute_badge, matches_important_pattern, Badge, FinderBranchInfo, FinderRemoteInfo,
+    FinderRepoStatus, FinderStatus, FinderWorkspaceInfo, FinderWorktreeInfo, OrgFolderInfo,
+    OwnerType, DEFAULT_IMPORTANT_IGNORED_PATTERNS,
 };
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
@@ -24,12 +26,45 @@ use tracing::debug;
 pub struct RepoScanService<'a> {
     git: &'a dyn GitOperations,
     config: &'a Config,
+    owner_types: Option<OwnerTypeCache>,
+    ambient_upgrades: Option<AmbientUpgradeCache>,
 }
 
 impl<'a> RepoScanService<'a> {
     /// Create a new service bound to a git backend and config.
     pub fn new(git: &'a dyn GitOperations, config: &'a Config) -> Self {
-        Self { git, config }
+        Self {
+            git,
+            config,
+            owner_types: None,
+            ambient_upgrades: None,
+        }
+    }
+
+    /// Attach an owner-type cache so scanned org folders are annotated with
+    /// `OwnerType::User` / `OwnerType::Organization`.
+    pub fn with_owner_types(mut self, cache: OwnerTypeCache) -> Self {
+        self.owner_types = Some(cache);
+        self
+    }
+
+    /// Attach an ambient-upgrade cache so previously-upgraded ambient repos
+    /// keep their semantic color across periodic rescans.
+    pub fn with_ambient_upgrades(mut self, cache: AmbientUpgradeCache) -> Self {
+        self.ambient_upgrades = Some(cache);
+        self
+    }
+
+    /// Clone the attached owner-type cache handle, if any, so socket-handler
+    /// tasks can reuse the same cache.
+    pub fn owner_types_clone(&self) -> Option<OwnerTypeCache> {
+        self.owner_types.clone()
+    }
+
+    /// Clone the attached ambient-upgrade cache handle, if any, so socket-handler
+    /// tasks can reuse it.
+    pub fn ambient_upgrades_clone(&self) -> Option<AmbientUpgradeCache> {
+        self.ambient_upgrades.clone()
     }
 
     /// Scan all workspaces and build a complete `FinderStatus`.
@@ -100,13 +135,29 @@ impl<'a> RepoScanService<'a> {
                 org_names.clone()
             };
 
-            for org_name in &org_dirs {
-                let org_path = base_path.join(org_name);
-                if org_path.exists() {
+            // Include the configured `username` alongside the orgs list so the
+            // user's own GitHub login gets a folder entry (and a "U" badge) even
+            // if it isn't in the org allowlist.
+            let mut owner_dirs: Vec<(String, OwnerType)> = org_dirs
+                .iter()
+                .map(|n| (n.clone(), OwnerType::Unknown))
+                .collect();
+            if !ws_config.username.is_empty()
+                && !owner_dirs.iter().any(|(n, _)| n == &ws_config.username)
+            {
+                owner_dirs.push((ws_config.username.clone(), OwnerType::User));
+            }
+
+            for (owner_name, known_type) in &owner_dirs {
+                let owner_path = base_path.join(owner_name);
+                if owner_path.exists() {
+                    let cached = self.owner_types.as_ref().and_then(|c| c.get(owner_name));
+                    let owner_type = cached.unwrap_or(*known_type);
                     status.org_folders.push(OrgFolderInfo {
-                        path: org_path,
-                        org: org_name.clone(),
+                        path: owner_path,
+                        org: owner_name.clone(),
                         workspace: ws_name.clone(),
+                        owner_type,
                     });
                 }
             }
@@ -116,7 +167,105 @@ impl<'a> RepoScanService<'a> {
             status.repos.extend(repos);
         }
 
+        self.populate_ambient(&mut status);
+
         Ok(status)
+    }
+
+    /// Append ambient (non-workspace) repos and populate `monitored_roots`.
+    ///
+    /// Monitored roots = workspace roots ∪ `finder.scan_roots`. The extension
+    /// uses this union as its `FIFinderSyncController.directoryURLs`.
+    fn populate_ambient(&self, status: &mut FinderStatus) {
+        // Always publish workspace roots so the extension can register them.
+        for ws in &status.workspaces {
+            if !status.monitored_roots.contains(&ws.root) {
+                status.monitored_roots.push(ws.root.clone());
+            }
+        }
+
+        if !self.config.finder.show_ambient {
+            return;
+        }
+
+        let scan_roots: Vec<PathBuf> = self
+            .config
+            .finder
+            .scan_roots
+            .iter()
+            .map(|s| shellexpand::tilde(s).to_string())
+            .map(PathBuf::from)
+            .filter(|p| p.exists())
+            .collect();
+
+        for root in &scan_roots {
+            let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+            if !status.monitored_roots.contains(&canonical) {
+                status.monitored_roots.push(canonical);
+            }
+        }
+
+        let exclude: HashSet<String> = self.config.finder.exclude_dirs.iter().cloned().collect();
+        let ambient_paths = find_git_repos(&scan_roots, self.config.finder.max_depth, &exclude);
+
+        // Dedupe against already-emitted workspace repos (canonical form).
+        let workspace_paths: HashSet<PathBuf> = status
+            .repos
+            .iter()
+            .map(|r| std::fs::canonicalize(&r.path).unwrap_or_else(|_| r.path.clone()))
+            .collect();
+
+        for path in ambient_paths {
+            if workspace_paths.contains(&path) {
+                continue;
+            }
+
+            // Upgraded ambient repos stay upgraded until the daemon exits
+            // or the repo disappears.
+            let entry = self
+                .ambient_upgrades
+                .as_ref()
+                .and_then(|cache| {
+                    if !path.join(".git").exists() {
+                        cache.remove(&path);
+                        return None;
+                    }
+                    cache.get(&path)
+                })
+                .unwrap_or_else(|| self.scan_ambient_repo(&path));
+
+            status.repos.push(entry);
+        }
+    }
+
+    /// Build a minimal `FinderRepoStatus` for an ambient (non-workspace) repo.
+    ///
+    /// Intentionally performs zero git I/O: the user only needs to *spot* the
+    /// repo. Full status is computed on demand when the right-click menu
+    /// triggers a `REFRESH /path`.
+    pub fn scan_ambient_repo(&self, path: &Path) -> FinderRepoStatus {
+        FinderRepoStatus {
+            path: path.to_path_buf(),
+            workspace: None,
+            org: None,
+            badge: Badge::Gray,
+            current_branch: String::new(),
+            default_branch: None,
+            commit_count: 0,
+            staged_count: 0,
+            unstaged_count: 0,
+            untracked_count: 0,
+            ahead: 0,
+            behind: 0,
+            stash_count: 0,
+            has_important_ignored_files: false,
+            important_ignored_files: Vec::new(),
+            branches: Vec::new(),
+            all_branches_synced: true,
+            remotes: Vec::new(),
+            worktrees: Vec::new(),
+            all_worktrees_synced: true,
+        }
     }
 
     /// Scan a single workspace and return its repos with full `FinderRepoStatus`.

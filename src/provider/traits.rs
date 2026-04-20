@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 
 use crate::errors::ProviderError;
-use crate::types::{Org, OwnedRepo, ProviderKind, Repo};
+use crate::types::{Org, OwnedRepo, OwnerType, ProviderKind, Repo};
 
 /// Authentication credentials for a provider.
 #[derive(Debug, Clone)]
@@ -207,6 +207,11 @@ pub trait Provider: Send + Sync {
 
     /// Returns the clone URL for a repo (SSH or HTTPS based on preference).
     fn get_clone_url(&self, repo: &Repo, prefer_ssh: bool) -> String;
+
+    /// Classifies whether the given account name is a personal user or an
+    /// organization. Used by the Finder badge daemon to pick between "U" and
+    /// "O" badges on workspace folders.
+    async fn get_owner_type(&self, name: &str) -> Result<OwnerType, ProviderError>;
 }
 
 #[cfg(test)]

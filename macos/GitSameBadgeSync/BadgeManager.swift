@@ -11,64 +11,65 @@ enum BadgeManager {
         let controller = FIFinderSyncController.default()
 
         controller.setBadgeImage(
-            dotImage(color: .systemGreen),
+            labeledBadge(text: "R", color: .systemGreen),
             label: "Synced",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.green
         )
         controller.setBadgeImage(
-            dotImage(color: .systemBlue),
+            labeledBadge(text: "R", color: .systemBlue),
             label: "Has Local Config",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.blue
         )
         controller.setBadgeImage(
-            dotImage(color: .systemOrange),
+            labeledBadge(text: "R", color: .systemOrange),
             label: "Partially Synced",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.orange
         )
         controller.setBadgeImage(
-            dotImage(color: .systemRed),
+            labeledBadge(text: "R", color: .systemRed),
             label: "Uncommitted Changes",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.red
         )
         controller.setBadgeImage(
-            orgImage(),
+            labeledBadge(text: "O", color: .systemPurple),
             label: "Organization",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.org
         )
+        controller.setBadgeImage(
+            labeledBadge(text: "U", color: .systemTeal),
+            label: "User",
+            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.user
+        )
     }
 
-    /// Colored dot badge, drawn via closure so it works without a
-    /// display context (lockFocus produces zero-pixel layer data in
-    /// sandboxed extensions).
-    private static func dotImage(color: NSColor) -> NSImage {
-        let size = NSSize(width: 16, height: 16)
+    /// Rounded-rect badge with centered white text on a colored fill.
+    ///
+    /// Drawn via NSImage(size:flipped:drawingHandler:) so the image has
+    /// valid CGImage-backed pixel data in a sandboxed extension where
+    /// lockFocus produces zero-pixel layers.
+    private static func labeledBadge(text: String, color: NSColor) -> NSImage {
+        let size = NSSize(width: 64, height: 64)
         return NSImage(size: size, flipped: false) { rect in
-            let circle = NSBezierPath(ovalIn: NSRect(x: 2, y: 2, width: 12, height: 12))
+            let inset: CGFloat = 4
+            let bodyRect = rect.insetBy(dx: inset, dy: inset)
+            let body = NSBezierPath(roundedRect: bodyRect, xRadius: 14, yRadius: 14)
             color.setFill()
-            circle.fill()
-            NSColor.white.withAlphaComponent(0.5).setStroke()
-            circle.lineWidth = 1.0
-            circle.stroke()
-            return true
-        }
-    }
-
-    /// Org-folder badge: purple building silhouette with four windows.
-    private static func orgImage() -> NSImage {
-        let size = NSSize(width: 16, height: 16)
-        return NSImage(size: size, flipped: false) { rect in
-            let body = NSBezierPath(
-                roundedRect: NSRect(x: 3, y: 2, width: 10, height: 12),
-                xRadius: 1,
-                yRadius: 1
-            )
-            NSColor.systemPurple.setFill()
             body.fill()
+            NSColor.white.withAlphaComponent(0.35).setStroke()
+            body.lineWidth = 2.0
+            body.stroke()
 
-            NSColor.white.setFill()
-            for (x, y) in [(5, 9), (9, 9), (5, 5), (9, 5)] {
-                NSBezierPath(rect: NSRect(x: x, y: y, width: 2, height: 2)).fill()
-            }
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 44, weight: .heavy),
+                .foregroundColor: NSColor.white,
+            ]
+            let attributed = NSAttributedString(string: text, attributes: attrs)
+            let textSize = attributed.size()
+            let origin = NSPoint(
+                x: rect.midX - textSize.width / 2,
+                y: rect.midY - textSize.height / 2
+            )
+            attributed.draw(at: origin)
             return true
         }
     }

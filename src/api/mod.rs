@@ -13,6 +13,10 @@
 //! Consumers hold a `&RepoScanService` and call `scan_all()`, `scan_workspace()`,
 //! or `scan_repo()` to get structured `FinderStatus` / `FinderRepoStatus` values.
 
+pub mod ambient_upgrade_cache;
+pub mod owner_type_cache;
 pub mod service;
 
+pub use ambient_upgrade_cache::AmbientUpgradeCache;
+pub use owner_type_cache::OwnerTypeCache;
 pub use service::RepoScanService;

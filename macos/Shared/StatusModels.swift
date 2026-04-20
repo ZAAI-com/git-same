@@ -75,11 +75,24 @@ struct FinderRepoStatus: Codable {
     }
 }
 
-/// Organization folder inside a workspace.
+/// Classification of the account that owns an org/user folder.
+enum OwnerType: String, Codable {
+    case user
+    case organization
+    case unknown
+}
+
+/// Organization or user folder inside a workspace.
 struct OrgFolderInfo: Codable {
     let path: String
     let org: String
     let workspace: String
+    let ownerType: OwnerType?
+
+    enum CodingKeys: String, CodingKey {
+        case path, org, workspace
+        case ownerType = "owner_type"
+    }
 }
 
 /// Workspace summary.

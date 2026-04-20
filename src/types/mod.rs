@@ -17,7 +17,7 @@ mod repo;
 
 pub use finder_status::{
     Badge, FinderBranchInfo, FinderRemoteInfo, FinderRepoStatus, FinderStatus, FinderWorkspaceInfo,
-    FinderWorktreeInfo, OrgFolderInfo,
+    FinderWorktreeInfo, OrgFolderInfo, OwnerType,
 };
 pub use provider::ProviderKind;
 pub use repo::{ActionPlan, OpResult, OpSummary, Org, OwnedRepo, Repo, SkippedRepo};

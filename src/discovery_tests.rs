@@ -193,3 +193,97 @@ fn test_to_discovery_options() {
     assert!(!options.include_forks);
     assert_eq!(options.org_filter, vec!["org1", "org2"]);
 }
+
+fn touch(path: &Path) {
+    std::fs::write(path, "").unwrap();
+}
+
+fn make_repo(dir: &Path) {
+    std::fs::create_dir_all(dir.join(".git")).unwrap();
+}
+
+#[test]
+fn find_git_repos_detects_root_and_nested_repos() {
+    let tmp = TempDir::new().unwrap();
+    make_repo(&tmp.path().join("top"));
+    make_repo(&tmp.path().join("nested/inner"));
+    std::fs::create_dir_all(tmp.path().join("not-a-repo")).unwrap();
+
+    let roots = vec![tmp.path().to_path_buf()];
+    let exclude: HashSet<String> = HashSet::new();
+    let found = find_git_repos(&roots, 5, &exclude);
+
+    assert!(found.iter().any(|p| p.ends_with("top")));
+    assert!(found.iter().any(|p| p.ends_with("inner")));
+    assert!(!found.iter().any(|p| p.ends_with("not-a-repo")));
+}
+
+#[test]
+fn find_git_repos_stops_descending_inside_a_repo() {
+    let tmp = TempDir::new().unwrap();
+    make_repo(&tmp.path().join("outer"));
+    // A nested ".git" inside an already-detected repo should NOT produce a
+    // second hit — we stop descending as soon as we see a repo root.
+    make_repo(&tmp.path().join("outer/sub"));
+
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 5, &HashSet::new());
+
+    let outer_hits = found
+        .iter()
+        .filter(|p| p.ends_with("outer") || p.ends_with("sub"))
+        .count();
+    assert_eq!(outer_hits, 1);
+}
+
+#[test]
+fn find_git_repos_honors_exclude_list() {
+    let tmp = TempDir::new().unwrap();
+    make_repo(&tmp.path().join("node_modules/leaky-lib"));
+    make_repo(&tmp.path().join("keep-me"));
+
+    let mut exclude = HashSet::new();
+    exclude.insert("node_modules".to_string());
+
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 5, &exclude);
+
+    assert!(found.iter().any(|p| p.ends_with("keep-me")));
+    assert!(!found.iter().any(|p| p.ends_with("leaky-lib")));
+}
+
+#[test]
+fn find_git_repos_respects_max_depth() {
+    let tmp = TempDir::new().unwrap();
+    make_repo(&tmp.path().join("a/b/c/deep-repo"));
+
+    // Depth 2 means we can descend "a" → "b" but not into "c".
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 2, &HashSet::new());
+    assert!(found.is_empty());
+
+    // Depth 4 reaches it.
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 4, &HashSet::new());
+    assert!(found.iter().any(|p| p.ends_with("deep-repo")));
+}
+
+#[test]
+fn find_git_repos_handles_gitlink_file() {
+    // Submodule/worktree gitlink: `.git` is a regular file, not a directory.
+    let tmp = TempDir::new().unwrap();
+    let submodule = tmp.path().join("submodule");
+    std::fs::create_dir_all(&submodule).unwrap();
+    touch(&submodule.join(".git"));
+
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 3, &HashSet::new());
+    assert!(found.iter().any(|p| p.ends_with("submodule")));
+}
+
+#[test]
+fn find_git_repos_skips_hidden_directories() {
+    let tmp = TempDir::new().unwrap();
+    make_repo(&tmp.path().join(".hidden/repo"));
+
+    let found = find_git_repos(&[tmp.path().to_path_buf()], 5, &HashSet::new());
+    assert!(
+        !found.iter().any(|p| p.ends_with("repo")),
+        "hidden dirs should not be traversed"
+    );
+}

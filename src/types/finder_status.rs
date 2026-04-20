@@ -10,6 +10,8 @@ use std::path::PathBuf;
 /// Badge color indicating repository health.
 ///
 /// Priority order: Red > Orange > Blue > Green.
+/// `Gray` is reserved for ambient (non-workspace) repos that haven't been
+/// classified yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Badge {
@@ -25,6 +27,9 @@ pub enum Badge {
     /// Staged, unstaged, untracked, or unpushed commits.
     /// DO NOT delete — uncommitted work or unpushed commits would be lost.
     Red,
+    /// Ambient git repo discovered outside any configured workspace.
+    /// Upgraded to a semantic color on demand (right-click → REFRESH /path).
+    Gray,
 }
 
 /// Branch sync status in the context menu.
@@ -83,12 +88,27 @@ pub struct FinderRepoStatus {
     pub all_worktrees_synced: bool,
 }
 
-/// An organization folder inside a git-same workspace.
+/// Classification of a GitHub account that owns repositories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum OwnerType {
+    /// Personal GitHub account.
+    User,
+    /// GitHub Organization account.
+    Organization,
+    /// Not yet classified (cache miss) or classification failed.
+    #[default]
+    Unknown,
+}
+
+/// An organization or user folder inside a git-same workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrgFolderInfo {
     pub path: PathBuf,
     pub org: String,
     pub workspace: String,
+    #[serde(default)]
+    pub owner_type: OwnerType,
 }
 
 /// Workspace summary for the status file.
@@ -114,6 +134,11 @@ pub struct FinderStatus {
     pub repos: Vec<FinderRepoStatus>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub org_folders: Vec<OrgFolderInfo>,
+    /// Union of workspace roots and ambient scan roots. The FinderSync
+    /// extension registers these as `FIFinderSyncController.directoryURLs`
+    /// so Finder knows which folders to ask about.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monitored_roots: Vec<PathBuf>,
 }
 
 impl FinderStatus {
@@ -130,6 +155,7 @@ impl FinderStatus {
             custom_folders: Vec::new(),
             repos: Vec::new(),
             org_folders: Vec::new(),
+            monitored_roots: Vec::new(),
         }
     }
 }

@@ -235,3 +235,36 @@ workspaces = "invalid"
     let content = std::fs::read_to_string(&path).unwrap();
     assert!(content.contains(r#"workspaces = "invalid""#));
 }
+
+#[test]
+fn finder_config_defaults() {
+    let cfg = FinderConfig::default();
+    assert_eq!(cfg.scan_roots, vec!["~".to_string()]);
+    assert_eq!(cfg.max_depth, 8);
+    assert!(cfg.show_ambient);
+    assert!(cfg.exclude_dirs.iter().any(|s| s == "node_modules"));
+    assert!(cfg.exclude_dirs.iter().any(|s| s == "target"));
+}
+
+#[test]
+fn finder_config_parses_from_toml() {
+    let content = r#"
+[finder]
+show_ambient = false
+max_depth = 3
+scan_roots = ["/tmp/repos"]
+exclude_dirs = ["custom_skip"]
+"#;
+    let cfg = Config::parse(content).unwrap();
+    assert!(!cfg.finder.show_ambient);
+    assert_eq!(cfg.finder.max_depth, 3);
+    assert_eq!(cfg.finder.scan_roots, vec!["/tmp/repos".to_string()]);
+    assert_eq!(cfg.finder.exclude_dirs, vec!["custom_skip".to_string()]);
+}
+
+#[test]
+fn finder_config_missing_section_uses_defaults() {
+    let cfg = Config::parse("concurrency = 4").unwrap();
+    assert!(cfg.finder.show_ambient);
+    assert_eq!(cfg.finder.max_depth, 8);
+}

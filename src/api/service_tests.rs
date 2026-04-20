@@ -5,7 +5,11 @@ use crate::git::traits::RepoStatus;
 use crate::types::finder_status::Badge;
 
 fn default_config() -> Config {
-    Config::default()
+    // Tests should not trigger the ambient $HOME walk, so disable it unless
+    // a specific test opts in.
+    let mut cfg = Config::default();
+    cfg.finder.show_ambient = false;
+    cfg
 }
 
 #[test]

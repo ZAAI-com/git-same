@@ -57,10 +57,11 @@ class FinderSync: FIFinderSync {
     override func requestBadgeIdentifier(for url: URL) {
         let path = url.path
 
-        if statusReader.isOrgFolder(path: path) {
-            FIFinderSyncController.default().setBadgeIdentifier(
-                GitSameBadgeConstants.BadgeID.org, for: url
-            )
+        if let orgFolder = statusReader.orgFolder(forPath: path) {
+            let badgeID = orgFolder.ownerType == .user
+                ? GitSameBadgeConstants.BadgeID.user
+                : GitSameBadgeConstants.BadgeID.org
+            FIFinderSyncController.default().setBadgeIdentifier(badgeID, for: url)
             return
         }
 

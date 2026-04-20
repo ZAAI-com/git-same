@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use super::traits::*;
 use crate::errors::ProviderError;
-use crate::types::{Org, OwnedRepo, ProviderKind, Repo};
+use crate::types::{Org, OwnedRepo, OwnerType, ProviderKind, Repo};
 
 /// A mock provider that can be configured with predefined responses.
 pub struct MockProvider {
@@ -238,6 +238,10 @@ impl Provider for MockProvider {
         } else {
             repo.clone_url.clone()
         }
+    }
+
+    async fn get_owner_type(&self, _name: &str) -> Result<OwnerType, ProviderError> {
+        Ok(OwnerType::Organization)
     }
 }
 

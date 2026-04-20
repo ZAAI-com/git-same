@@ -9,7 +9,7 @@ use super::pagination::fetch_all_pages;
 use super::GITHUB_API_URL;
 use crate::errors::ProviderError;
 use crate::provider::traits::*;
-use crate::types::{Org, OwnedRepo, ProviderKind, Repo};
+use crate::types::{Org, OwnedRepo, OwnerType, ProviderKind, Repo};
 
 /// Default timeout for API requests in seconds.
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
@@ -266,6 +266,22 @@ impl Provider for GitHubProvider {
         } else {
             repo.clone_url.clone()
         }
+    }
+
+    async fn get_owner_type(&self, name: &str) -> Result<OwnerType, ProviderError> {
+        #[derive(serde::Deserialize)]
+        struct UserOrOrg {
+            #[serde(rename = "type")]
+            kind: String,
+        }
+
+        let url = self.api_url(&format!("/users/{}", name));
+        let payload: UserOrOrg = self.get(&url).await?;
+        Ok(match payload.kind.as_str() {
+            "User" => OwnerType::User,
+            "Organization" => OwnerType::Organization,
+            _ => OwnerType::Unknown,
+        })
     }
 }
 
