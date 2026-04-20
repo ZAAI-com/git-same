@@ -1,8 +1,9 @@
 // ContextMenuBuilder.swift
 // Builds the right-click context menu for git repository folders and org folders.
 // Everything lives under a single top-level "Git-Same" item. Inside, data is
-// grouped into three sub-submenus: Organization, Repositories, Repository
-// details — followed by the last-scan timestamp and the action items.
+// grouped into four sub-submenus: Organization, Workspace, Repositories /
+// Repository, Repository list / Repository details — followed by the
+// last-scan timestamp and the action items.
 
 import Cocoa
 
@@ -57,8 +58,9 @@ enum ContextMenuBuilder {
         let root = NSMenu()
 
         root.addItem(submenuRow(title: "Organization",
-                                content: repoOrgSubmenu(repo: repo,
-                                                        workspaceInfo: workspaceInfo)))
+                                content: repoOrganizationSubmenu(repo: repo)))
+        root.addItem(submenuRow(title: "Workspace",
+                                content: repoWorkspaceSubmenu(workspaceInfo: workspaceInfo)))
         root.addItem(submenuRow(title: "Repository",
                                 content: repoSelfSubmenu(repo: repo)))
         root.addItem(submenuRow(title: "Repository details",
@@ -83,72 +85,60 @@ enum ContextMenuBuilder {
         return root
     }
 
-    private static func repoOrgSubmenu(repo: FinderRepoStatus,
-                                       workspaceInfo: FinderWorkspaceInfo?) -> NSMenu {
+    private static func repoOrganizationSubmenu(repo: FinderRepoStatus) -> NSMenu {
         let sub = NSMenu()
-        if let workspace = repo.workspace {
-            sub.addItem(infoItem("Workspace: \(workspace)"))
-        }
         if let org = repo.org {
             sub.addItem(infoItem("Org: \(org)"))
+        } else {
+            sub.addItem(infoItem("(no org)"))
         }
+        return sub
+    }
+
+    private static func repoWorkspaceSubmenu(workspaceInfo: FinderWorkspaceInfo?) -> NSMenu {
+        let sub = NSMenu()
         if let ws = workspaceInfo {
-            sub.addItem(infoItem("Workspace root: \(ws.root)"))
-            sub.addItem(infoItem("Orgs in workspace: \(ws.orgs.count)"))
-            if !ws.orgs.isEmpty {
-                let orgsItem = NSMenuItem(title: "All orgs in workspace",
-                                          action: nil, keyEquivalent: "")
-                let orgsSubmenu = NSMenu()
-                for name in ws.orgs.sorted() {
-                    let marker = (name == repo.org) ? "\u{2713} " : "  "
-                    orgsSubmenu.addItem(infoItem("\(marker)\(name)"))
-                }
-                orgsItem.submenu = orgsSubmenu
-                sub.addItem(orgsItem)
-            }
-        }
-        if sub.items.isEmpty {
-            sub.addItem(infoItem("(no organization context)"))
+            sub.addItem(infoItem("Name: \(ws.name)"))
+            sub.addItem(infoItem("Root: \(ws.root)"))
+        } else {
+            sub.addItem(infoItem("(no workspace)"))
         }
         return sub
     }
 
     private static func repoSelfSubmenu(repo: FinderRepoStatus) -> NSMenu {
         let sub = NSMenu()
-        sub.addItem(infoItem("Status: \(badgeMeaning(repo.badge))"))
-        sub.addItem(infoItem("Path: \(repo.path)"))
+
+        sub.addItem(statusRow(badge: repo.badge))
+
+        if repo.badge == .gray {
+            sub.addItem(ambientHintItem())
+            sub.addItem(NSMenuItem.separator())
+            sub.addItem(infoItem("Path: \(repo.path)"))
+            return sub
+        }
+
+        sub.addItem(NSMenuItem.separator())
+
         sub.addItem(infoItem("Branch: \(repo.currentBranch)"))
+        sub.addItem(infoItem(upstreamLine(for: repo)))
         if let defaultBranch = repo.defaultBranch, defaultBranch != repo.currentBranch {
             sub.addItem(infoItem("Default: \(defaultBranch)"))
         }
-        if repo.ahead > 0 || repo.behind > 0 {
-            sub.addItem(infoItem("Ahead: \(repo.ahead)  |  Behind: \(repo.behind)"))
-        }
-        sub.addItem(infoItem("Commits: \(repo.commitCount)"))
-        sub.addItem(infoItem(
-            "Staged: \(repo.stagedCount)  |  Unstaged: \(repo.unstagedCount)"
-        ))
-        if repo.untrackedCount > 0 {
-            sub.addItem(infoItem("Untracked: \(repo.untrackedCount)"))
-        }
+        sub.addItem(infoItem(indexLine(for: repo)))
+        sub.addItem(infoItem(workdirLine(for: repo)))
         if repo.stashCount > 0 {
             sub.addItem(infoItem("Stashes: \(repo.stashCount)"))
         }
         if repo.hasImportantIgnoredFiles {
-            let patterns = repo.importantIgnoredFiles ?? []
-            let warnTitle = "\u{26A0} Important ignored files (\(patterns.count))"
-            let warnItem = NSMenuItem(title: warnTitle, action: nil, keyEquivalent: "")
-            if !patterns.isEmpty {
-                let warnSubmenu = NSMenu()
-                for pattern in patterns {
-                    warnSubmenu.addItem(infoItem(pattern))
-                }
-                warnItem.submenu = warnSubmenu
-            } else {
-                warnItem.isEnabled = false
-            }
-            sub.addItem(warnItem)
+            sub.addItem(importantIgnoredItem(repo: repo))
         }
+
+        sub.addItem(NSMenuItem.separator())
+
+        sub.addItem(infoItem("Commits: \(formattedCommits(repo.commitCount))"))
+        sub.addItem(infoItem("Path: \(repo.path)"))
+
         return sub
     }
 
@@ -185,8 +175,10 @@ enum ContextMenuBuilder {
         let root = NSMenu()
 
         root.addItem(submenuRow(title: "Organization",
-                                content: orgInfoSubmenu(org: org,
-                                                        workspaceInfo: workspaceInfo)))
+                                content: orgOrganizationSubmenu(org: org)))
+        root.addItem(submenuRow(title: "Workspace",
+                                content: workspaceSubmenu(workspaceInfo: workspaceInfo,
+                                                          currentOrg: org.org)))
         root.addItem(submenuRow(title: "Repositories (\(repos.count))",
                                 content: orgAggregateSubmenu(repos: repos)))
         root.addItem(submenuRow(title: "Repository list",
@@ -206,26 +198,35 @@ enum ContextMenuBuilder {
         return root
     }
 
-    private static func orgInfoSubmenu(org: OrgFolderInfo,
-                                       workspaceInfo: FinderWorkspaceInfo?) -> NSMenu {
+    private static func orgOrganizationSubmenu(org: OrgFolderInfo) -> NSMenu {
         let sub = NSMenu()
         sub.addItem(infoItem("Owner: \(org.org)"))
-        sub.addItem(infoItem("Workspace: \(org.workspace)"))
+        if let typeLabel = ownerTypeLabel(org.ownerType) {
+            sub.addItem(infoItem("Type: \(typeLabel)"))
+        }
         sub.addItem(infoItem("Path: \(org.path)"))
-        if let ws = workspaceInfo {
-            sub.addItem(infoItem("Workspace root: \(ws.root)"))
-            sub.addItem(infoItem("Orgs in workspace: \(ws.orgs.count)"))
-            if !ws.orgs.isEmpty {
-                let orgsItem = NSMenuItem(title: "All orgs in workspace",
-                                          action: nil, keyEquivalent: "")
-                let orgsSubmenu = NSMenu()
-                for name in ws.orgs.sorted() {
-                    let marker = (name == org.org) ? "\u{2713} " : "  "
-                    orgsSubmenu.addItem(infoItem("\(marker)\(name)"))
-                }
-                orgsItem.submenu = orgsSubmenu
-                sub.addItem(orgsItem)
+        return sub
+    }
+
+    private static func workspaceSubmenu(workspaceInfo: FinderWorkspaceInfo?,
+                                         currentOrg: String?) -> NSMenu {
+        let sub = NSMenu()
+        guard let ws = workspaceInfo else {
+            sub.addItem(infoItem("(no workspace)"))
+            return sub
+        }
+        sub.addItem(infoItem("Name: \(ws.name)"))
+        sub.addItem(infoItem("Root: \(ws.root)"))
+        sub.addItem(infoItem("Orgs in workspace: \(ws.orgs.count)"))
+        if !ws.orgs.isEmpty {
+            let orgsItem = NSMenuItem(title: "All orgs", action: nil, keyEquivalent: "")
+            let orgsSubmenu = NSMenu()
+            for name in ws.orgs.sorted() {
+                let marker = (name == currentOrg) ? "\u{2713} " : "  "
+                orgsSubmenu.addItem(infoItem("\(marker)\(name)"))
             }
+            orgsItem.submenu = orgsSubmenu
+            sub.addItem(orgsItem)
         }
         return sub
     }
@@ -242,10 +243,11 @@ enum ContextMenuBuilder {
         sub.addItem(infoItem(
             "\u{1F7E2} \(counts.green)  |  \u{1F535} \(counts.blue)  |  "
             + "\u{1F7E0} \(counts.orange)  |  \u{1F534} \(counts.red)"
+            + "  |  \u{26AB} \(counts.gray)"
         ))
 
         let totals = aggregate(repos: repos)
-        sub.addItem(infoItem("Total commits: \(totals.commits)"))
+        sub.addItem(infoItem("Total commits: \(formattedCommits(totals.commits))"))
         if totals.staged > 0 || totals.unstaged > 0 || totals.untracked > 0 {
             sub.addItem(infoItem(
                 "Uncommitted \u{2014} staged: \(totals.staged), "
@@ -284,41 +286,99 @@ enum ContextMenuBuilder {
         for r in repos.sorted(by: { repoBasename($0) < repoBasename($1) }) {
             let line = "\(badgeEmoji(r.badge)) \(repoBasename(r)) [\(r.currentBranch)]"
             let row = NSMenuItem(title: line, action: nil, keyEquivalent: "")
-            row.submenu = repoMiniSubmenu(for: r)
+            row.submenu = repoSelfSubmenu(repo: r)
             sub.addItem(row)
         }
         return sub
     }
 
-    // MARK: - Per-repo mini submenu (used inside the org repo list)
+    // MARK: - Repository submenu helpers
 
-    private static func repoMiniSubmenu(for repo: FinderRepoStatus) -> NSMenu {
-        let sub = NSMenu()
-        sub.addItem(infoItem("Status: \(badgeMeaning(repo.badge))"))
-        sub.addItem(infoItem("Branch: \(repo.currentBranch)"))
-        if let def = repo.defaultBranch, def != repo.currentBranch {
-            sub.addItem(infoItem("Default: \(def)"))
+    private static func statusRow(badge: Badge) -> NSMenuItem {
+        let title = "\(badgeEmoji(badge))  \(badgeMeaning(badge))"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        ]
+        item.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+        return item
+    }
+
+    private static func ambientHintItem() -> NSMenuItem {
+        let title = "Refreshing in background\u{2026}"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        let base = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let italic = NSFont(descriptor: base.fontDescriptor.withSymbolicTraits(.italic),
+                            size: NSFont.systemFontSize) ?? base
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: italic,
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        item.attributedTitle = NSAttributedString(string: title, attributes: attrs)
+        return item
+    }
+
+    private static func upstreamLine(for repo: FinderRepoStatus) -> String {
+        let currentInfo = repo.branches.first { $0.name == repo.currentBranch }
+        guard let upstream = currentInfo?.upstream else {
+            return "Upstream: none"
         }
-        sub.addItem(infoItem("Commits: \(repo.commitCount)"))
-        if repo.ahead > 0 || repo.behind > 0 {
-            sub.addItem(infoItem("Ahead: \(repo.ahead)  |  Behind: \(repo.behind)"))
+        let state: String
+        if repo.ahead > 0 && repo.behind > 0 {
+            state = "\(repo.ahead) ahead, \(repo.behind) behind"
+        } else if repo.ahead > 0 {
+            state = "\(repo.ahead) ahead"
+        } else if repo.behind > 0 {
+            state = "\(repo.behind) behind"
+        } else {
+            state = "synced"
         }
-        if repo.stagedCount > 0 || repo.unstagedCount > 0 || repo.untrackedCount > 0 {
-            sub.addItem(infoItem(
-                "Staged: \(repo.stagedCount)  |  Unstaged: \(repo.unstagedCount)"
-                + "  |  Untracked: \(repo.untrackedCount)"
-            ))
+        return "Upstream: \(upstream) (\(state))"
+    }
+
+    private static func indexLine(for repo: FinderRepoStatus) -> String {
+        if repo.stagedCount == 0 {
+            return "Index: clean"
         }
-        if repo.stashCount > 0 {
-            sub.addItem(infoItem("Stashes: \(repo.stashCount)"))
+        return "Index: \(repo.stagedCount) staged"
+    }
+
+    private static func workdirLine(for repo: FinderRepoStatus) -> String {
+        if repo.unstagedCount == 0 && repo.untrackedCount == 0 {
+            return "Workdir: clean"
         }
-        if repo.hasImportantIgnoredFiles {
-            sub.addItem(infoItem(
-                "\u{26A0} Important ignored files: \((repo.importantIgnoredFiles ?? []).count)"
-            ))
+        var parts: [String] = []
+        if repo.unstagedCount > 0 { parts.append("\(repo.unstagedCount) unstaged") }
+        if repo.untrackedCount > 0 { parts.append("\(repo.untrackedCount) untracked") }
+        return "Workdir: " + parts.joined(separator: " \u{00B7} ")
+    }
+
+    private static func importantIgnoredItem(repo: FinderRepoStatus) -> NSMenuItem {
+        let patterns = repo.importantIgnoredFiles ?? []
+        let title = "\u{26A0}  Important ignored files (\(patterns.count))"
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+
+        let attributed = NSMutableAttributedString(string: title)
+        let warnRange = (title as NSString).range(of: "\u{26A0}")
+        if warnRange.location != NSNotFound {
+            attributed.addAttribute(.foregroundColor,
+                                    value: NSColor.systemYellow,
+                                    range: warnRange)
         }
-        sub.addItem(infoItem("Path: \(repo.path)"))
-        return sub
+        item.attributedTitle = attributed
+
+        if !patterns.isEmpty {
+            let sub = NSMenu()
+            for p in patterns {
+                sub.addItem(infoItem(p))
+            }
+            item.submenu = sub
+        } else {
+            item.isEnabled = false
+        }
+        return item
     }
 
     // MARK: - Branches / Remotes / Worktrees rows
@@ -412,6 +472,14 @@ enum ContextMenuBuilder {
         }
     }
 
+    private static func ownerTypeLabel(_ ownerType: OwnerType?) -> String? {
+        switch ownerType {
+        case .some(.user): return "User"
+        case .some(.organization): return "Organization"
+        case .some(.unknown), .none: return nil
+        }
+    }
+
     private struct BadgeCounts {
         var green = 0
         var blue = 0
@@ -460,6 +528,16 @@ enum ContextMenuBuilder {
 
     private static func repoBasename(_ repo: FinderRepoStatus) -> String {
         return (repo.path as NSString).lastPathComponent
+    }
+
+    private static let commitsFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f
+    }()
+
+    private static func formattedCommits(_ count: UInt64) -> String {
+        return commitsFormatter.string(from: NSNumber(value: count)) ?? "\(count)"
     }
 
     private static let isoFormatter: ISO8601DateFormatter = {
