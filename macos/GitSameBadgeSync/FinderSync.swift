@@ -91,10 +91,9 @@ class FinderSync: FIFinderSync {
             return
         }
 
-        // Unknown path under a monitored root: show grey while we ask the
-        // daemon to scan it. The reload → prefill path flips it to the real
-        // color once status.json catches up.
-        controller.setBadgeIdentifier(GitSameBadgeConstants.BadgeID.gray, for: url)
+        // Unknown path under a monitored root: no badge. Nudge the daemon so
+        // its next ambient scan picks up any new repo here; prefillBadges
+        // then paints the real (or grey-ambient) badge on reload.
         requestRefresh(path: resolved)
     }
 
