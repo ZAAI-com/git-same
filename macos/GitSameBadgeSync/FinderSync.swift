@@ -15,17 +15,6 @@ class FinderSync: FIFinderSync {
     private var lastRefreshRequest: [String: Date] = [:]
     private static let refreshThrottle: TimeInterval = 10.0
 
-    /// URLs whose final colored badge has already been pushed to Finder. Used
-    /// to skip the grey-R flash on subsequent folder switches so it only
-    /// appears once per URL per extension lifetime.
-    private var coloredURLs: Set<URL> = []
-
-    /// How long to leave the grey "R" on screen before swapping in the real
-    /// color. Needs to be large enough that Finder's render pipeline actually
-    /// paints the grey frame; DispatchQueue.main.async alone is too fast and
-    /// Finder coalesces it with the color update.
-    private static let greyHoldDuration: TimeInterval = 0.25
-
     override init() {
         super.init()
         os_log("FinderSync init entered", log: gsbLog, type: .default)
@@ -34,7 +23,7 @@ class FinderSync: FIFinderSync {
 
         statusReader.onStatusUpdate = { [weak self] in
             self?.updateMonitoredDirectories()
-            self?.prewarmBadges()
+            self?.prefillBadges()
         }
         statusReader.startWatching()
 
@@ -43,7 +32,7 @@ class FinderSync: FIFinderSync {
         // directoryURLs stays empty until the daemon next rewrites the file,
         // so Finder never asks us for badges.
         updateMonitoredDirectories()
-        prewarmBadges()
+        prefillBadges()
     }
 
     // MARK: - Monitored Directories
@@ -75,6 +64,11 @@ class FinderSync: FIFinderSync {
         let joined = urls.map { $0.path }.joined(separator: ",")
         os_log("setDirectoryURLs count=%d paths=%{public}@",
                log: gsbLog, type: .default, urls.count, joined)
+
+        // Seed Finder's badge cache now that directoryURLs includes these
+        // roots — any URL in status.json under them will get its real badge
+        // before Finder's first paint request.
+        prefillBadges()
     }
 
     // MARK: - Badge Identifiers
@@ -82,22 +76,25 @@ class FinderSync: FIFinderSync {
     override func requestBadgeIdentifier(for url: URL) {
         let path = url.path
         let resolved = url.resolvingSymlinksInPath().path
+        let controller = FIFinderSyncController.default()
 
         if let orgFolder = orgFolderLookup(path: path, resolved: resolved) {
             let finalID = orgFolder.ownerType == .user
                 ? GitSameBadgeConstants.BadgeID.user
                 : GitSameBadgeConstants.BadgeID.org
-            applyBadge(finalID: finalID, for: url)
+            controller.setBadgeIdentifier(finalID, for: url)
             return
         }
 
         if let repoStatus = repoLookup(path: path, resolved: resolved) {
-            applyBadge(finalID: badgeID(for: repoStatus.badge), for: url)
+            controller.setBadgeIdentifier(badgeID(for: repoStatus.badge), for: url)
             return
         }
 
-        // Unknown path inside a monitored directory: nudge the daemon so the
-        // real color arrives on its next scan instead of waiting up to 30s.
+        // Unknown path under a monitored root: show grey while we ask the
+        // daemon to scan it. The reload → prefill path flips it to the real
+        // color once status.json catches up.
+        controller.setBadgeIdentifier(GitSameBadgeConstants.BadgeID.gray, for: url)
         requestRefresh(path: resolved)
     }
 
@@ -121,43 +118,6 @@ class FinderSync: FIFinderSync {
         return nil
     }
 
-    /// On first sight of a repo URL, paint grey "R" immediately and schedule
-    /// the real color after a short hold so Finder actually renders the grey
-    /// frame. Org and user folders render their own letter (O / U) and skip
-    /// the placeholder entirely — flashing grey-R before purple-O would be a
-    /// letter swap, not a loading hint. On subsequent calls for a URL we've
-    /// already painted, set the final badge directly.
-    private func applyBadge(finalID: String, for url: URL) {
-        let controller = FIFinderSyncController.default()
-
-        let isRBadge = finalID == GitSameBadgeConstants.BadgeID.green
-            || finalID == GitSameBadgeConstants.BadgeID.blue
-            || finalID == GitSameBadgeConstants.BadgeID.orange
-            || finalID == GitSameBadgeConstants.BadgeID.red
-
-        if !isRBadge {
-            // gray, org, user — set directly, no placeholder.
-            controller.setBadgeIdentifier(finalID, for: url)
-            if finalID == GitSameBadgeConstants.BadgeID.gray {
-                coloredURLs.remove(url)
-            } else {
-                coloredURLs.insert(url)
-            }
-            return
-        }
-
-        if coloredURLs.contains(url) {
-            controller.setBadgeIdentifier(finalID, for: url)
-            return
-        }
-
-        controller.setBadgeIdentifier(GitSameBadgeConstants.BadgeID.gray, for: url)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.greyHoldDuration) { [weak self] in
-            controller.setBadgeIdentifier(finalID, for: url)
-            self?.coloredURLs.insert(url)
-        }
-    }
-
     private func badgeID(for badge: Badge) -> String {
         switch badge {
         case .green: return GitSameBadgeConstants.BadgeID.green
@@ -168,16 +128,12 @@ class FinderSync: FIFinderSync {
         }
     }
 
-    /// Pre-register grey "R" for every known repo and org-folder URL so that
-    /// Finder has something to paint before it ever calls
-    /// `requestBadgeIdentifier`. The grey→color flip is driven by
-    /// `requestBadgeIdentifier` itself (via `applyBadge`), which is the only
-    /// place guaranteed to happen at actual paint time. Scheduling the color
-    /// follow-up here instead made the grey flash happen during extension
-    /// startup (invisible), so this function deliberately avoids that.
-    /// Already-colored URLs are refreshed to the current color without
-    /// regressing to grey.
-    private func prewarmBadges() {
+    /// Push the final badge for every known repo and org/user folder into
+    /// Finder's badge cache. Called on cold start, on every status.json
+    /// reload, and whenever directoryURLs changes. Idempotent: duplicate
+    /// writes are free per Apple's docs ("if the identifier matches the badge
+    /// in use, Finder takes no action"), so we can call this liberally.
+    private func prefillBadges() {
         guard let status = statusReader.currentStatus else { return }
         let controller = FIFinderSyncController.default()
 
@@ -186,20 +142,12 @@ class FinderSync: FIFinderSync {
             let finalID = orgFolder.ownerType == .user
                 ? GitSameBadgeConstants.BadgeID.user
                 : GitSameBadgeConstants.BadgeID.org
-            // Org/user badges have their own letter; don't pre-set grey R for
-            // them, just register the final badge directly.
             controller.setBadgeIdentifier(finalID, for: url)
-            coloredURLs.insert(url)
         }
 
         for repo in status.repos {
             let url = URL(fileURLWithPath: repo.path)
-            let finalID = badgeID(for: repo.badge)
-            if coloredURLs.contains(url) || finalID == GitSameBadgeConstants.BadgeID.gray {
-                controller.setBadgeIdentifier(finalID, for: url)
-            } else {
-                controller.setBadgeIdentifier(GitSameBadgeConstants.BadgeID.gray, for: url)
-            }
+            controller.setBadgeIdentifier(badgeID(for: repo.badge), for: url)
         }
     }
 
