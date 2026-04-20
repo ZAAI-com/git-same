@@ -102,8 +102,12 @@ class FinderSync: FIFinderSync {
         let timestamp = status?.timestamp
 
         if let repoStatus = statusReader.repoStatus(forPath: path) {
+            let workspaceInfo = repoStatus.workspace.flatMap { name in
+                status?.workspaces.first { $0.name == name }
+            }
             return ContextMenuBuilder.build(
                 for: repoStatus,
+                workspaceInfo: workspaceInfo,
                 timestamp: timestamp,
                 socketClient: socketClient
             )
