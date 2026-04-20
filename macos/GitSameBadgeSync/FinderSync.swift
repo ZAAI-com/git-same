@@ -12,6 +12,9 @@ class FinderSync: FIFinderSync {
     let statusReader = StatusReader.shared
     let socketClient = SocketClient()
 
+    private var lastRefreshRequest: [String: Date] = [:]
+    private static let refreshThrottle: TimeInterval = 10.0
+
     override init() {
         super.init()
         os_log("FinderSync init entered", log: gsbLog, type: .default)
@@ -20,6 +23,7 @@ class FinderSync: FIFinderSync {
 
         statusReader.onStatusUpdate = { [weak self] in
             self?.updateMonitoredDirectories()
+            self?.prewarmBadges()
         }
         statusReader.startWatching()
 
@@ -28,6 +32,7 @@ class FinderSync: FIFinderSync {
         // directoryURLs stays empty until the daemon next rewrites the file,
         // so Finder never asks us for badges.
         updateMonitoredDirectories()
+        prewarmBadges()
     }
 
     // MARK: - Monitored Directories
@@ -39,11 +44,20 @@ class FinderSync: FIFinderSync {
         }
 
         var urls = Set<URL>()
-        for workspace in status.workspaces {
-            urls.insert(URL(fileURLWithPath: workspace.root))
-        }
-        for folder in status.customFolders ?? [] {
-            urls.insert(URL(fileURLWithPath: folder))
+        // Prefer the daemon-provided monitored_roots (workspace roots ∪ ambient
+        // scan roots). Fall back to the workspace+custom_folders union for
+        // older daemons that predate that field.
+        if let roots = status.monitoredRoots, !roots.isEmpty {
+            for root in roots {
+                urls.insert(URL(fileURLWithPath: root))
+            }
+        } else {
+            for workspace in status.workspaces {
+                urls.insert(URL(fileURLWithPath: workspace.root))
+            }
+            for folder in status.customFolders ?? [] {
+                urls.insert(URL(fileURLWithPath: folder))
+            }
         }
 
         FIFinderSyncController.default().directoryURLs = urls
@@ -58,23 +72,78 @@ class FinderSync: FIFinderSync {
         let path = url.path
 
         if let orgFolder = statusReader.orgFolder(forPath: path) {
-            let badgeID = orgFolder.ownerType == .user
+            let finalID = orgFolder.ownerType == .user
                 ? GitSameBadgeConstants.BadgeID.user
                 : GitSameBadgeConstants.BadgeID.org
-            FIFinderSyncController.default().setBadgeIdentifier(badgeID, for: url)
+            applyBadge(finalID: finalID, for: url)
             return
         }
 
         if let repoStatus = statusReader.repoStatus(forPath: path) {
-            let badgeID: String
-            switch repoStatus.badge {
-            case .green: badgeID = GitSameBadgeConstants.BadgeID.green
-            case .blue: badgeID = GitSameBadgeConstants.BadgeID.blue
-            case .orange: badgeID = GitSameBadgeConstants.BadgeID.orange
-            case .red: badgeID = GitSameBadgeConstants.BadgeID.red
-            }
-            FIFinderSyncController.default().setBadgeIdentifier(badgeID, for: url)
+            applyBadge(finalID: badgeID(for: repoStatus.badge), for: url)
+            return
         }
+
+        // Unknown path inside a monitored directory: nudge the daemon so the
+        // real color arrives on its next scan instead of waiting up to 30s.
+        requestRefresh(path: path)
+    }
+
+    /// Render grey "R" synchronously so Finder has something to draw right
+    /// away, then swap in the real color on the next runloop tick. When the
+    /// final badge is already grey (daemon-marked ambient repo), skip the
+    /// second call.
+    private func applyBadge(finalID: String, for url: URL) {
+        let controller = FIFinderSyncController.default()
+        if finalID == GitSameBadgeConstants.BadgeID.gray {
+            controller.setBadgeIdentifier(finalID, for: url)
+            return
+        }
+        controller.setBadgeIdentifier(GitSameBadgeConstants.BadgeID.gray, for: url)
+        DispatchQueue.main.async {
+            controller.setBadgeIdentifier(finalID, for: url)
+        }
+    }
+
+    private func badgeID(for badge: Badge) -> String {
+        switch badge {
+        case .green: return GitSameBadgeConstants.BadgeID.green
+        case .blue: return GitSameBadgeConstants.BadgeID.blue
+        case .orange: return GitSameBadgeConstants.BadgeID.orange
+        case .red: return GitSameBadgeConstants.BadgeID.red
+        case .gray: return GitSameBadgeConstants.BadgeID.gray
+        }
+    }
+
+    /// Pre-register badges for every known repo and org-folder URL. Finder's
+    /// first-paint-per-URL pipeline dominates the visible latency, so setting
+    /// badges before Finder asks lets the UI render them without a blank gap.
+    private func prewarmBadges() {
+        guard let status = statusReader.currentStatus else { return }
+
+        for orgFolder in status.orgFolders ?? [] {
+            let url = URL(fileURLWithPath: orgFolder.path)
+            let finalID = orgFolder.ownerType == .user
+                ? GitSameBadgeConstants.BadgeID.user
+                : GitSameBadgeConstants.BadgeID.org
+            applyBadge(finalID: finalID, for: url)
+        }
+
+        for repo in status.repos {
+            let url = URL(fileURLWithPath: repo.path)
+            applyBadge(finalID: badgeID(for: repo.badge), for: url)
+        }
+    }
+
+    private func requestRefresh(path: String) {
+        let now = Date()
+        if let last = lastRefreshRequest[path],
+           now.timeIntervalSince(last) < Self.refreshThrottle
+        {
+            return
+        }
+        lastRefreshRequest[path] = now
+        socketClient.send("REFRESH \(path)") { _ in }
     }
 
     // MARK: - Toolbar

@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  If you change `finder.scan_roots` in ~/.config/git-same/config.toml to point
+  at a directory outside the paths listed below, add the new absolute path
+  here and re-sign the extension with the paid team ID. Finder will refuse to
+  deliver URL callbacks for paths not covered by this allow-list.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
@@ -9,6 +15,7 @@
 		<string>/Users/m/.config/git-same/finder/</string>
 		<string>/Users/m/Manuel-Sun/Engineering/Same-GitHub/</string>
 		<string>/Users/m/Manuel-Sun/Engineering/Same-SX/</string>
+		<string>/Users/m/</string>
 	</array>
 </dict>
 </plist>

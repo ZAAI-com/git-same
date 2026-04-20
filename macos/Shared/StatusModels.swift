@@ -4,11 +4,16 @@
 import Foundation
 
 /// Badge color indicating repository health.
+///
+/// `gray` marks ambient (non-workspace) repos that haven't been fully scanned
+/// yet — they upgrade to a semantic color when the user opens their context
+/// menu.
 enum Badge: String, Codable {
     case green
     case blue
     case orange
     case red
+    case gray
 }
 
 /// Branch sync status.
@@ -111,6 +116,10 @@ struct FinderStatus: Codable {
     let customFolders: [String]?
     let repos: [FinderRepoStatus]
     let orgFolders: [OrgFolderInfo]?
+    /// Union of workspace roots and ambient scan roots. The extension uses
+    /// this as `FIFinderSyncController.directoryURLs` so Finder knows which
+    /// folders to ask about.
+    let monitoredRoots: [String]?
 
     enum CodingKeys: String, CodingKey {
         case version, timestamp
@@ -119,5 +128,6 @@ struct FinderStatus: Codable {
         case customFolders = "custom_folders"
         case repos
         case orgFolders = "org_folders"
+        case monitoredRoots = "monitored_roots"
     }
 }

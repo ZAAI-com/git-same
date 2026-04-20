@@ -12,6 +12,13 @@ enum ContextMenuBuilder {
                       workspaceInfo: FinderWorkspaceInfo?,
                       timestamp: String?,
                       socketClient: SocketClient) -> NSMenu {
+        // Ambient repos ship with `.gray` and no git details. Fire a targeted
+        // REFRESH so the daemon runs a full scan_repo on this path; the
+        // StatusReader file watcher will then replace the gray badge with a
+        // semantic color within the next Finder tick.
+        if repo.badge == .gray {
+            socketClient.send("REFRESH \(repo.path)") { _ in }
+        }
         let menu = NSMenu(title: "GitSameBadge")
         menu.addItem(parentItem(badge: repo.badge,
                                 submenu: repoRoot(repo: repo,
@@ -391,6 +398,7 @@ enum ContextMenuBuilder {
         case .blue: return "\u{1F535}"   // blue circle
         case .orange: return "\u{1F7E0}" // orange circle
         case .red: return "\u{1F534}"    // red circle
+        case .gray: return "\u{26AB}"    // black/gray circle
         }
     }
 
@@ -400,6 +408,7 @@ enum ContextMenuBuilder {
         case .blue: return "Has Local Config"
         case .orange: return "Partially Synced"
         case .red: return "Uncommitted Changes"
+        case .gray: return "Git Repository"
         }
     }
 
@@ -408,6 +417,7 @@ enum ContextMenuBuilder {
         var blue = 0
         var orange = 0
         var red = 0
+        var gray = 0
     }
 
     private static func badgeCounts(for repos: [FinderRepoStatus]) -> BadgeCounts {
@@ -418,6 +428,7 @@ enum ContextMenuBuilder {
             case .blue: counts.blue += 1
             case .orange: counts.orange += 1
             case .red: counts.red += 1
+            case .gray: counts.gray += 1
             }
         }
         return counts

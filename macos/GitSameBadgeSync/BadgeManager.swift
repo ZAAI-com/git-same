@@ -31,6 +31,11 @@ enum BadgeManager {
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.red
         )
         controller.setBadgeImage(
+            labeledBadge(text: "R", color: .systemGray),
+            label: "Git Repository",
+            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.gray
+        )
+        controller.setBadgeImage(
             labeledBadge(text: "O", color: .systemPurple),
             label: "Organization",
             forBadgeIdentifier: GitSameBadgeConstants.BadgeID.org

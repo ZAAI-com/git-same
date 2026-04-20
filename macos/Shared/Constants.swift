@@ -45,6 +45,7 @@ enum GitSameBadgeConstants {
         static let blue = "git-blue"
         static let orange = "git-orange"
         static let red = "git-red"
+        static let gray = "git-gray"
         static let org = "org"
         static let user = "user"
     }
