@@ -5,6 +5,7 @@
 
 pub mod daemon;
 pub mod init;
+pub mod refresh;
 pub mod reset;
 pub mod scan;
 #[cfg(feature = "tui")]
@@ -64,6 +65,7 @@ pub async fn run_command(
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
         Command::Status(args) => run_status(args, &config, output).await,
         Command::Workspace(args) => workspace::run(args, &config, output),
+        Command::Refresh(args) => refresh::run(args, &config, output).await,
     }
 }
 

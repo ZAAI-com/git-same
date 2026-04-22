@@ -182,6 +182,19 @@ Examples:
   gisa scan ~/projects --register   Auto-register found workspaces"
     )]
     Scan(ScanArgs),
+
+    /// Ask the running daemon to refresh status.json immediately
+    #[command(
+        long_about = "Send a refresh request to the background daemon so it \
+            rewrites ~/.config/git-same/finder/status.json right now. Useful \
+            after manually deleting a repo, or when debugging Finder badges. \
+            Fails with a clear error if the daemon is not running.",
+        after_help = "\
+Examples:
+  gisa refresh                      Refresh everything the daemon knows about
+  gisa refresh --path ~/work/org    Refresh a single folder"
+    )]
+    Refresh(RefreshArgs),
 }
 
 /// Arguments for the init command
@@ -325,6 +338,14 @@ pub struct DaemonArgs {
     /// Show daemon status (running, PID, last scan)
     #[arg(long)]
     pub status: bool,
+}
+
+/// Arguments for the refresh command
+#[derive(Args, Debug)]
+pub struct RefreshArgs {
+    /// Refresh a specific folder instead of everything the daemon monitors
+    #[arg(long)]
+    pub path: Option<PathBuf>,
 }
 
 /// Arguments for the scan command

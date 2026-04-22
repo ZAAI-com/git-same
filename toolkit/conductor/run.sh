@@ -116,6 +116,8 @@ echo "  $GS_COMMAND daemon --foreground               # Run in foreground (debug
 echo "  $GS_COMMAND daemon --interval 60              # Poll every 60 seconds"
 echo "  $GS_COMMAND daemon --status                   # Check if daemon is running"
 echo "  $GS_COMMAND daemon --stop                     # Stop a running daemon"
+echo "  $GS_COMMAND refresh                           # Force immediate status.json rewrite"
+echo "  $GS_COMMAND refresh --path ~/work/org         # Refresh a single folder"
 echo ""
 echo "Reset / cleanup:"
 echo ""

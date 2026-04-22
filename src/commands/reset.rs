@@ -58,6 +58,7 @@ pub async fn run(args: &ResetArgs, output: &Output) -> Result<()> {
     if args.force {
         display_detailed_targets(&ResetScope::Everything, &target, output);
         execute_reset(&ResetScope::Everything, &target, output)?;
+        nudge_daemon_refresh().await;
         return Ok(());
     }
 
@@ -71,8 +72,24 @@ pub async fn run(args: &ResetArgs, output: &Output) -> Result<()> {
     }
 
     execute_reset(&scope, &target, output)?;
+    nudge_daemon_refresh().await;
     Ok(())
 }
+
+#[cfg(unix)]
+async fn nudge_daemon_refresh() {
+    use crate::ipc::{IpcConfig, UnixSocketClient};
+    let Ok(cfg) = IpcConfig::default_path() else {
+        return;
+    };
+    let client = UnixSocketClient::new(cfg.socket_path());
+    if let Err(e) = client.refresh_all().await {
+        tracing::debug!(error = %e, "Daemon refresh nudge skipped");
+    }
+}
+
+#[cfg(not(unix))]
+async fn nudge_daemon_refresh() {}
 
 /// Discover what files and directories exist that could be removed.
 fn discover_targets() -> Result<ResetTarget> {
