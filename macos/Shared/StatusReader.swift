@@ -62,6 +62,16 @@ class StatusReader {
 
         fileMonitor = source
         source.resume()
+
+        // The DispatchSource only fires on subsequent writes. If the file
+        // already exists when we first successfully open it (e.g. the
+        // extension started before the daemon and this is a retry that
+        // finally caught the file), seed currentStatus now so observers see
+        // the status without waiting for the next daemon write.
+        reload()
+        DispatchQueue.main.async { [weak self] in
+            self?.onStatusUpdate?()
+        }
     }
 
     /// Stop watching the status file.
