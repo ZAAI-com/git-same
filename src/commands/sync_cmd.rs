@@ -169,8 +169,27 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
         output.verbose(&format!("Warning: Failed to update last_synced: {}", e));
     }
 
+    // Best-effort: nudge the Finder daemon so badges refresh for new clones.
+    // If the daemon is not running we silently skip; sync still succeeded.
+    nudge_daemon_refresh().await;
+
     Ok(())
 }
+
+#[cfg(unix)]
+async fn nudge_daemon_refresh() {
+    use crate::ipc::{IpcConfig, UnixSocketClient};
+    let Ok(cfg) = IpcConfig::default_path() else {
+        return;
+    };
+    let client = UnixSocketClient::new(cfg.socket_path());
+    if let Err(e) = client.refresh_all().await {
+        tracing::debug!(error = %e, "Daemon refresh nudge skipped");
+    }
+}
+
+#[cfg(not(unix))]
+async fn nudge_daemon_refresh() {}
 
 #[cfg(test)]
 #[path = "sync_cmd_tests.rs"]
