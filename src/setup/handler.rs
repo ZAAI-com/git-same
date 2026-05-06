@@ -139,10 +139,8 @@ async fn handle_step_forward(state: &mut SetupState) {
 
 fn handle_requirements(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Enter => {
-            if !state.checks_loading && state.requirements_passed() {
-                state.next_step();
-            }
+        KeyCode::Enter if !state.checks_loading && state.requirements_passed() => {
+            state.next_step();
         }
         KeyCode::Esc => {
             state.prev_step();
@@ -153,21 +151,15 @@ fn handle_requirements(state: &mut SetupState, key: KeyEvent) {
 
 fn handle_provider(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => {
-            if state.provider_index > 0 {
-                state.provider_index -= 1;
-            }
+        KeyCode::Up if state.provider_index > 0 => {
+            state.provider_index -= 1;
         }
-        KeyCode::Down => {
-            if state.provider_index + 1 < state.provider_choices.len() {
-                state.provider_index += 1;
-            }
+        KeyCode::Down if state.provider_index + 1 < state.provider_choices.len() => {
+            state.provider_index += 1;
         }
-        KeyCode::Enter => {
-            if state.provider_choices[state.provider_index].available {
-                state.auth_status = AuthStatus::Pending;
-                state.next_step();
-            }
+        KeyCode::Enter if state.provider_choices[state.provider_index].available => {
+            state.auth_status = AuthStatus::Pending;
+            state.next_step();
         }
         KeyCode::Esc => {
             state.prev_step();
@@ -489,17 +481,13 @@ fn select_current_browse_folder(state: &mut SetupState) {
 
 fn handle_path_browse(state: &mut SetupState, key: KeyEvent) {
     match key.code {
-        KeyCode::Up => {
-            if state.path_browse_index > 0 {
-                state.path_browse_index -= 1;
-                sync_browse_current_dir(state);
-            }
+        KeyCode::Up if state.path_browse_index > 0 => {
+            state.path_browse_index -= 1;
+            sync_browse_current_dir(state);
         }
-        KeyCode::Down => {
-            if state.path_browse_index + 1 < state.path_browse_entries.len() {
-                state.path_browse_index += 1;
-                sync_browse_current_dir(state);
-            }
+        KeyCode::Down if state.path_browse_index + 1 < state.path_browse_entries.len() => {
+            state.path_browse_index += 1;
+            sync_browse_current_dir(state);
         }
         KeyCode::Right => {
             open_selected_browse_entry(state);
@@ -578,20 +566,14 @@ async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Up => {
-            if state.org_index > 0 {
-                state.org_index -= 1;
-            }
+        KeyCode::Up if state.org_index > 0 => {
+            state.org_index -= 1;
         }
-        KeyCode::Down => {
-            if state.org_index + 1 < state.orgs.len() {
-                state.org_index += 1;
-            }
+        KeyCode::Down if state.org_index + 1 < state.orgs.len() => {
+            state.org_index += 1;
         }
-        KeyCode::Char(' ') => {
-            if !state.orgs.is_empty() {
-                state.orgs[state.org_index].selected = !state.orgs[state.org_index].selected;
-            }
+        KeyCode::Char(' ') if !state.orgs.is_empty() => {
+            state.orgs[state.org_index].selected = !state.orgs[state.org_index].selected;
         }
         KeyCode::Char('a') => {
             for org in &mut state.orgs {

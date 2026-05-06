@@ -79,11 +79,9 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             app.stat_index = app.stat_index.saturating_sub(1);
             app.dashboard_table_state.select(Some(0));
         }
-        KeyCode::Right => {
-            if app.stat_index < 5 {
-                app.stat_index += 1;
-                app.dashboard_table_state.select(Some(0));
-            }
+        KeyCode::Right if app.stat_index < 5 => {
+            app.stat_index += 1;
+            app.dashboard_table_state.select(Some(0));
         }
         // List navigation (up/down within tab content)
         KeyCode::Down => {
