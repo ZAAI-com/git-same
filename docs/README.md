@@ -53,14 +53,6 @@ cargo install git-same
 
 Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64).
 
-#### From source
-
-```bash
-git clone https://github.com/zaai-com/git-same
-cd git-same
-cargo install --path .
-```
-
 </details>
 
 ## Quick Start
@@ -196,7 +188,7 @@ Git-Same installs multiple binary names so you can use whichever you prefer:
 | `gisa`     | Shortest alias (symlink)                       |
 | `git same` | Git subcommand (requires git-same in PATH)     |
 
-> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary. The canonical alias list lives in `toolkit/packaging/binary-aliases.txt`.
+> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary.
 
 All examples in this README use `git-same`, but any alias works interchangeably.
 
@@ -281,3 +273,7 @@ MIT License - see [LICENSE](../LICENSE) for details
 - [ ] Bitbucket support
 - [ ] Repo groups
 - [ ] Web dashboard
+
+---
+
+Building from source or contributing? See [DEVELOPMENT.md](DEVELOPMENT.md).

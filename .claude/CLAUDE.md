@@ -28,42 +28,40 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 **CLI flow:** CLI parsing (`src/cli.rs`) → `main.rs` routes to command handler → handler orchestrates modules.
 
-**Commands:** `init`, `setup`, `sync`, `status`, `workspace {list,default}`, `reset`.
+**Commands:** `init`, `setup`, `sync`, `status`, `scan`, `workspace {list,default}`, `reset`.
 
 ### Core modules
 
-- **`auth/`** — GitHub CLI (`gh`) authentication only (`gh auth token`), with SSH clone support
+- **`app/`** — Top-level entry points: `app/cli/` runs the CLI subcommand path, `app/tui/` boots the interactive TUI. `main.rs` dispatches to one or the other based on whether a subcommand was given
+- **`commands/`** — Per-subcommand handlers (`init`, `setup`, `sync_cmd`, `status`, `scan`, `reset`, `workspace`) plus shared `support/` helpers
+- **`workflows/`** — Cross-cutting orchestration shared by CLI and TUI: `sync_workspace` (discover + clone + fetch/pull) and `status_scan` (walk local repos, collect git status)
+- **`auth/`** — `gh_cli.rs` obtains GitHub API tokens via `gh auth token`. `ssh.rs` exposes low-level SSH probing primitives (`SshProbeResult`, `parse_ssh_probe_output`) used by clone-time diagnostics
 - **`config/`** — TOML config parser. Default: `~/.config/git-same/config.toml`. Top-level keys: `workspaces`, `default_workspace`, plus `[clone]` and `[filters]` sections
-- **`discovery/`** — `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
-- **`operations/clone/`** — `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
-- **`operations/sync/`** — `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
+- **`discovery.rs`** — `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
+- **`operations/clone.rs`** — `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
+- **`operations/sync.rs`** — `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
 - **`provider/`** — Trait-based provider abstraction (`Provider` trait in `traits.rs`). GitHub implementation in `github/client.rs` with pagination. Mock provider in `mock.rs` for testing
 - **`git/`** — `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands
-- **`cache/`** — `DiscoveryCache` with TTL-based validity, persisted per workspace at `<workspace-root>/.git-same/cache.json`
+- **`cache/`** — `discovery.rs` provides `DiscoveryCache` (TTL-based validity, persisted at `<workspace-root>/.git-same/cache.json`); `sync_history.rs` records sync runs at `<workspace-root>/.git-same/sync-history.json`
+- **`domain/`** — Domain primitives, currently `repo_path_template.rs` for resolving `{org}/{repo}` style structures
+- **`infra/storage/`** — Storage abstractions for workspace-local persistence
+- **`setup/`** — Setup wizard state machine, shared between the CLI `setup` command and the TUI workspace-setup screen
 - **`errors/`** — Custom error hierarchy: `AppError`, `GitError`, `ProviderError` with `suggested_action()` methods
-- **`output/`** — Verbosity levels and `indicatif` progress bars (`CloneProgressBar`, `SyncProgressBar`, `DiscoveryProgressBar`)
+- **`output/`** — `printer.rs` for verbosity-aware text output; `progress/` holds the `indicatif` progress bars (`CloneProgressBar`, `SyncProgressBar`, `DiscoveryProgressBar`)
 - **`types/repo.rs`** — Core data types: `Repo`, `Org`, `ActionPlan`, `OpResult`, `OpSummary`
+- **`checks.rs`** — System/runtime checks (presence of `git`, `gh`, auth status, SSH access via `check_ssh_github_access`)
+- **`banner.rs`** — CLI banner rendering
 
 ### TUI module (`src/tui/`, feature-gated behind `tui`)
 
 Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
-- **`app.rs`** — `App` struct holds all TUI state. `Screen` enum: `InitCheck`, `SetupWizard`, `Workspace`, `Dashboard`, `Progress`, `Settings`
+- **`app.rs`** — `App` struct holds all TUI state. `Screen` enum: `WorkspaceSetup`, `Workspaces`, `Dashboard`, `Sync`, `Settings`
 - **`handler.rs`** — Keyboard input handlers per screen + `handle_backend_message` for async results
 - **`backend.rs`** — Spawns Tokio tasks for async operations (sync, status scan), sends `BackendMessage` variants via unbounded channels
 - **`event.rs`** — `AppEvent` (terminal input, backend messages, ticks) and `BackendMessage` enum
 - **`screens/`** — Stateless render functions per screen (dashboard, workspace, settings, etc.)
 - **`widgets/`** — Shared widgets (status bar, spinner)
-- **`setup/`** — Setup wizard state machine (shared between CLI `setup` command and TUI `SetupWizard` screen)
-
-### Recent workspace-screen updates
-
-- Sidebar navigation now supports `←`/`→` in addition to `↑`/`↓` and `Tab` (see `handle_workspace_key`).
-- Workspace actions changed: `[f]` opens workspace folder; `[o]` is no longer bound.
-- Default workspace behavior is now set-only from `[d]`: pressing `[d]` on the current default does not clear it.
-- Workspace detail view is grouped into sections (`Identity`, `Paths`, `Sync`, `Account`) with wrapped org rendering for narrow widths.
-- Last sync display now shows relative time and, when parseable RFC3339 exists, an absolute timestamp line.
-- Added focused tests in `src/tui/handler.rs` and `src/tui/screens/workspace.rs` for key handling and workspace detail formatting helpers.
 
 ### Key patterns
 
@@ -109,4 +107,4 @@ S2 runs all S1 jobs (test, coverage, audit) as gates before building release art
 
 ## Specs & Docs
 
-Design specifications live in `docs/specs/` (S1–S5). Internal documentation in `.context/GIT-SAME-DOCUMENTATION.md`.
+End-user docs in `docs/README.md`. Contributor/build-from-source docs in `docs/DEVELOPMENT.md`. Sync-screen design notes in `docs/Sync-Screen.md`. In-flight design plans live under `docs/plans/` and the workspace-local `.context/plans/`.
