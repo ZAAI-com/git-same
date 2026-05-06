@@ -271,7 +271,7 @@ git-same sync --dry-run
 
 MIT License - see [LICENSE](../LICENSE) for details
 
-## Roadmap
+## [Roadmap](https://zaai.com/git-same/)
 
 - [x] GitHub support
 - [x] Parallel cloning
