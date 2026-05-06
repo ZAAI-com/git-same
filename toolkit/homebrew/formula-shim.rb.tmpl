@@ -11,7 +11,7 @@ class GitSame < Formula
   sha256 "SOURCE_TARBALL_SHA_PLACEHOLDER"
   license "MIT"
 
-  deprecate! date: "DEPRECATION_DATE_PLACEHOLDER",
+  deprecate! date:    "DEPRECATION_DATE_PLACEHOLDER",
              because: "renamed: install 'git-same' cask (GUI users) or 'git-same-cli' formula (headless)"
 
   depends_on "zaai-com/tap/git-same-cli"
@@ -21,6 +21,6 @@ class GitSame < Formula
   end
 
   test do
-    assert_predicate Formula["zaai-com/tap/git-same-cli"].opt_bin/"git-same", :exist?
+    assert_path_exists Formula["zaai-com/tap/git-same-cli"].opt_bin/"git-same"
   end
 end

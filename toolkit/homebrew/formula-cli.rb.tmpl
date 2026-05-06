@@ -4,36 +4,34 @@
 # This formula is the cross-platform path: Linux (x86_64, aarch64) and headless
 # macOS (x86_64, aarch64). On macOS it installs the same signed + notarized
 # tarball that the cask uses. macOS GUI users should prefer the cask.
+#
+# Brew infers `version` from the URL filename (each URL embeds the full target
+# triple and version), so no explicit `version` declaration is needed.
 class GitSameCli < Formula
   desc "Discover and mirror GitHub org/repo structures locally"
   homepage "https://github.com/zaai-com/git-same"
-  version "VERSION_PLACEHOLDER"
   license "MIT"
 
   if OS.mac?
     if Hardware::CPU.arm?
-      url "URL_PLACEHOLDER/git-same-#{version}-aarch64-apple-darwin.tar.gz"
+      url "URL_PLACEHOLDER/git-same-VERSION_PLACEHOLDER-aarch64-apple-darwin.tar.gz"
       sha256 "SHA_MACOS_AARCH64_PLACEHOLDER"
     else
-      url "URL_PLACEHOLDER/git-same-#{version}-x86_64-apple-darwin.tar.gz"
+      url "URL_PLACEHOLDER/git-same-VERSION_PLACEHOLDER-x86_64-apple-darwin.tar.gz"
       sha256 "SHA_MACOS_X86_64_PLACEHOLDER"
     end
   elsif OS.linux?
     if Hardware::CPU.arm?
-      url "URL_PLACEHOLDER/git-same-linux-aarch64"
+      url "URL_PLACEHOLDER/git-same-VERSION_PLACEHOLDER-aarch64-unknown-linux-gnu.tar.gz"
       sha256 "SHA_LINUX_AARCH64_PLACEHOLDER"
     else
-      url "URL_PLACEHOLDER/git-same-linux-x86_64"
+      url "URL_PLACEHOLDER/git-same-VERSION_PLACEHOLDER-x86_64-unknown-linux-gnu.tar.gz"
       sha256 "SHA_LINUX_X86_64_PLACEHOLDER"
     end
   end
 
   def install
-    if OS.mac?
-      bin.install "git-same"
-    elsif OS.linux?
-      bin.install "git-same-linux-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
-    end
+    bin.install "git-same"
     bin.install_symlink "git-same" => "gitsame"
     bin.install_symlink "git-same" => "gitsa"
     bin.install_symlink "git-same" => "gisa"

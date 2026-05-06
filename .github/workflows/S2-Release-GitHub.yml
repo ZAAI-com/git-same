@@ -200,20 +200,12 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: git-same
-            asset_name: git-same-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-            artifact_name: git-same
-            asset_name: git-same-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: git-same
-            asset_name: git-same-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: git-same
-            asset_name: git-same-macos-aarch64
 
     steps:
       - uses: actions/checkout@v6
@@ -230,48 +222,44 @@ jobs:
       - name: Build
         run: cargo +stable build --release --target ${{ matrix.target }}
 
-      - name: Rename binary (Linux)
-        if: runner.os != 'macOS'
-        shell: bash
-        run: |
-          mv target/${{ matrix.target }}/release/${{ matrix.artifact_name }} ${{ matrix.asset_name }}
-
-      - name: Upload artifact (Linux)
-        if: runner.os != 'macOS'
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.asset_name }}
-          path: ${{ matrix.asset_name }}
-
-      - name: Resolve version from tag (macOS)
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-        id: macos_version
+      - name: Resolve version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        id: version
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           if ! [[ "$TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "macOS sign+notarize requires a strict semver tag ref. Got: $TAG" >&2
+            echo "Release builds require a strict semver tag ref. Got: $TAG" >&2
             exit 1
           fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve macOS arch
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-        id: macos_arch
+      - name: Compute asset names
+        if: startsWith(github.ref, 'refs/tags/')
+        id: asset
         shell: bash
         run: |
-          case "${{ matrix.target }}" in
-            x86_64-apple-darwin)  echo "arch=x86_64"  >> "$GITHUB_OUTPUT" ;;
-            aarch64-apple-darwin) echo "arch=aarch64" >> "$GITHUB_OUTPUT" ;;
-            *) echo "Unexpected darwin target ${{ matrix.target }}" >&2; exit 1 ;;
-          esac
+          NAME="git-same-${{ steps.version.outputs.version }}-${{ matrix.target }}"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "tarball=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "shafile=${NAME}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Tar and SHA (Linux)
+        if: runner.os != 'macOS' && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          mkdir -p staging
+          mv target/${{ matrix.target }}/release/git-same staging/git-same
+          tar -czf "${{ steps.asset.outputs.tarball }}" -C staging git-same
+          shasum -a 256 "${{ steps.asset.outputs.tarball }}" \
+            | awk '{print $1}' > "${{ steps.asset.outputs.shafile }}"
 
       - name: Stage binary for signing (macOS)
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           mkdir -p signing
-          mv target/${{ matrix.target }}/release/${{ matrix.artifact_name }} signing/git-same
+          mv target/${{ matrix.target }}/release/git-same signing/git-same
 
       - name: Sign and notarize (macOS)
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
@@ -287,27 +275,18 @@ jobs:
         run: |
           bash toolkit/homebrew/sign-and-notarize.sh \
             signing/git-same \
-            "${{ steps.macos_arch.outputs.arch }}" \
-            "${{ steps.macos_version.outputs.version }}" \
+            "${{ matrix.target }}" \
+            "${{ steps.version.outputs.version }}" \
             .
 
-      - name: Compute macOS asset names
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-        id: macos_asset
-        shell: bash
-        run: |
-          NAME="git-same-${{ steps.macos_version.outputs.version }}-${{ steps.macos_arch.outputs.arch }}-apple-darwin"
-          echo "tarball=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "shafile=${NAME}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
-
-      - name: Upload artifact (macOS)
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+      - name: Upload artifact
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.macos_asset.outputs.tarball }}
+          name: ${{ steps.asset.outputs.tarball }}
           path: |
-            ${{ steps.macos_asset.outputs.tarball }}
-            ${{ steps.macos_asset.outputs.shafile }}
+            ${{ steps.asset.outputs.tarball }}
+            ${{ steps.asset.outputs.shafile }}
 
   publish-release:
     name: Publish GitHub Release

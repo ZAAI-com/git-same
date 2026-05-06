@@ -2,7 +2,10 @@
 # Sign + notarize a built git-same binary, emit a release tarball + .sha256.
 #
 # Usage:
-#   sign-and-notarize.sh BINARY_PATH ARCH VERSION OUT_DIR
+#   sign-and-notarize.sh BINARY_PATH TARGET VERSION OUT_DIR
+#
+# TARGET is the full Rust target triple (e.g. aarch64-apple-darwin).
+# Only darwin targets are accepted; the script signs and notarizes via Apple.
 #
 # Required env vars (CI provides via GitHub Secrets):
 #   APPLE_DEVELOPER_CERTIFICATE_P12       Base64 .p12 (Developer ID Application)
@@ -14,8 +17,8 @@
 #   APPLE_KEYCHAIN_PASSWORD               Random password for the temp build keychain
 #
 # Output:
-#   $OUT_DIR/git-same-${VERSION}-${ARCH}-apple-darwin.tar.gz
-#   $OUT_DIR/git-same-${VERSION}-${ARCH}-apple-darwin.tar.gz.sha256
+#   $OUT_DIR/git-same-${VERSION}-${TARGET}.tar.gz
+#   $OUT_DIR/git-same-${VERSION}-${TARGET}.tar.gz.sha256
 #
 # Stapling is intentionally skipped: stapler staple only works on bundles/.pkg/.dmg.
 # Gatekeeper resolves the notarization ticket online on first launch for bare binaries.
@@ -23,18 +26,18 @@
 set -euo pipefail
 
 if [ $# -ne 4 ]; then
-    echo "Usage: $0 BINARY_PATH ARCH VERSION OUT_DIR" >&2
+    echo "Usage: $0 BINARY_PATH TARGET VERSION OUT_DIR" >&2
     exit 2
 fi
 
 BINARY_PATH="$1"
-ARCH="$2"
+TARGET="$2"
 VERSION="$3"
 OUT_DIR="$4"
 
-case "$ARCH" in
-    x86_64|aarch64) ;;
-    *) echo "ERROR: ARCH must be x86_64 or aarch64, got '$ARCH'" >&2; exit 2 ;;
+case "$TARGET" in
+    x86_64-apple-darwin|aarch64-apple-darwin) ;;
+    *) echo "ERROR: TARGET must be a darwin Rust triple, got '$TARGET'" >&2; exit 2 ;;
 esac
 
 if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
@@ -102,7 +105,7 @@ echo "==> Signing binary"
 echo "==> Verifying signature"
 /usr/bin/codesign --verify --verbose=4 "$BINARY_PATH"
 
-TARBALL_NAME="git-same-${VERSION}-${ARCH}-apple-darwin.tar.gz"
+TARBALL_NAME="git-same-${VERSION}-${TARGET}.tar.gz"
 TARBALL_PATH="$OUT_DIR/$TARBALL_NAME"
 
 echo "==> Creating tarball $TARBALL_NAME"
