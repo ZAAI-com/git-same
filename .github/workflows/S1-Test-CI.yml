@@ -166,11 +166,27 @@ jobs:
             echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
           fi
 
-          # Homebrew workflow references all aliases
+          # Homebrew workflow + cask/formula templates reference all aliases
+          HOMEBREW_FILES=(
+            .github/workflows/S3-Publish-Homebrew.yml
+            toolkit/homebrew/cask.rb.tmpl
+            toolkit/homebrew/formula-cli.rb.tmpl
+            toolkit/homebrew/render-cask.sh
+            toolkit/homebrew/render-formula.sh
+          )
+          for f in "${HOMEBREW_FILES[@]}"; do
+            [ -f "$f" ] || { echo "ERROR: required Homebrew file not found: $f"; exit 1; }
+          done
           while IFS= read -r alias; do
             [ -z "$alias" ] && continue
-            if ! grep -Fq -- "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
-              echo "ERROR: '$alias' missing from S3-Publish-Homebrew.yml"; exit 1
+            found=0
+            for f in "${HOMEBREW_FILES[@]}"; do
+              if grep -Fq -- "$alias" "$f"; then
+                found=1; break
+              fi
+            done
+            if [ "$found" -eq 0 ]; then
+              echo "ERROR: '$alias' not referenced in any Homebrew file"; exit 1
             fi
           done < toolkit/packaging/binary-aliases.txt
 
