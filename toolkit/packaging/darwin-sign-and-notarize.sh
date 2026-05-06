@@ -97,9 +97,11 @@ done
 KEYCHAIN_NAME="git-same-build-$$.keychain"
 KEYCHAIN_PATH="$HOME/Library/Keychains/${KEYCHAIN_NAME}-db"
 CERT_FILE="$(mktemp -t git-same-cert.XXXXXX).p12"
+NOTARIZE_DIR="$(mktemp -d -t git-same-notarize.XXXXXX)"
 
 cleanup() {
     rm -f "$CERT_FILE" || true
+    rm -rf "$NOTARIZE_DIR" || true
     if security list-keychains | grep -q "$KEYCHAIN_NAME"; then
         security delete-keychain "$KEYCHAIN_NAME" || true
     fi
@@ -138,22 +140,35 @@ CODESIGN_ARGS+=(--sign "Developer ID Application: $APPLE_SIGNING_IDENTITY" "$BIN
 echo "==> Verifying signature"
 /usr/bin/codesign --verify --verbose=4 "$BINARY_PATH"
 
-TARBALL_NAME="git-same-${VERSION}-${TARGET}.tar.gz"
-TARBALL_PATH="$OUT_DIR_ABS/$TARBALL_NAME"
+# notarytool only accepts .zip, .dmg, or .pkg, so the release .tar.gz cannot
+# be the submission. Build a throwaway zip wrapping just the signed binary;
+# Apple's notary service binds the ticket to the binary's code signature, so
+# sibling files (manpage, completions, LICENSE) don't need to be in the zip.
+# `ditto -c -k --keepParent` is Apple's recommended zipper for notarization
+# (preserves xattrs / code-signing metadata) and ships with macOS.
+NOTARIZE_ZIP="$NOTARIZE_DIR/git-same-${VERSION}-${TARGET}.zip"
+echo "==> Zipping signed binary for notarytool ($NOTARIZE_ZIP)"
+/usr/bin/ditto -c -k --keepParent "$BINARY_PATH" "$NOTARIZE_ZIP"
 
-echo "==> Creating tarball $TARBALL_NAME (staging dir: $STAGING_DIR)"
-( cd "$STAGING_DIR" && tar -czf "$TARBALL_PATH" -- * )
-
-echo "==> Submitting tarball to notarytool"
-xcrun notarytool submit "$TARBALL_PATH" \
+echo "==> Submitting zip to notarytool"
+xcrun notarytool submit "$NOTARIZE_ZIP" \
     --apple-id "$APPLE_ID" \
     --team-id "$APPLE_TEAM_ID" \
     --password "$APPLE_APP_SPECIFIC_PASSWORD" \
     --wait \
     --timeout 600
 
+# Bare CLI binaries can't be stapled (stapler only accepts bundles/.pkg/.dmg),
+# so spctl resolves the ticket online from Apple's CDN. This requires network
+# egress on the runner.
 echo "==> Verifying Gatekeeper acceptance"
 spctl --assess --type execute --verbose "$BINARY_PATH"
+
+TARBALL_NAME="git-same-${VERSION}-${TARGET}.tar.gz"
+TARBALL_PATH="$OUT_DIR_ABS/$TARBALL_NAME"
+
+echo "==> Creating tarball $TARBALL_NAME (staging dir: $STAGING_DIR)"
+( cd "$STAGING_DIR" && tar -czf "$TARBALL_PATH" -- * )
 
 echo "==> Computing SHA256"
 SHA_FILE="$TARBALL_PATH.sha256"

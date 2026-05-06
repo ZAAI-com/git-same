@@ -1,6 +1,6 @@
 # Apple Code Signing & Notarization for macOS Releases
 
-> **Status: superseded.** The Homebrew Cask migration (3.0.0) absorbs and implements this plan. macOS binaries are now signed (Developer ID Application) and notarized as part of `S2-Release-GitHub.yml`, then packaged into a signed tarball that the cask installs and the `git-same-cli` formula consumes on macOS. See `toolkit/homebrew/sign-and-notarize.sh` for the runtime steps and `toolkit/homebrew/cask.rb.tmpl` for the cask layout. The notes below remain useful as background on cert provisioning and secret setup.
+> **Status: superseded.** The Homebrew Cask migration (3.0.0) absorbs and implements this plan. macOS binaries are now signed (Developer ID Application) and notarized as part of `S2-Release-GitHub.yml`, then packaged into a signed tarball that the cask installs and the `git-same-cli` formula consumes on macOS. See `toolkit/packaging/darwin-sign-and-notarize.sh` for the runtime steps and `toolkit/homebrew/cask.rb.tmpl` for the cask layout. The notes below remain useful as background on cert provisioning and secret setup.
 
 ## Context
 
