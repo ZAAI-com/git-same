@@ -6,6 +6,7 @@
     "run": "./toolkit/conductor/run.sh",
     "archive": "./toolkit/conductor/archive.sh"
   },
+  "runScriptMode": "nonconcurrent",
   "stack": {
     "language": "Rust",
     "cli": "Clap v4",
