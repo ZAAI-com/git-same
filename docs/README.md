@@ -36,9 +36,19 @@ One command discovers every repo across your GitHub orgs and mirrors them locall
 
 ## Installation
 
+**macOS** (signed + notarized cask):
+
 ```bash
-brew install zaai-com/tap/git-same
+brew install --cask zaai-com/tap/git-same
 ```
+
+**Linux and headless macOS** (formula):
+
+```bash
+brew install zaai-com/tap/git-same-cli
+```
+
+> As of 3.0.0, macOS distribution moved to a Homebrew Cask. The previous `brew install zaai-com/tap/git-same` formula path is deprecated on macOS and prints a notice that points at the cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
 
 <details>
 <summary>Other installation methods</summary>
@@ -51,7 +61,7 @@ cargo install git-same
 
 #### GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64).
+Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64). The macOS assets are signed and notarized tarballs (`git-same-<version>-<arch>-apple-darwin.tar.gz`).
 
 </details>
 
@@ -188,7 +198,7 @@ Git-Same installs multiple binary names so you can use whichever you prefer:
 | `gisa`     | Shortest alias (symlink)                       |
 | `git same` | Git subcommand (requires git-same in PATH)     |
 
-> **Install method differences:** Homebrew (`brew install zaai-com/tap/git-same`) installs all aliases automatically. `cargo install git-same` installs only the primary binary.
+> **Install method differences:** Homebrew cask (`brew install --cask zaai-com/tap/git-same`) and the headless formula (`brew install zaai-com/tap/git-same-cli`) both install all aliases automatically. `cargo install git-same` installs only the primary binary.
 
 All examples in this README use `git-same`, but any alias works interchangeably.
 

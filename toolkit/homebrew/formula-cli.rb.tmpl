@@ -1,0 +1,48 @@
+# Homebrew Formula template for git-same-cli.
+# Rendered by S3-Publish-Homebrew.yml into Formula/git-same-cli.rb on the tap.
+#
+# This formula is the cross-platform path: Linux (x86_64, aarch64) and headless
+# macOS (x86_64, aarch64). On macOS it installs the same signed + notarized
+# tarball that the cask uses. macOS GUI users should prefer the cask.
+class GitSameCli < Formula
+  desc "Discover and mirror GitHub org/repo structures locally"
+  homepage "https://github.com/zaai-com/git-same"
+  version "VERSION_PLACEHOLDER"
+  license "MIT"
+
+  if OS.mac?
+    if Hardware::CPU.arm?
+      url "URL_PLACEHOLDER/git-same-#{version}-aarch64-apple-darwin.tar.gz"
+      sha256 "SHA_MACOS_AARCH64_PLACEHOLDER"
+    else
+      url "URL_PLACEHOLDER/git-same-#{version}-x86_64-apple-darwin.tar.gz"
+      sha256 "SHA_MACOS_X86_64_PLACEHOLDER"
+    end
+  elsif OS.linux?
+    if Hardware::CPU.arm?
+      url "URL_PLACEHOLDER/git-same-linux-aarch64"
+      sha256 "SHA_LINUX_AARCH64_PLACEHOLDER"
+    else
+      url "URL_PLACEHOLDER/git-same-linux-x86_64"
+      sha256 "SHA_LINUX_X86_64_PLACEHOLDER"
+    end
+  end
+
+  def install
+    if OS.mac?
+      bin.install "git-same"
+    elsif OS.linux?
+      bin.install "git-same-linux-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
+    end
+    bin.install_symlink "git-same" => "gitsame"
+    bin.install_symlink "git-same" => "gitsa"
+    bin.install_symlink "git-same" => "gisa"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/git-same --version")
+    assert_match version.to_s, shell_output("#{bin}/gitsame --version")
+    assert_match version.to_s, shell_output("#{bin}/gitsa --version")
+    assert_match version.to_s, shell_output("#{bin}/gisa --version")
+  end
+end
