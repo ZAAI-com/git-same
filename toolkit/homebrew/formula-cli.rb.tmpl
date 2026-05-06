@@ -35,6 +35,11 @@ class GitSameCli < Formula
     bin.install_symlink "git-same" => "gitsame"
     bin.install_symlink "git-same" => "gitsa"
     bin.install_symlink "git-same" => "gisa"
+
+    man1.install "git-same.1"
+    bash_completion.install "git-same.bash" => "git-same"
+    zsh_completion.install  "_git-same"
+    fish_completion.install "git-same.fish"
   end
 
   test do

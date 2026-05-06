@@ -92,27 +92,33 @@ jobs:
             echo "ERROR: toolkit/packaging/binary-aliases.txt not found"; exit 1
           fi
 
-          # Only 1 [[bin]] in Cargo.toml
-          BIN_COUNT=$(grep -c '^[[:space:]]*\[\[bin\]\]' Cargo.toml || true)
-          if [ "$BIN_COUNT" -ne 1 ]; then
-            echo "ERROR: Cargo.toml has $BIN_COUNT [[bin]] entries, expected 1"; exit 1
+          # Exactly 1 default [[bin]] in Cargo.toml. [[bin]] entries gated by
+          # `required-features` (e.g. release-tools helpers gen-completions and
+          # gen-manpage) are excluded — they don't ship in normal builds.
+          read DEFAULT_COUNT CARGO_BIN <<<"$(awk '
+            function flush() {
+              if (in_bin && !has_req) {
+                default_count++
+                if (name != "" && default_name == "") default_name = name
+              }
+            }
+            /^\[\[bin\]\]/ { flush(); in_bin=1; name=""; has_req=0; next }
+            in_bin && /^\[/ { flush(); in_bin=0 }
+            in_bin && /^[[:space:]]*name[[:space:]]*=/ {
+              line=$0; sub(/^[^"]*"/, "", line); sub(/".*$/, "", line); name=line
+            }
+            in_bin && /^[[:space:]]*required-features[[:space:]]*=/ { has_req=1 }
+            END { flush(); print default_count, default_name }
+          ' Cargo.toml)"
+          if [ "${DEFAULT_COUNT:-0}" -ne 1 ]; then
+            echo "ERROR: Cargo.toml has ${DEFAULT_COUNT:-0} default [[bin]] entries, expected 1"; exit 1
+          fi
+          if [ -z "${CARGO_BIN:-}" ]; then
+            echo "ERROR: Could not resolve default bin name from Cargo.toml"; exit 1
           fi
 
-          # Primary matches Cargo.toml bin name
+          # Primary matches Cargo.toml default bin name
           MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
-          CARGO_BIN=$(awk '
-            /^\[\[bin\]\]/ { in_bin=1; next }
-            in_bin && /^\[/ { exit }
-            in_bin && $1 == "name" {
-              line = $0
-              sub(/^[^"]*"/, "", line)
-              sub(/".*$/, "", line)
-              if (line != "") { print line; exit }
-            }
-          ' Cargo.toml)
-          if [ -z "$CARGO_BIN" ]; then
-            echo "ERROR: Could not resolve bin name from Cargo.toml"; exit 1
-          fi
           if [ "$MANIFEST_PRIMARY" != "$CARGO_BIN" ]; then
             echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
           fi
@@ -123,6 +129,7 @@ jobs:
             toolkit/homebrew/cask.rb.tmpl
             toolkit/homebrew/formula-cli.rb.tmpl
             toolkit/homebrew/render-cask.sh
+            toolkit/homebrew/render-formula.sh
           )
           for f in "${HOMEBREW_FILES[@]}"; do
             [ -f "$f" ] || { echo "ERROR: required Homebrew file not found: $f"; exit 1; }
@@ -191,21 +198,51 @@ jobs:
             exit 1
           fi
 
+  prepare-matrix:
+    name: Prepare Build Matrix from targets.txt
+    needs: [test, coverage, alias-drift-check, audit, workflow-secret-safety]
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: set
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Map each Rust target triple in toolkit/packaging/targets.txt to
+          # a GitHub Actions runner. Adding a new triple to targets.txt without
+          # a runner mapping below is a hard failure here, by design.
+          runner_for() {
+            case "$1" in
+              x86_64-unknown-linux-gnu)  echo ubuntu-latest ;;
+              aarch64-unknown-linux-gnu) echo ubuntu-24.04-arm ;;
+              x86_64-apple-darwin)       echo macos-latest ;;
+              aarch64-apple-darwin)      echo macos-latest ;;
+              *) echo "ERROR: no runner mapping for target '$1'" >&2; exit 1 ;;
+            esac
+          }
+          ENTRIES=()
+          while IFS= read -r target; do
+            [ -z "$target" ] && continue
+            os="$(runner_for "$target")"
+            ENTRIES+=("{\"target\":\"${target}\",\"os\":\"${os}\"}")
+          done < toolkit/packaging/targets.txt
+          if [ ${#ENTRIES[@]} -eq 0 ]; then
+            echo "ERROR: no targets parsed from toolkit/packaging/targets.txt" >&2
+            exit 1
+          fi
+          ( IFS=,; echo "matrix=[${ENTRIES[*]}]" ) >> "$GITHUB_OUTPUT"
+
   build-release-assets:
     name: Build Release Asset (${{ matrix.target }})
-    needs: [test, coverage, alias-drift-check, audit, workflow-secret-safety]
+    needs: [prepare-matrix]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-24.04-arm
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
+        include: ${{ fromJSON(needs.prepare-matrix.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v6
@@ -244,24 +281,32 @@ jobs:
           echo "tarball=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
           echo "shafile=${NAME}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
 
+      - name: Generate shell completions
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash toolkit/packaging/gen-completions.sh staging
+
+      - name: Generate manpage
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: bash toolkit/packaging/gen-manpage.sh staging
+
+      - name: Stage binary + LICENSE
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          mv target/${{ matrix.target }}/release/git-same staging/git-same
+          cp LICENSE staging/LICENSE
+
       - name: Tar and SHA (Linux)
         if: runner.os != 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          mkdir -p staging
-          mv target/${{ matrix.target }}/release/git-same staging/git-same
-          tar -czf "${{ steps.asset.outputs.tarball }}" -C staging git-same
+          ( cd staging && tar -czf "../${{ steps.asset.outputs.tarball }}" -- * )
           shasum -a 256 "${{ steps.asset.outputs.tarball }}" \
             | awk '{print $1}' > "${{ steps.asset.outputs.shafile }}"
 
-      - name: Stage binary for signing (macOS)
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          mkdir -p signing
-          mv target/${{ matrix.target }}/release/git-same signing/git-same
-
-      - name: Sign and notarize (macOS)
+      - name: Sign, notarize, and tar (macOS)
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         env:
           APPLE_DEVELOPER_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
@@ -273,11 +318,28 @@ jobs:
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
         shell: bash
         run: |
-          bash toolkit/homebrew/sign-and-notarize.sh \
-            signing/git-same \
+          bash toolkit/packaging/darwin-sign-and-notarize.sh \
+            staging/git-same \
             "${{ matrix.target }}" \
             "${{ steps.version.outputs.version }}" \
-            .
+            . \
+            --entitlements toolkit/packaging/darwin-entitlements.plist
+
+      - name: Verify tarball contents match manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED="$(sort toolkit/packaging/tarball-manifest.txt | grep -v '^$')"
+          ACTUAL="$(tar -tzf "${{ steps.asset.outputs.tarball }}" \
+                    | sed -e 's|^\./||' \
+                    | grep -v '^$' \
+                    | grep -v '/$' \
+                    | sort)"
+          if ! diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$ACTUAL"); then
+            echo "ERROR: tarball contents do not match toolkit/packaging/tarball-manifest.txt" >&2
+            exit 1
+          fi
 
       - name: Upload artifact
         if: startsWith(github.ref, 'refs/tags/')

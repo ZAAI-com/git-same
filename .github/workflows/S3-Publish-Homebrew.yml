@@ -83,27 +83,26 @@ jobs:
 
       - name: Render formula-cli
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ steps.version.outputs.tag }}"
           REPO_URL="https://github.com/zaai-com/git-same/releases/download/${TAG}"
-          sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|URL_PLACEHOLDER|${REPO_URL}|g" \
-            -e "s|SHA_LINUX_X86_64_PLACEHOLDER|${{ steps.sha.outputs.linux_x86_64 }}|g" \
-            -e "s|SHA_LINUX_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.linux_aarch64 }}|g" \
-            -e "s|SHA_MACOS_X86_64_PLACEHOLDER|${{ steps.sha.outputs.macos_x86_64 }}|g" \
-            -e "s|SHA_MACOS_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.macos_aarch64 }}|g" \
-            toolkit/homebrew/formula-cli.rb.tmpl > formula-cli.rb
+          bash toolkit/homebrew/render-formula.sh \
+            "${{ steps.version.outputs.version }}" \
+            --kind cli \
+            --url "${REPO_URL}" \
+            --sha-macos-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
+            --sha-macos-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
+            --sha-linux-arm   "${{ steps.sha.outputs.linux_aarch64 }}" \
+            --sha-linux-intel "${{ steps.sha.outputs.linux_x86_64 }}" \
+            --out formula-cli.rb
 
       - name: Render formula deprecation shim
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          DATE="${{ steps.version.outputs.deprecation_date }}"
-          sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|DEPRECATION_DATE_PLACEHOLDER|${DATE}|g" \
-            -e "s|SOURCE_TARBALL_SHA_PLACEHOLDER|${{ steps.src_sha.outputs.sha }}|g" \
-            toolkit/homebrew/formula-shim.rb.tmpl > formula-shim.rb
+          bash toolkit/homebrew/render-formula.sh \
+            "${{ steps.version.outputs.version }}" \
+            --kind shim \
+            --deprecation-date "${{ steps.version.outputs.deprecation_date }}" \
+            --src-sha "${{ steps.src_sha.outputs.sha }}" \
+            --out formula-shim.rb
 
       - name: Render cask
         run: |
@@ -112,6 +111,13 @@ jobs:
             --sha-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
             --sha-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
             --out cask.rb
+
+      - name: Verify rendered cask + formulae against a temp tap
+        run: |
+          bash toolkit/homebrew/verify-tap.sh \
+            --cask cask.rb \
+            --formula-cli formula-cli.rb \
+            --formula-shim formula-shim.rb
 
       - name: Checkout tap repository
         uses: actions/checkout@v6

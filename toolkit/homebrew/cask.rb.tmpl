@@ -23,10 +23,18 @@ cask "git-same" do
 
   depends_on macos: ">= :big_sur"
 
+  # Casks don't have first-class shell-completion stanzas, so completions go
+  # through `binary` with absolute target: paths matching the locations the
+  # headless `git-same-cli` formula installs to. All `binary` stanzas must be
+  # grouped together per Cask/StanzaOrder; the manpage stanza follows.
   binary "git-same"
-  binary "git-same", target: "gitsame"
-  binary "git-same", target: "gitsa"
-  binary "git-same", target: "gisa"
+  binary "git-same",      target: "gitsame"
+  binary "git-same",      target: "gitsa"
+  binary "git-same",      target: "gisa"
+  binary "_git-same",     target: "#{HOMEBREW_PREFIX}/share/zsh/site-functions/_git-same"
+  binary "git-same.bash", target: "#{HOMEBREW_PREFIX}/etc/bash_completion.d/git-same"
+  binary "git-same.fish", target: "#{HOMEBREW_PREFIX}/share/fish/vendor_completions.d/git-same.fish"
+  manpage "git-same.1"
 
   zap trash: [
     "~/.config/git-same",

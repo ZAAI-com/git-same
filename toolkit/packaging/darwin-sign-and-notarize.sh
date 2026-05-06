@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# Sign + notarize a built git-same binary, emit a release tarball + .sha256.
+# Sign + notarize the git-same binary in a staging dir, then tar the whole
+# staging dir into a release tarball + emit .sha256.
 #
 # Usage:
-#   sign-and-notarize.sh BINARY_PATH TARGET VERSION OUT_DIR
+#   darwin-sign-and-notarize.sh BINARY_PATH TARGET VERSION OUT_DIR [--entitlements PATH]
+#
+# BINARY_PATH must live inside a staging directory whose contents will become
+# the release tarball (binary, LICENSE, manpage, completions, etc.). The script
+# signs only the binary; everything else in the staging dir is tarred verbatim.
 #
 # TARGET is the full Rust target triple (e.g. aarch64-apple-darwin).
 # Only darwin targets are accepted; the script signs and notarizes via Apple.
+#
+# --entitlements PATH (optional) is forwarded to codesign as --entitlements.
+# Default toolkit/packaging/darwin-entitlements.plist is empty/hardened-runtime
+# only; non-empty entitlements are needed for the planned Tauri + FinderSync GUI.
 #
 # Required env vars (CI provides via GitHub Secrets):
 #   APPLE_DEVELOPER_CERTIFICATE_P12       Base64 .p12 (Developer ID Application)
@@ -25,15 +34,32 @@
 
 set -euo pipefail
 
-if [ $# -ne 4 ]; then
-    echo "Usage: $0 BINARY_PATH TARGET VERSION OUT_DIR" >&2
+ENTITLEMENTS=""
+POS_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --entitlements)
+            if [ $# -lt 2 ]; then
+                echo "ERROR: --entitlements requires a path" >&2
+                exit 2
+            fi
+            ENTITLEMENTS="$2"
+            shift 2
+            ;;
+        --) shift; while [ $# -gt 0 ]; do POS_ARGS+=("$1"); shift; done ;;
+        *)  POS_ARGS+=("$1"); shift ;;
+    esac
+done
+
+if [ "${#POS_ARGS[@]}" -ne 4 ]; then
+    echo "Usage: $0 BINARY_PATH TARGET VERSION OUT_DIR [--entitlements PATH]" >&2
     exit 2
 fi
 
-BINARY_PATH="$1"
-TARGET="$2"
-VERSION="$3"
-OUT_DIR="$4"
+BINARY_PATH="${POS_ARGS[0]}"
+TARGET="${POS_ARGS[1]}"
+VERSION="${POS_ARGS[2]}"
+OUT_DIR="${POS_ARGS[3]}"
 
 case "$TARGET" in
     x86_64-apple-darwin|aarch64-apple-darwin) ;;
@@ -50,7 +76,14 @@ if [ ! -f "$BINARY_PATH" ]; then
     exit 1
 fi
 
+if [ -n "$ENTITLEMENTS" ] && [ ! -f "$ENTITLEMENTS" ]; then
+    echo "ERROR: Entitlements file not found: $ENTITLEMENTS" >&2
+    exit 1
+fi
+
 mkdir -p "$OUT_DIR"
+OUT_DIR_ABS="$(cd "$OUT_DIR" && pwd)"
+STAGING_DIR="$(cd "$(dirname "$BINARY_PATH")" && pwd)"
 
 for var in APPLE_DEVELOPER_CERTIFICATE_P12 APPLE_DEVELOPER_CERTIFICATE_PASSWORD \
            APPLE_SIGNING_IDENTITY APPLE_ID APPLE_TEAM_ID \
@@ -95,23 +128,21 @@ security set-key-partition-list \
     "$KEYCHAIN_NAME" >/dev/null
 
 echo "==> Signing binary"
-/usr/bin/codesign \
-    --force \
-    --options runtime \
-    --timestamp \
-    --sign "Developer ID Application: $APPLE_SIGNING_IDENTITY" \
-    "$BINARY_PATH"
+CODESIGN_ARGS=(--force --options runtime --timestamp)
+if [ -n "$ENTITLEMENTS" ]; then
+    CODESIGN_ARGS+=(--entitlements "$ENTITLEMENTS")
+fi
+CODESIGN_ARGS+=(--sign "Developer ID Application: $APPLE_SIGNING_IDENTITY" "$BINARY_PATH")
+/usr/bin/codesign "${CODESIGN_ARGS[@]}"
 
 echo "==> Verifying signature"
 /usr/bin/codesign --verify --verbose=4 "$BINARY_PATH"
 
 TARBALL_NAME="git-same-${VERSION}-${TARGET}.tar.gz"
-TARBALL_PATH="$OUT_DIR/$TARBALL_NAME"
+TARBALL_PATH="$OUT_DIR_ABS/$TARBALL_NAME"
 
-echo "==> Creating tarball $TARBALL_NAME"
-tar -czf "$TARBALL_PATH" \
-    -C "$(dirname "$BINARY_PATH")" \
-    "$(basename "$BINARY_PATH")"
+echo "==> Creating tarball $TARBALL_NAME (staging dir: $STAGING_DIR)"
+( cd "$STAGING_DIR" && tar -czf "$TARBALL_PATH" -- * )
 
 echo "==> Submitting tarball to notarytool"
 xcrun notarytool submit "$TARBALL_PATH" \
