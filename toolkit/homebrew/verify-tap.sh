@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Stage rendered cask + formula files into a throwaway local tap, then run
-# `brew style --strict` and `brew audit --strict --online` against each. Exits
+# `brew style` and `brew audit --strict --online` against each. Exits
 # non-zero on any audit/style failure so it can gate the real tap push in S3.
+# `brew style` is always strict in current Homebrew; the old `--strict` flag
+# was removed.
 #
 # Usage:
 #   verify-tap.sh --cask cask.rb --formula-cli formula-cli.rb \
@@ -76,7 +78,7 @@ cp "$CASK"         "$TAP_PATH/Casks/git-same.rb"
 ( cd "$TAP_PATH" && git init -q && git add . && git -c user.email=verify@local -c user.name=verify commit -q -m init )
 
 echo "==> brew style (cask + formulae)"
-brew style --strict "$TAP_PATH"
+brew style "$TAP_PATH"
 
 AUDIT_FLAGS=(--strict)
 if [ "$ONLINE" -eq 1 ]; then
