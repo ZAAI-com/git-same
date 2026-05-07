@@ -40,7 +40,7 @@ The shim is scheduled for removal at git-same 3.2 (see `formula-shim.rb.tmpl`).
 After the GitHub release exists for the new version:
 
 ```sh
-VERSION=3.0.0
+VERSION=3.0.1
 URL_PREFIX="https://github.com/zaai-com/git-same/releases/download/${VERSION}"
 
 # Compute SHAs for the four release tarballs

@@ -48,7 +48,7 @@ brew install --cask zaai-com/tap/git-same
 brew install zaai-com/tap/git-same-cli
 ```
 
-> As of 3.0.0, macOS distribution moved to a Homebrew Cask. The previous `brew install zaai-com/tap/git-same` formula path is deprecated on macOS and prints a notice that points at the cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
+> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The previous `brew install zaai-com/tap/git-same` formula path is deprecated on macOS and prints a notice that points at the cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
 
 <details>
 <summary>Other installation methods</summary>
@@ -61,7 +61,7 @@ cargo install git-same
 
 #### GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.0-aarch64-apple-darwin.tar.gz`).
+Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.1-aarch64-apple-darwin.tar.gz`).
 
 </details>
 

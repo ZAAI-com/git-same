@@ -29,7 +29,7 @@ usage() {
     cat <<EOF >&2
 Usage: $0 VERSION --sha-arm <hex> --sha-intel <hex> [--out PATH]
 
-  VERSION       Strict semver, no leading zeros, no v prefix (e.g. 3.0.0)
+  VERSION       Strict semver, no leading zeros, no v prefix (e.g. 3.0.1)
   --sha-arm     SHA256 of the aarch64 tarball (64 hex chars)
   --sha-intel   SHA256 of the x86_64 tarball (64 hex chars)
   --out PATH    Write to PATH instead of stdout
@@ -57,7 +57,7 @@ if [ -z "$VERSION" ]; then
     echo "ERROR: VERSION is required" >&2; usage; exit 2
 fi
 if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: VERSION must be strict semver (e.g. 3.0.0), got '$VERSION'" >&2
+    echo "ERROR: VERSION must be strict semver (e.g. 3.0.1), got '$VERSION'" >&2
     exit 2
 fi
 if ! [[ "$SHA_ARM" =~ ^[0-9a-f]{64}$ ]]; then

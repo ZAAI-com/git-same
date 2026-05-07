@@ -69,7 +69,7 @@ case "$TARGET" in
 esac
 
 if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: VERSION must be strict semver (e.g. 3.0.0), got '$VERSION'" >&2
+    echo "ERROR: VERSION must be strict semver (e.g. 3.0.1), got '$VERSION'" >&2
     exit 2
 fi
 

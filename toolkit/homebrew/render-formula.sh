@@ -48,7 +48,7 @@ Usage:
   $0 VERSION --kind shim --deprecation-date YYYY-MM-DD \\
        --src-sha <hex> [--out PATH]
 
-  VERSION              Strict semver, no leading zeros, no v prefix (e.g. 3.0.0)
+  VERSION              Strict semver, no leading zeros, no v prefix (e.g. 3.0.1)
   --url                URL prefix for cli kind (no trailing slash)
   --sha-*              SHA256 of the tarball (64 hex chars)
   --deprecation-date   ISO date when the shim begins emitting a warning
@@ -92,7 +92,7 @@ if [ -z "$VERSION" ]; then
     echo "ERROR: VERSION is required" >&2; usage; exit 2
 fi
 if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-    echo "ERROR: VERSION must be strict semver (e.g. 3.0.0), got '$VERSION'" >&2
+    echo "ERROR: VERSION must be strict semver (e.g. 3.0.1), got '$VERSION'" >&2
     exit 2
 fi
 
