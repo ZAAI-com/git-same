@@ -28,7 +28,7 @@ class StatusReader {
 
     /// Start watching the status file for changes.
     func startWatching() {
-        let path = GitSameBadgeConstants.statusFilePath
+        let path = GitSameBadgesConstants.statusFilePath
 
         // Open file descriptor for monitoring
         fileDescriptor = open(path, O_EVTONLY)
@@ -82,7 +82,7 @@ class StatusReader {
 
     /// Reload and parse the status file.
     func reload() {
-        let path = GitSameBadgeConstants.statusFilePath
+        let path = GitSameBadgesConstants.statusFilePath
         guard let data = FileManager.default.contents(atPath: path) else { return }
 
         do {

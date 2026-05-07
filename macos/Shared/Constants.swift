@@ -13,7 +13,7 @@
 
 import Foundation
 
-enum GitSameBadgeConstants {
+enum GitSameBadgesConstants {
     /// App group shared between the host app, the Badges extension, and the
     /// daemon. Apple requires the team-id prefix.
     /// Mirrors the Rust `git_same_core::ipc::APP_GROUP_ID`.

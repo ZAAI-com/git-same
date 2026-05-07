@@ -8,7 +8,7 @@ import Network
 class SocketClient {
     private let socketPath: String
 
-    init(socketPath: String = GitSameBadgeConstants.socketPath) {
+    init(socketPath: String = GitSameBadgesConstants.socketPath) {
         self.socketPath = socketPath
     }
 

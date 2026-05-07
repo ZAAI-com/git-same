@@ -5,7 +5,7 @@ import Cocoa
 import FinderSync
 import os
 
-private let gsbLog = OSLog(subsystem: "com.zaai.git-same.GitSameBadge.FinderSync", category: "ext")
+private let gsbLog = OSLog(subsystem: "com.zaai.git-same.badges", category: "ext")
 
 class FinderSync: FIFinderSync {
 
@@ -80,8 +80,8 @@ class FinderSync: FIFinderSync {
 
         if let orgFolder = orgFolderLookup(path: path, resolved: resolved) {
             let finalID = orgFolder.ownerType == .user
-                ? GitSameBadgeConstants.BadgeID.user
-                : GitSameBadgeConstants.BadgeID.org
+                ? GitSameBadgesConstants.BadgeID.user
+                : GitSameBadgesConstants.BadgeID.org
             controller.setBadgeIdentifier(finalID, for: url)
             return
         }
@@ -119,11 +119,11 @@ class FinderSync: FIFinderSync {
 
     private func badgeID(for badge: Badge) -> String {
         switch badge {
-        case .green: return GitSameBadgeConstants.BadgeID.green
-        case .blue: return GitSameBadgeConstants.BadgeID.blue
-        case .orange: return GitSameBadgeConstants.BadgeID.orange
-        case .red: return GitSameBadgeConstants.BadgeID.red
-        case .gray: return GitSameBadgeConstants.BadgeID.gray
+        case .green: return GitSameBadgesConstants.BadgeID.green
+        case .blue: return GitSameBadgesConstants.BadgeID.blue
+        case .orange: return GitSameBadgesConstants.BadgeID.orange
+        case .red: return GitSameBadgesConstants.BadgeID.red
+        case .gray: return GitSameBadgesConstants.BadgeID.gray
         }
     }
 
@@ -139,8 +139,8 @@ class FinderSync: FIFinderSync {
         for orgFolder in status.orgFolders ?? [] {
             let url = URL(fileURLWithPath: orgFolder.path)
             let finalID = orgFolder.ownerType == .user
-                ? GitSameBadgeConstants.BadgeID.user
-                : GitSameBadgeConstants.BadgeID.org
+                ? GitSameBadgesConstants.BadgeID.user
+                : GitSameBadgesConstants.BadgeID.org
             controller.setBadgeIdentifier(finalID, for: url)
         }
 
@@ -164,11 +164,11 @@ class FinderSync: FIFinderSync {
     // MARK: - Toolbar
 
     override var toolbarItemName: String {
-        return "GitSameBadge"
+        return "git-Same"
     }
 
     override var toolbarItemToolTip: String {
-        return "GitSameBadge repository status"
+        return "git-Same repository status"
     }
 
     override var toolbarItemImage: NSImage {

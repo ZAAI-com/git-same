@@ -13,37 +13,37 @@ enum BadgeManager {
         controller.setBadgeImage(
             labeledBadge(text: "R", color: .systemGreen),
             label: "Synced",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.green
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.green
         )
         controller.setBadgeImage(
             labeledBadge(text: "R", color: .systemBlue),
             label: "Has Local Config",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.blue
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.blue
         )
         controller.setBadgeImage(
             labeledBadge(text: "R", color: .systemOrange),
             label: "Partially Synced",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.orange
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.orange
         )
         controller.setBadgeImage(
             labeledBadge(text: "R", color: .systemRed),
             label: "Uncommitted Changes",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.red
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.red
         )
         controller.setBadgeImage(
             labeledBadge(text: "R", color: .systemGray),
             label: "Git Repository",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.gray
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.gray
         )
         controller.setBadgeImage(
             labeledBadge(text: "O", color: .systemPurple),
             label: "Organization",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.org
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.org
         )
         controller.setBadgeImage(
             labeledBadge(text: "U", color: .systemTeal),
             label: "User",
-            forBadgeIdentifier: GitSameBadgeConstants.BadgeID.user
+            forBadgeIdentifier: GitSameBadgesConstants.BadgeID.user
         )
     }
 
