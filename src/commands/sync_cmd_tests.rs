@@ -22,6 +22,19 @@ async fn run_returns_error_when_no_workspace_is_configured() {
     let temp = tempfile::tempdir().unwrap();
     std::env::set_var("HOME", temp.path());
 
+    // resolve() walks up from cwd looking for any `.git-same/` directory, so we
+    // must run from an isolated cwd to avoid matching a real workspace above the
+    // repo on a developer machine.
+    let original_cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+    struct CwdRestore(std::path::PathBuf);
+    impl Drop for CwdRestore {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+    let _cwd_restore = CwdRestore(original_cwd);
+
     let args = default_args();
     let config = Config::default();
     let output = Output::new(Verbosity::Quiet, false);
