@@ -129,3 +129,18 @@ echo ""
 echo "  $GS_COMMAND -v sync --dry-run"
 echo "  $GS_COMMAND --json status"
 echo ""
+
+# Launch the Tauri desktop app in dev mode
+TAURI_CLI="$PROJECT_DIR/crates/git-same-app/ui/node_modules/.bin/tauri"
+if [ ! -x "$TAURI_CLI" ]; then
+    echo "ERROR: Tauri CLI not found at $TAURI_CLI"
+    echo "Run ./toolkit/conductor/setup.sh first to install frontend dependencies."
+    exit 1
+fi
+
+echo "========================================"
+echo "  Launching Tauri app (dev mode)"
+echo "========================================"
+echo ""
+cd "$PROJECT_DIR"
+exec "$TAURI_CLI" dev --manifest-path crates/git-same-app/Cargo.toml
