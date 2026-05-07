@@ -547,11 +547,7 @@ async fn down_at_last_provider_does_not_move() {
     let last = state.provider_choices.len() - 1;
     state.provider_index = last;
 
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-    )
-    .await;
+    handle_key(&mut state, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
 
     assert_eq!(state.provider_index, last);
 }
@@ -637,11 +633,7 @@ async fn down_at_last_org_does_not_move() {
     ];
     state.org_index = 1; // last
 
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-    )
-    .await;
+    handle_key(&mut state, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
 
     assert_eq!(state.org_index, 1);
 }
@@ -741,11 +733,7 @@ async fn down_at_last_browse_entry_does_not_move() {
     let last = state.path_browse_entries.len() - 1;
     state.path_browse_index = last;
 
-    handle_key(
-        &mut state,
-        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-    )
-    .await;
+    handle_key(&mut state, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)).await;
 
     assert_eq!(state.path_browse_index, last);
 }
