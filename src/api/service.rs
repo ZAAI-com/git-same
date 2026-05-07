@@ -265,6 +265,7 @@ impl<'a> RepoScanService<'a> {
             remotes: Vec::new(),
             worktrees: Vec::new(),
             all_worktrees_synced: true,
+            read_error: None,
         }
     }
 
@@ -314,19 +315,25 @@ impl<'a> RepoScanService<'a> {
     ) -> FinderRepoStatus {
         let git = self.git;
 
-        // Get basic status
-        let repo_status = git
-            .status(repo_path)
-            .unwrap_or_else(|_| crate::git::RepoStatus {
-                branch: "unknown".to_string(),
-                is_uncommitted: false,
-                ahead: 0,
-                behind: 0,
-                has_untracked: false,
-                staged_count: 0,
-                unstaged_count: 0,
-                untracked_count: 0,
-            });
+        // Get basic status. If `git status` fails, capture the error so the
+        // CLI can warn the user and we can force the badge to Gray instead
+        // of letting the all-zero defaults masquerade as a clean repo.
+        let (repo_status, read_error) = match git.status(repo_path) {
+            Ok(s) => (s, None),
+            Err(e) => (
+                crate::git::RepoStatus {
+                    branch: "unknown".to_string(),
+                    is_uncommitted: false,
+                    ahead: 0,
+                    behind: 0,
+                    has_untracked: false,
+                    staged_count: 0,
+                    unstaged_count: 0,
+                    untracked_count: 0,
+                },
+                Some(e.to_string()),
+            ),
+        };
 
         // Get branches
         let branches: Vec<FinderBranchInfo> = git
@@ -403,16 +410,21 @@ impl<'a> RepoScanService<'a> {
             (false, Vec::new())
         };
 
-        // Compute badge
-        let badge = compute_badge(
-            repo_status.staged_count,
-            repo_status.unstaged_count,
-            repo_status.untracked_count,
-            repo_status.ahead,
-            all_branches_synced,
-            all_worktrees_synced,
-            has_important_ignored_files,
-        );
+        // Compute badge. Unreadable repos stay Gray so they don't pose as
+        // healthy Green repos in the Finder or in `gisa status`.
+        let badge = if read_error.is_some() {
+            Badge::Gray
+        } else {
+            compute_badge(
+                repo_status.staged_count,
+                repo_status.unstaged_count,
+                repo_status.untracked_count,
+                repo_status.ahead,
+                all_branches_synced,
+                all_worktrees_synced,
+                has_important_ignored_files,
+            )
+        };
 
         FinderRepoStatus {
             path: repo_path.to_path_buf(),
@@ -435,6 +447,7 @@ impl<'a> RepoScanService<'a> {
             remotes,
             worktrees,
             all_worktrees_synced,
+            read_error,
         }
     }
 

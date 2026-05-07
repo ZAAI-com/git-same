@@ -118,6 +118,65 @@ fn test_parse_track_info_diverged() {
     assert_eq!(behind, 7);
 }
 
+#[test]
+fn test_parse_track_info_gone_yields_zeros() {
+    // "[gone]" is the for-each-ref signal that the upstream ref no longer
+    // exists. parse_track_info doesn't decode it, but list_branches relies
+    // on it returning (0, 0) so the higher-level upstream-clearing logic
+    // can take over without spurious counts leaking through.
+    let (ahead, behind) = ShellGit::parse_track_info("[gone]");
+    assert_eq!(ahead, 0);
+    assert_eq!(behind, 0);
+}
+
+#[test]
+fn test_parse_branch_line_synced() {
+    let info = ShellGit::parse_branch_line("main\torigin/main\t").unwrap();
+    assert_eq!(info.name, "main");
+    assert_eq!(info.upstream, Some("origin/main".to_string()));
+    assert_eq!(info.ahead, 0);
+    assert_eq!(info.behind, 0);
+    assert!(info.is_synced);
+}
+
+#[test]
+fn test_parse_branch_line_no_upstream() {
+    let info = ShellGit::parse_branch_line("local-only\t\t").unwrap();
+    assert!(info.upstream.is_none());
+    assert!(!info.is_synced);
+}
+
+#[test]
+fn test_parse_branch_line_diverged() {
+    let info = ShellGit::parse_branch_line("feature\torigin/feature\t[ahead 2, behind 7]").unwrap();
+    assert_eq!(info.upstream, Some("origin/feature".to_string()));
+    assert_eq!(info.ahead, 2);
+    assert_eq!(info.behind, 7);
+    assert!(!info.is_synced);
+}
+
+#[test]
+fn test_parse_branch_line_gone_upstream_not_synced() {
+    // When the upstream ref has been deleted, %(upstream:short) still
+    // returns the now-dead name and %(upstream:track) is "[gone]". The
+    // branch must not be reported as synced; its commits are local-only.
+    let info = ShellGit::parse_branch_line("orphan\torigin/orphan\t[gone]").unwrap();
+    assert!(
+        info.upstream.is_none(),
+        "[gone] upstream should be cleared so the branch isn't presented as tracking a live ref"
+    );
+    assert!(
+        !info.is_synced,
+        "branch with deleted upstream must not be reported as synced; Badge::Green would mislead the user into deleting unique commits"
+    );
+}
+
+#[test]
+fn test_parse_branch_line_empty_returns_none() {
+    assert!(ShellGit::parse_branch_line("").is_none());
+    assert!(ShellGit::parse_branch_line("\torigin/foo\t").is_none());
+}
+
 // Integration tests that require actual git repo
 #[test]
 #[ignore] // Run with: cargo test -- --ignored

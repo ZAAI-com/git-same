@@ -38,6 +38,7 @@ fn sample_status() -> FinderStatus {
         remotes: vec![],
         worktrees: Vec::new(),
         all_worktrees_synced: true,
+        read_error: None,
     });
     status
 }

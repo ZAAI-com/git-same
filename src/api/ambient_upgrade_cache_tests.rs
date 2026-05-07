@@ -24,6 +24,7 @@ fn sample_status(path: &str, badge: Badge) -> FinderRepoStatus {
         remotes: Vec::new(),
         worktrees: Vec::new(),
         all_worktrees_synced: true,
+        read_error: None,
     }
 }
 

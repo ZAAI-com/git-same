@@ -175,6 +175,7 @@ fn test_finder_repo_status_serialization() {
         }],
         worktrees: Vec::new(),
         all_worktrees_synced: true,
+        read_error: None,
     };
 
     let json = serde_json::to_string(&repo).unwrap();

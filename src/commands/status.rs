@@ -29,19 +29,11 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
     // Get status for each
     let mut uncommitted_count = 0;
     let mut behind_count = 0;
+    let mut error_count = 0;
 
     for repo in &repos {
-        let is_uncommitted =
-            repo.staged_count > 0 || repo.unstaged_count > 0 || repo.untracked_count > 0;
-        let is_behind = repo.behind > 0;
-
-        // Apply filters
-        if args.uncommitted && !is_uncommitted {
-            continue;
-        }
-        if args.behind && !is_behind {
-            continue;
-        }
+        // Apply org filter first so it suppresses output for both readable
+        // and unreadable repos consistently.
         if !args.org.is_empty() {
             let matches_org = repo
                 .org
@@ -51,6 +43,25 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
             if !matches_org {
                 continue;
             }
+        }
+
+        // Repos that couldn't be read get tallied separately; they have
+        // zero counts and would otherwise appear as clean.
+        if let Some(err) = &repo.read_error {
+            error_count += 1;
+            output.verbose(&format!("  {} - error: {}", repo.path.display(), err));
+            continue;
+        }
+
+        let is_uncommitted =
+            repo.staged_count > 0 || repo.unstaged_count > 0 || repo.untracked_count > 0;
+        let is_behind = repo.behind > 0;
+
+        if args.uncommitted && !is_uncommitted {
+            continue;
+        }
+        if args.behind && !is_behind {
+            continue;
         }
 
         if is_uncommitted {
@@ -116,7 +127,13 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
             "{} repositories are behind upstream",
             behind_count
         ));
-    } else if uncommitted_count == 0 {
+    }
+    if error_count > 0 {
+        output.warn(&format!(
+            "{} repositories could not be checked",
+            error_count
+        ));
+    } else if uncommitted_count == 0 && behind_count == 0 {
         output.success("All repositories are clean and up to date");
     }
 

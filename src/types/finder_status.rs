@@ -86,6 +86,12 @@ pub struct FinderRepoStatus {
     pub remotes: Vec<FinderRemoteInfo>,
     pub worktrees: Vec<FinderWorktreeInfo>,
     pub all_worktrees_synced: bool,
+    /// If reading the repo's git state failed, the underlying error message.
+    /// Set by `scan_repo` when `git status` errors so callers (the CLI
+    /// `status` command, the FinderSync extension) can distinguish a broken
+    /// repo from a clean one. The badge for these repos is forced to `Gray`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_error: Option<String>,
 }
 
 /// Classification of a GitHub account that owns repositories.

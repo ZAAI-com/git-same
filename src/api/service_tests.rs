@@ -60,6 +60,34 @@ fn test_scan_repo_dirty() {
 }
 
 #[test]
+fn scan_repo_captures_read_error_and_forces_gray_badge() {
+    // A repo whose `git status` fails must be flagged via `read_error` so the
+    // CLI can warn the user. Crucially the badge must NOT be Green; that is
+    // the original regression that caused unreadable repos to roll into
+    // "All repositories are clean and up to date".
+    let mock_cfg = MockConfig {
+        fail_status_paths: vec!["/tmp/broken-repo".to_string()],
+        error_message: Some("fatal: not a git repository".to_string()),
+        ..Default::default()
+    };
+    let mock = MockGit::with_config(mock_cfg);
+    let config = default_config();
+    let service = RepoScanService::new(&mock, &config);
+
+    let status = service.scan_repo(Path::new("/tmp/broken-repo"), Some("ws"), Some("org"));
+
+    assert!(
+        status.read_error.is_some(),
+        "scan_repo should surface git.status errors via read_error"
+    );
+    assert_eq!(
+        status.badge,
+        Badge::Gray,
+        "unreadable repos must not show as Badge::Green; that was the original regression"
+    );
+}
+
+#[test]
 fn test_scan_repo_no_workspace() {
     let mock = MockGit::new();
     let config = default_config();
@@ -184,6 +212,7 @@ fn ambient_upgrade_cache_preserves_semantic_color() {
         remotes: Vec::new(),
         worktrees: Vec::new(),
         all_worktrees_synced: true,
+        read_error: None,
     };
     upgrades.set(repo_path.clone(), upgraded);
 

@@ -262,6 +262,10 @@ pub mod mock {
         pub default_status: RepoStatus,
         /// Custom statuses per path
         pub path_statuses: HashMap<String, RepoStatus>,
+        /// Paths whose `status()` call should return an error. Used by
+        /// `RepoScanService` tests to verify that `read_error` is captured
+        /// instead of being silently coerced to a clean default.
+        pub fail_status_paths: Vec<String>,
         /// Paths that are valid repos
         pub valid_repos: Vec<String>,
         /// Custom error message for failures
@@ -286,6 +290,7 @@ pub mod mock {
                     untracked_count: 0,
                 },
                 path_statuses: HashMap::new(),
+                fail_status_paths: Vec::new(),
                 valid_repos: Vec::new(),
                 error_message: None,
             }
@@ -432,6 +437,16 @@ pub mod mock {
             let mut log = self.log.lock().unwrap();
             let path_str = repo_path.to_string_lossy().to_string();
             log.status_checks.push(path_str.clone());
+
+            if self.config.fail_status_paths.contains(&path_str) {
+                return Err(GitError::command_failed(
+                    "git status",
+                    self.config
+                        .error_message
+                        .as_deref()
+                        .unwrap_or("mock status failure"),
+                ));
+            }
 
             if let Some(status) = self.config.path_statuses.get(&path_str) {
                 Ok(status.clone())

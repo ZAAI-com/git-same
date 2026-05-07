@@ -130,6 +130,41 @@ impl ShellGit {
         (ahead, behind)
     }
 
+    /// Parses a single line of `for-each-ref` output in the format used by
+    /// `list_branches`: `<name>\t<upstream:short>\t<upstream:track>`.
+    /// Returns `None` if the line has no branch name. Pure function so it
+    /// can be unit-tested without shelling out.
+    fn parse_branch_line(line: &str) -> Option<BranchInfo> {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        let name = parts.first().unwrap_or(&"").to_string();
+        if name.is_empty() {
+            return None;
+        }
+
+        let upstream_raw = parts.get(1).unwrap_or(&"").to_string();
+        let track = parts.get(2).unwrap_or(&"");
+        let (ahead, behind) = Self::parse_track_info(track);
+        // `for-each-ref` emits "[gone]" in %(upstream:track) when the
+        // upstream ref has been deleted. %(upstream:short) still returns
+        // the dead ref name, so without this check is_synced would be
+        // true for a branch with no reachable upstream.
+        let upstream_gone = track.trim() == "[gone]";
+        let upstream = if upstream_raw.is_empty() || upstream_gone {
+            None
+        } else {
+            Some(upstream_raw)
+        };
+        let is_synced = upstream.is_some() && ahead == 0 && behind == 0;
+
+        Some(BranchInfo {
+            name,
+            upstream,
+            ahead,
+            behind,
+            is_synced,
+        })
+    }
+
     /// Parses branch info from git status -b --porcelain output.
     fn parse_branch_info(&self, output: &str) -> (String, u32, u32) {
         let first_line = output.lines().next().unwrap_or("");
@@ -390,37 +425,11 @@ impl GitOperations for ShellGit {
             Some(repo_path),
         )?;
 
-        let mut branches = Vec::new();
-        for line in output.lines() {
-            if line.is_empty() {
-                continue;
-            }
-            let parts: Vec<&str> = line.splitn(3, '\t').collect();
-            let name = parts.first().unwrap_or(&"").to_string();
-            if name.is_empty() {
-                continue;
-            }
-
-            let upstream_raw = parts.get(1).unwrap_or(&"").to_string();
-            let upstream = if upstream_raw.is_empty() {
-                None
-            } else {
-                Some(upstream_raw)
-            };
-
-            let track = parts.get(2).unwrap_or(&"");
-            let (ahead, behind) = Self::parse_track_info(track);
-            let is_synced = upstream.is_some() && ahead == 0 && behind == 0;
-
-            branches.push(BranchInfo {
-                name,
-                upstream,
-                ahead,
-                behind,
-                is_synced,
-            });
-        }
-        Ok(branches)
+        Ok(output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(Self::parse_branch_line)
+            .collect())
     }
 
     fn list_remotes(&self, repo_path: &Path) -> Result<Vec<RemoteInfo>, GitError> {
