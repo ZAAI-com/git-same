@@ -54,8 +54,8 @@
 		61AF581BDDD5DCB1387D64E4 /* GitSameBadges.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadges.entitlements; sourceTree = "<group>"; };
 		66AB39502A80452129E1480B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		83B6E312068B04A2AB272376 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		8D40CF5193F71326936E5020 /* GitSameBadge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadge.entitlements; sourceTree = "<group>"; };
-		8EDDD96648AEBE55B27703CD /* GitSameBadge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitSameBadge.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8D40CF5193F71326936E5020 /* GitSameSwiftApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameSwiftApp.entitlements; sourceTree = "<group>"; };
+		8EDDD96648AEBE55B27703CD /* GitSameSwiftApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GitSameSwiftApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuBuilder.swift; sourceTree = "<group>"; };
 		9D8F66E45A3050726370F5B8 /* StatusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusModels.swift; sourceTree = "<group>"; };
 		AB229AA7479834C325EB99A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -68,22 +68,22 @@
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
-		10538FA5EC703BB6456B0A69 /* GitSameBadge */ = {
+		10538FA5EC703BB6456B0A69 /* GitSameSwiftApp */ = {
 			isa = PBXGroup;
 			children = (
-				8D40CF5193F71326936E5020 /* GitSameBadge.entitlements */,
+				8D40CF5193F71326936E5020 /* GitSameSwiftApp.entitlements */,
 				E4F4D50A6C496D2398C988EA /* Info.plist */,
 				CB0CFDD7D56E2F16E9FC7F4D /* App */,
 				D692F12A3FB2A18EBF23C852 /* Models */,
 				DAA91174E582BD5E9000217A /* Views */,
 			);
-			path = GitSameBadge;
+			path = GitSameSwiftApp;
 			sourceTree = "<group>";
 		};
 		43651E8F046591C71351AE27 = {
 			isa = PBXGroup;
 			children = (
-				10538FA5EC703BB6456B0A69 /* GitSameBadge */,
+				10538FA5EC703BB6456B0A69 /* GitSameSwiftApp */,
 				75232AD31082397A565782DE /* GitSameBadges */,
 				6CFF0D192987E49E1BA2859F /* Shared */,
 				44E4ECBCE05E2A7A5F2EE2CD /* Products */,
@@ -93,7 +93,7 @@
 		44E4ECBCE05E2A7A5F2EE2CD /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8EDDD96648AEBE55B27703CD /* GitSameBadge.app */,
+				8EDDD96648AEBE55B27703CD /* GitSameSwiftApp.app */,
 				AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */,
 			);
 			name = Products;
@@ -166,9 +166,9 @@
 			productReference = AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		9299C38CC4E9759F948732EE /* GitSameBadge */ = {
+		9299C38CC4E9759F948732EE /* GitSameSwiftApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = ED1FA95BAF692E77F6FE377D /* Build configuration list for PBXNativeTarget "GitSameBadge" */;
+			buildConfigurationList = ED1FA95BAF692E77F6FE377D /* Build configuration list for PBXNativeTarget "GitSameSwiftApp" */;
 			buildPhases = (
 				275130C7732709B4EC961D97 /* Sources */,
 				774AE2229A24E660BCEBADE8 /* Embed Foundation Extensions */,
@@ -178,11 +178,11 @@
 			dependencies = (
 				8DB2E8AC2A85E61C740DF3B4 /* PBXTargetDependency */,
 			);
-			name = GitSameBadge;
+			name = GitSameSwiftApp;
 			packageProductDependencies = (
 			);
-			productName = GitSameBadge;
-			productReference = 8EDDD96648AEBE55B27703CD /* GitSameBadge.app */;
+			productName = GitSameSwiftApp;
+			productReference = 8EDDD96648AEBE55B27703CD /* GitSameSwiftApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -216,7 +216,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				9299C38CC4E9759F948732EE /* GitSameBadge */,
+				9299C38CC4E9759F948732EE /* GitSameSwiftApp */,
 				0DD1148AB87797C1EFE47734 /* GitSameBadges */,
 			);
 		};
@@ -368,10 +368,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = GitSameBadge/GitSameBadge.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitSameSwiftApp/GitSameSwiftApp.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 57KL6Y7V32;
-				INFOPLIST_FILE = GitSameBadge/Info.plist;
+				INFOPLIST_FILE = GitSameSwiftApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -446,10 +446,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = GitSameBadge/GitSameBadge.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitSameSwiftApp/GitSameSwiftApp.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 57KL6Y7V32;
-				INFOPLIST_FILE = GitSameBadge/Info.plist;
+				INFOPLIST_FILE = GitSameSwiftApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -482,7 +482,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		ED1FA95BAF692E77F6FE377D /* Build configuration list for PBXNativeTarget "GitSameBadge" */ = {
+		ED1FA95BAF692E77F6FE377D /* Build configuration list for PBXNativeTarget "GitSameSwiftApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B87497438EDBE2BB4586AB78 /* Debug */,
