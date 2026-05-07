@@ -59,7 +59,6 @@ pub mod ipc;
 pub mod operations;
 pub mod output;
 pub mod provider;
-#[cfg(feature = "tui")]
 pub mod setup;
 #[cfg(feature = "tui")]
 pub mod tui;
