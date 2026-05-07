@@ -115,3 +115,128 @@ fn sync_banner_phase_animates_while_sync_running() {
     let phase = sync_banner_phase(&app).expect("running sync should animate the banner");
     assert!((phase - 0.5).abs() < f64::EPSILON);
 }
+
+// --- Tests for the KeyCode::Right match-guard change introduced in this PR ---
+
+/// Right when stat_index == 5 must NOT increment (guard: `stat_index < 5`).
+#[tokio::test]
+async fn right_at_last_tab_does_not_overflow() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 5;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 5, "stat_index must not exceed 5");
+}
+
+/// Right from index 4 advances to 5.
+#[tokio::test]
+async fn right_from_penultimate_tab_advances_to_last() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 4;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 5);
+}
+
+/// Right from index 0 advances to 1.
+#[tokio::test]
+async fn right_from_first_tab_advances_to_second() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 0;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 1);
+}
+
+/// Left at stat_index == 0 must not underflow (saturating_sub keeps it at 0).
+#[tokio::test]
+async fn left_at_first_tab_stays_at_zero() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 0;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 0);
+}
+
+/// Left from index 3 decrements to 2.
+#[tokio::test]
+async fn left_from_middle_tab_decrements() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 3;
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 2);
+}
+
+/// Right resets the table selection to row 0.
+#[tokio::test]
+async fn right_resets_table_selection_to_first_row() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 2;
+    app.dashboard_table_state.select(Some(7));
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 3);
+    assert_eq!(app.dashboard_table_state.selected(), Some(0));
+}
+
+/// Left resets the table selection to row 0.
+#[tokio::test]
+async fn left_resets_table_selection_to_first_row() {
+    let mut app = build_app();
+    let (tx, _rx) = unbounded_channel();
+    app.stat_index = 4;
+    app.dashboard_table_state.select(Some(5));
+
+    handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+        &tx,
+    )
+    .await;
+
+    assert_eq!(app.stat_index, 3);
+    assert_eq!(app.dashboard_table_state.selected(), Some(0));
+}
