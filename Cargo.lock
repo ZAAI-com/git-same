@@ -863,22 +863,42 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-same"
+name = "git-same-cli"
 version = "3.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chrono",
  "clap",
  "clap_complete",
  "clap_mangen",
  "console",
  "crossterm",
+ "git-same-core",
+ "indicatif",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "git-same-core"
+version = "3.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "console",
  "directories",
  "futures",
  "indicatif",
  "mockito",
- "ratatui",
  "reqwest",
  "serde",
  "serde_json",

@@ -1,0 +1,37 @@
+[package]
+name = "git-same-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["git", "github", "library"]
+categories = ["development-tools"]
+description = "Core engine for git-same: discovery, clone, sync, IPC, status."
+
+[features]
+# Exposes test helpers (e.g. Repo::test) for downstream crates' integration tests.
+test-utils = []
+
+[dependencies]
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+directories = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+shellexpand = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+mockito = { workspace = true }
+tempfile = { workspace = true }
