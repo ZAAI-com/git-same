@@ -13,6 +13,7 @@ use git_same_core::api::{AmbientUpgradeCache, OwnerTypeCache, RepoScanService};
 use git_same_core::config::Config;
 use git_same_core::errors::Result;
 use git_same_core::git::ShellGit;
+use git_same_core::ipc::status_file::ensure_legacy_symlinks;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::output::Output;
 use git_same_core::types::OwnerType;
@@ -32,6 +33,13 @@ pub async fn run(args: &DaemonArgs, config: &Config, output: &Output) -> Result<
     // Handle --stop: terminate running daemon
     if args.stop {
         return stop_daemon(&ipc_config, output);
+    }
+
+    // On macOS, redirect any legacy ~/.config/git-same/finder/{status.json,
+    // finder.sock} paths to the app-group container via symlinks, so older
+    // tools/scripts that hardcode the legacy path keep working.
+    if let Err(e) = ensure_legacy_symlinks(&ipc_config.dir) {
+        warn!("Could not refresh legacy IPC symlinks: {}", e);
     }
 
     // Start the daemon

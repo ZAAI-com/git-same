@@ -6,6 +6,17 @@
 //!
 //! On macOS/Linux, communication uses Unix domain sockets.
 //! On Windows, named pipes are used instead.
+//!
+//! ## macOS path resolution
+//!
+//! On macOS, IPC files live in the app-group container at
+//! `~/Library/Group Containers/<APP_GROUP_ID>/` so the sandboxed Badges
+//! extension and the (non-sandboxed) Tauri host can both reach them via the
+//! `application-groups` entitlement, instead of via per-path absolute-path
+//! exceptions that cannot be expanded for arbitrary users.
+//!
+//! On non-macOS platforms (Linux, Windows), IPC files live under the user's
+//! XDG config dir at `~/.config/git-same/finder/`.
 
 pub mod status_file;
 
@@ -20,6 +31,14 @@ pub use unix_socket::{UnixSocketClient, UnixSocketListener};
 use crate::errors::AppError;
 use std::path::PathBuf;
 
+/// App group identifier shared by the daemon, Tauri host, and Badges extension on macOS.
+///
+/// Apple requires the team-id prefix; `57KL6Y7V32` is the zaai-com Apple Developer team.
+/// The Tauri host's `entitlements.plist` and the Badges extension's
+/// `GitSameBadges.entitlements` must declare the same value under
+/// `com.apple.security.application-groups`.
+pub const APP_GROUP_ID: &str = "group.57KL6Y7V32.com.zaai.git-same";
+
 /// IPC configuration paths.
 #[derive(Debug, Clone)]
 pub struct IpcConfig {
@@ -28,10 +47,28 @@ pub struct IpcConfig {
 }
 
 impl IpcConfig {
-    /// Creates IPC config pointing to `~/.config/git-same/finder/`.
+    /// Returns the platform-default IPC config.
+    ///
+    /// On macOS, this is `~/Library/Group Containers/<APP_GROUP_ID>/`.
+    /// On other platforms (and on macOS when `$HOME` is unavailable), this is
+    /// the legacy `~/.config/git-same/finder/`.
     pub fn default_path() -> Result<Self, AppError> {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(group_dir) = macos_group_container_dir() {
+                return Ok(Self { dir: group_dir });
+            }
+            // Fall through to legacy if HOME is unset (test environments).
+        }
+        Self::legacy_default_path()
+    }
+
+    /// Returns the legacy `~/.config/git-same/finder/` path.
+    ///
+    /// Used as the macOS fallback and as the source side of legacy-symlink
+    /// migration on macOS (see `status_file::ensure_legacy_symlinks`).
+    pub fn legacy_default_path() -> Result<Self, AppError> {
         let config_dir = crate::config::Config::default_path()?;
-        // default_path returns .../config.toml, we want .../finder/
         let base_dir = config_dir
             .parent()
             .ok_or_else(|| AppError::config("Could not determine config directory"))?;
@@ -66,6 +103,22 @@ impl IpcConfig {
             ))
         })
     }
+}
+
+/// Resolves the macOS app-group container directory based on `$HOME`.
+///
+/// Returns `None` when `$HOME` is unset (typically only inside tests). The
+/// directory itself is created on demand by `IpcConfig::ensure_dir`; it does
+/// NOT need to pre-exist for this function to return `Some`.
+#[cfg(target_os = "macos")]
+pub(crate) fn macos_group_container_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join("Library")
+            .join("Group Containers")
+            .join(APP_GROUP_ID),
+    )
 }
 
 #[cfg(test)]

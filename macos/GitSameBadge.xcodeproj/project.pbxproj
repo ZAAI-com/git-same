@@ -10,7 +10,7 @@
 		0C33F590E865457705EBD3FC /* BadgeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8343F7967B3F8D7E6AB7A91 /* BadgeManager.swift */; };
 		257B6856845A3AF4D14530C1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AB39502A80452129E1480B /* ContentView.swift */; };
 		3C0E8784F4D4172A82A47E2A /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545B0726C8517036CC45E5F5 /* Constants.swift */; };
-		3EBDCECE5F467D2A9EFB1556 /* GitSameBadgeSync.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AE88C9527D7D39CD8F7A3C63 /* GitSameBadgeSync.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3EBDCECE5F467D2A9EFB1556 /* GitSameBadges.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5367D36A8F6767ED63560577 /* SocketProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E81934E8C1D14054D093A454 /* SocketProtocol.swift */; };
 		823E8A57D3D847A5045E28C5 /* StatusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8F66E45A3050726370F5B8 /* StatusModels.swift */; };
 		B3B75C712A824804DCF981B0 /* ContextMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */; };
@@ -30,7 +30,7 @@
 			containerPortal = 76273B1C39F5CA108DFFF958 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 0DD1148AB87797C1EFE47734;
-			remoteInfo = GitSameBadgeSync;
+			remoteInfo = GitSameBadges;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -41,7 +41,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				3EBDCECE5F467D2A9EFB1556 /* GitSameBadgeSync.appex in Embed Foundation Extensions */,
+				3EBDCECE5F467D2A9EFB1556 /* GitSameBadges.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -51,7 +51,7 @@
 /* Begin PBXFileReference section */
 		15307DCF3AB10B0512CD020A /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
 		545B0726C8517036CC45E5F5 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
-		61AF581BDDD5DCB1387D64E4 /* GitSameBadgeSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadgeSync.entitlements; sourceTree = "<group>"; };
+		61AF581BDDD5DCB1387D64E4 /* GitSameBadges.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadges.entitlements; sourceTree = "<group>"; };
 		66AB39502A80452129E1480B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		83B6E312068B04A2AB272376 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		8D40CF5193F71326936E5020 /* GitSameBadge.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadge.entitlements; sourceTree = "<group>"; };
@@ -59,7 +59,7 @@
 		913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuBuilder.swift; sourceTree = "<group>"; };
 		9D8F66E45A3050726370F5B8 /* StatusModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusModels.swift; sourceTree = "<group>"; };
 		AB229AA7479834C325EB99A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		AE88C9527D7D39CD8F7A3C63 /* GitSameBadgeSync.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GitSameBadgeSync.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GitSameBadges.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B8343F7967B3F8D7E6AB7A91 /* BadgeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeManager.swift; sourceTree = "<group>"; };
 		C6F95DF884CB07855C1D7C66 /* StatusReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusReader.swift; sourceTree = "<group>"; };
 		E4F4D50A6C496D2398C988EA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -84,7 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				10538FA5EC703BB6456B0A69 /* GitSameBadge */,
-				75232AD31082397A565782DE /* GitSameBadgeSync */,
+				75232AD31082397A565782DE /* GitSameBadges */,
 				6CFF0D192987E49E1BA2859F /* Shared */,
 				44E4ECBCE05E2A7A5F2EE2CD /* Products */,
 			);
@@ -94,7 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				8EDDD96648AEBE55B27703CD /* GitSameBadge.app */,
-				AE88C9527D7D39CD8F7A3C63 /* GitSameBadgeSync.appex */,
+				AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -110,16 +110,16 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
-		75232AD31082397A565782DE /* GitSameBadgeSync */ = {
+		75232AD31082397A565782DE /* GitSameBadges */ = {
 			isa = PBXGroup;
 			children = (
 				B8343F7967B3F8D7E6AB7A91 /* BadgeManager.swift */,
 				913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */,
 				15307DCF3AB10B0512CD020A /* FinderSync.swift */,
-				61AF581BDDD5DCB1387D64E4 /* GitSameBadgeSync.entitlements */,
+				61AF581BDDD5DCB1387D64E4 /* GitSameBadges.entitlements */,
 				AB229AA7479834C325EB99A8 /* Info.plist */,
 			);
-			path = GitSameBadgeSync;
+			path = GitSameBadges;
 			sourceTree = "<group>";
 		};
 		CB0CFDD7D56E2F16E9FC7F4D /* App */ = {
@@ -149,9 +149,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		0DD1148AB87797C1EFE47734 /* GitSameBadgeSync */ = {
+		0DD1148AB87797C1EFE47734 /* GitSameBadges */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 442FF77D5CAC09A6A71739F3 /* Build configuration list for PBXNativeTarget "GitSameBadgeSync" */;
+			buildConfigurationList = 442FF77D5CAC09A6A71739F3 /* Build configuration list for PBXNativeTarget "GitSameBadges" */;
 			buildPhases = (
 				D43CBF7D710B9FD3DCC5713E /* Sources */,
 			);
@@ -159,11 +159,11 @@
 			);
 			dependencies = (
 			);
-			name = GitSameBadgeSync;
+			name = GitSameBadges;
 			packageProductDependencies = (
 			);
-			productName = GitSameBadgeSync;
-			productReference = AE88C9527D7D39CD8F7A3C63 /* GitSameBadgeSync.appex */;
+			productName = GitSameBadges;
+			productReference = AE88C9527D7D39CD8F7A3C63 /* GitSameBadges.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		9299C38CC4E9759F948732EE /* GitSameBadge */ = {
@@ -217,7 +217,7 @@
 			projectRoot = "";
 			targets = (
 				9299C38CC4E9759F948732EE /* GitSameBadge */,
-				0DD1148AB87797C1EFE47734 /* GitSameBadgeSync */,
+				0DD1148AB87797C1EFE47734 /* GitSameBadges */,
 			);
 		};
 /* End PBXProject section */
@@ -256,7 +256,7 @@
 /* Begin PBXTargetDependency section */
 		8DB2E8AC2A85E61C740DF3B4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 0DD1148AB87797C1EFE47734 /* GitSameBadgeSync */;
+			target = 0DD1148AB87797C1EFE47734 /* GitSameBadges */;
 			targetProxy = 90C0C4F8E56DE3CE22CC7031 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -331,16 +331,16 @@
 		4D7367DC577A43874571BD32 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GitSameBadgeSync/GitSameBadgeSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitSameBadges/GitSameBadges.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 57KL6Y7V32;
-				INFOPLIST_FILE = GitSameBadgeSync/Info.plist;
+				INFOPLIST_FILE = GitSameBadges/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.GitSameBadge.FinderSync";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.badges";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};
@@ -349,16 +349,16 @@
 		512EA8428CC0E29C2F91C2C9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = GitSameBadgeSync/GitSameBadgeSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = GitSameBadges/GitSameBadges.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 57KL6Y7V32;
-				INFOPLIST_FILE = GitSameBadgeSync/Info.plist;
+				INFOPLIST_FILE = GitSameBadges/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.GitSameBadge.FinderSync";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.badges";
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
 			};
@@ -377,7 +377,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../PlugIns",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.GitSameBadge";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 			};
@@ -455,7 +455,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../PlugIns",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same.GitSameBadge";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.zaai.git-same";
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "";
 			};
@@ -464,7 +464,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		442FF77D5CAC09A6A71739F3 /* Build configuration list for PBXNativeTarget "GitSameBadgeSync" */ = {
+		442FF77D5CAC09A6A71739F3 /* Build configuration list for PBXNativeTarget "GitSameBadges" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4D7367DC577A43874571BD32 /* Debug */,

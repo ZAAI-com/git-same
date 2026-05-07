@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Git-Same-Badges (FinderSync) extension entitlements.
+
+  IPC: status.json and finder.sock live in the app-group container at
+       ~/Library/Group Containers/group.57KL6Y7V32.com.zaai.git-same/.
+       The Tauri host (com.zaai.git-same) declares the same app group,
+       so both processes reach the same files. No absolute-path
+       exception is needed for the IPC files.
+
+  Workspace folders: the extension reads arbitrary user-defined
+       repository paths to compute badges. The shippable answer is
+       Full Disk Access, granted by the user once via System Settings >
+       Privacy & Security > Full Disk Access on first launch of
+       git-same.app. Per-workspace absolute-path entitlements would
+       require the user to re-sign the extension when adding a workspace,
+       which is impractical without an Apple Developer ID.
+
+  macOS 26 testing constraints (memory: feedback_finder_sync_testing.md):
+     - Sandbox stays ON.
+     - Signing identity must be the paid team's Developer ID (57KL6Y7V32).
+     - Do NOT rename the FinderSync class (PRODUCT_MODULE_NAME.FinderSync).
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.57KL6Y7V32.com.zaai.git-same</string>
+	</array>
+</dict>
+</plist>
