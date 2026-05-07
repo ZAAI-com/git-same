@@ -32,8 +32,8 @@ PRIMARY_BIN="${BINARIES[0]}"
 GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
 
 # Install primary binary
-echo "Installing with: cargo install --path . --force"
-cargo install --path . --force
+echo "Installing with: cargo install --path crates/git-same-cli --force"
+cargo install --path crates/git-same-cli --force
 echo ""
 
 if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
