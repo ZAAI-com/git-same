@@ -433,6 +433,323 @@ async fn very_large_directory_list_is_loaded() {
     assert_eq!(children.last().map(String::as_str), Some("d149/"));
 }
 
+// --- Tests for match-guard refactoring introduced in this PR ---
+
+// ── handle_requirements ──────────────────────────────────────────────────────
+
+/// Enter while checks are still loading must NOT advance the step (match guard:
+/// `KeyCode::Enter if !state.checks_loading && state.requirements_passed()`).
+#[tokio::test]
+async fn enter_while_checks_loading_does_not_advance_requirements_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::Requirements;
+    state.checks_loading = true;
+    // Plant a passing result to confirm loading flag is the only blocker.
+    state.check_results = vec![crate::checks::CheckResult {
+        name: "git".to_string(),
+        passed: true,
+        message: "git 2.40".to_string(),
+        suggestion: None,
+        critical: true,
+    }];
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Requirements);
+}
+
+/// Enter when requirements are NOT met (no check_results) must not advance.
+#[tokio::test]
+async fn enter_when_requirements_not_passed_does_not_advance() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::Requirements;
+    state.checks_loading = false;
+    // check_results is empty → requirements_passed() returns false.
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Requirements);
+}
+
+/// Enter when requirements have a failed critical check must not advance.
+#[tokio::test]
+async fn enter_when_critical_check_failed_does_not_advance() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::Requirements;
+    state.checks_loading = false;
+    state.check_results = vec![crate::checks::CheckResult {
+        name: "git".to_string(),
+        passed: false,
+        message: "not found".to_string(),
+        suggestion: Some("install git".to_string()),
+        critical: true,
+    }];
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Requirements);
+}
+
+/// Enter when all critical checks pass and not loading must advance to next step.
+#[tokio::test]
+async fn enter_when_requirements_passed_and_not_loading_advances_step() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::Requirements;
+    state.checks_loading = false;
+    state.check_results = vec![crate::checks::CheckResult {
+        name: "git".to_string(),
+        passed: true,
+        message: "git 2.40".to_string(),
+        suggestion: None,
+        critical: true,
+    }];
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::SelectProvider);
+}
+
+// ── handle_provider ───────────────────────────────────────────────────────────
+
+/// Up at provider_index == 0 must not decrement (underflow / out-of-bounds).
+#[tokio::test]
+async fn up_at_first_provider_does_not_move() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
+    state.provider_index = 0;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
+
+    assert_eq!(state.provider_index, 0);
+}
+
+/// Down at the last provider choice must not move past the end.
+#[tokio::test]
+async fn down_at_last_provider_does_not_move() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
+    let last = state.provider_choices.len() - 1;
+    state.provider_index = last;
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.provider_index, last);
+}
+
+/// Enter when the selected provider is NOT available must not advance.
+/// (index 1 = GitHubEnterprise, available=false in default state)
+#[tokio::test]
+async fn enter_on_unavailable_provider_does_not_advance() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
+    // Choose a provider marked unavailable.
+    state.provider_index = 1; // GitHubEnterprise, available=false
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::SelectProvider);
+}
+
+/// Enter on an available provider (GitHub, index 0) must advance to Authenticate.
+#[tokio::test]
+async fn enter_on_available_provider_advances_to_authenticate() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectProvider;
+    state.provider_index = 0; // GitHub, available=true
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::Authenticate);
+}
+
+// ── handle_orgs ───────────────────────────────────────────────────────────────
+
+/// Up at org_index == 0 must not move (guard: `org_index > 0`).
+#[tokio::test]
+async fn up_at_first_org_does_not_move() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+    state.orgs = vec![
+        crate::setup::state::OrgEntry {
+            name: "alpha".to_string(),
+            repo_count: 5,
+            selected: true,
+        },
+        crate::setup::state::OrgEntry {
+            name: "beta".to_string(),
+            repo_count: 3,
+            selected: false,
+        },
+    ];
+    state.org_index = 0;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
+
+    assert_eq!(state.org_index, 0);
+}
+
+/// Down at the last org must not move past the end.
+#[tokio::test]
+async fn down_at_last_org_does_not_move() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+    state.orgs = vec![
+        crate::setup::state::OrgEntry {
+            name: "alpha".to_string(),
+            repo_count: 5,
+            selected: true,
+        },
+        crate::setup::state::OrgEntry {
+            name: "beta".to_string(),
+            repo_count: 3,
+            selected: false,
+        },
+    ];
+    state.org_index = 1; // last
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.org_index, 1);
+}
+
+/// Space when orgs list is empty must not panic (guard: `!state.orgs.is_empty()`).
+#[tokio::test]
+async fn space_with_empty_orgs_does_not_panic() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+    // orgs is empty by default
+
+    // Should complete without panicking.
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+    )
+    .await;
+}
+
+/// Space on a non-empty list toggles the org selection.
+#[tokio::test]
+async fn space_toggles_org_selection() {
+    let mut state = SetupState::new("~/Git-Same/GitHub");
+    state.step = SetupStep::SelectOrgs;
+    state.org_loading = false;
+    state.orgs = vec![crate::setup::state::OrgEntry {
+        name: "acme".to_string(),
+        repo_count: 10,
+        selected: false,
+    }];
+    state.org_index = 0;
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+    )
+    .await;
+    assert!(state.orgs[0].selected);
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+    )
+    .await;
+    assert!(!state.orgs[0].selected);
+}
+
+// ── handle_path_browse ────────────────────────────────────────────────────────
+
+/// Up at path_browse_index == 0 must not move (underflow guard).
+#[tokio::test]
+async fn up_at_first_browse_entry_does_not_move() {
+    let temp = tempdir_in_cwd("gisa-hbrowse-up-");
+    let alpha = temp.path().join("a-dir");
+    std::fs::create_dir_all(&alpha).unwrap();
+
+    let mut state = SetupState::new(&temp.path().to_string_lossy());
+    state.step = SetupStep::SelectPath;
+    state.path_suggestions_mode = false;
+    state.base_path = temp.path().to_string_lossy().to_string();
+
+    // Open browse mode to populate entries.
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert!(state.path_browse_mode);
+    state.path_browse_index = 0;
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)).await;
+
+    assert_eq!(state.path_browse_index, 0);
+}
+
+/// Down at the last browse entry must not move past the end.
+#[tokio::test]
+async fn down_at_last_browse_entry_does_not_move() {
+    let temp = tempdir_in_cwd("gisa-hbrowse-dn-");
+    let alpha = temp.path().join("only-child");
+    std::fs::create_dir_all(&alpha).unwrap();
+
+    let mut state = SetupState::new(&temp.path().to_string_lossy());
+    state.step = SetupStep::SelectPath;
+    state.path_suggestions_mode = false;
+    state.base_path = temp.path().to_string_lossy().to_string();
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+    )
+    .await;
+    assert!(state.path_browse_mode);
+
+    // Navigate to the last entry.
+    let last = state.path_browse_entries.len() - 1;
+    state.path_browse_index = last;
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.path_browse_index, last);
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn unreadable_directory_surfaces_inline_error() {

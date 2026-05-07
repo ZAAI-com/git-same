@@ -1,0 +1,43 @@
+# Homebrew Cask template for git-same.
+# Rendered by toolkit/homebrew/render-cask.sh into Casks/git-same.rb on the tap.
+#
+# The zap stanza intentionally only removes the well-known user config and cache
+# directories. Per-workspace .git-same/ caches are NOT zapped because they live
+# inside user-managed workspace roots that the cask cannot safely enumerate.
+cask "git-same" do
+  arch arm: "aarch64", intel: "x86_64"
+
+  version "VERSION_PLACEHOLDER"
+  sha256 arm:   "SHA_AARCH64_PLACEHOLDER",
+         intel: "SHA_X86_64_PLACEHOLDER"
+
+  url "https://github.com/zaai-com/git-same/releases/download/#{version}/git-same-#{version}-#{arch}-apple-darwin.tar.gz"
+  name "Git-Same"
+  desc "Discover and mirror GitHub org/repo structures locally"
+  homepage "https://github.com/zaai-com/git-same"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  depends_on macos: ">= :big_sur"
+
+  # Casks don't have first-class shell-completion stanzas, so completions go
+  # through `binary` with absolute target: paths matching the locations the
+  # headless `git-same-cli` formula installs to. All `binary` stanzas must be
+  # grouped together per Cask/StanzaOrder; the manpage stanza follows.
+  binary "git-same"
+  binary "git-same",      target: "gitsame"
+  binary "git-same",      target: "gitsa"
+  binary "git-same",      target: "gisa"
+  binary "_git-same",     target: "#{HOMEBREW_PREFIX}/share/zsh/site-functions/_git-same"
+  binary "git-same.bash", target: "#{HOMEBREW_PREFIX}/etc/bash_completion.d/git-same"
+  binary "git-same.fish", target: "#{HOMEBREW_PREFIX}/share/fish/vendor_completions.d/git-same.fish"
+  manpage "git-same.1"
+
+  zap trash: [
+    "~/.config/git-same",
+    "~/Library/Caches/git-same",
+  ]
+end

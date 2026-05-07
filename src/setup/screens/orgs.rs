@@ -119,12 +119,10 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             };
 
             // Proportional bar
-            let filled = if max_repos > 0 {
-                (org.repo_count * bar_width) / max_repos
-            } else {
-                0
-            }
-            .max(if org.repo_count > 0 { 1 } else { 0 });
+            let filled = (org.repo_count * bar_width)
+                .checked_div(max_repos)
+                .unwrap_or(0)
+                .max(if org.repo_count > 0 { 1 } else { 0 });
             let empty = bar_width - filled;
 
             let bar_color = if org.selected { green } else { Color::DarkGray };
@@ -141,8 +139,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             ];
 
             // Percentage
-            if total_repos > 0 {
-                let pct = (org.repo_count * 100) / total_repos;
+            if let Some(pct) = (org.repo_count * 100).checked_div(total_repos) {
                 spans.push(Span::styled(
                     format!(" {:>3}%", pct),
                     Style::default().fg(Color::DarkGray),

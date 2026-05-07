@@ -1,0 +1,26 @@
+# Homebrew Formula deprecation shim for the old `git-same` formula name.
+# Rendered by S3-Publish-Homebrew.yml into Formula/git-same.rb on the tap.
+#
+# Existing users running `brew install zaai-com/tap/git-same` see a deprecation
+# warning and transparently get `git-same-cli` installed via the dependency.
+# Scheduled for removal at git-same 3.2.
+class GitSame < Formula
+  desc "Renamed: use 'git-same' cask (macOS) or 'git-same-cli' formula (headless)"
+  homepage "https://github.com/zaai-com/git-same"
+  url "https://github.com/zaai-com/git-same/archive/refs/tags/VERSION_PLACEHOLDER.tar.gz"
+  sha256 "SOURCE_TARBALL_SHA_PLACEHOLDER"
+  license "MIT"
+
+  deprecate! date:    "DEPRECATION_DATE_PLACEHOLDER",
+             because: "renamed: install 'git-same' cask (GUI users) or 'git-same-cli' formula (headless)"
+
+  depends_on "zaai-com/tap/git-same-cli"
+
+  def install
+    # No-op: the dependency installs the actual binary.
+  end
+
+  test do
+    assert_path_exists Formula["zaai-com/tap/git-same-cli"].opt_bin/"git-same"
+  end
+end

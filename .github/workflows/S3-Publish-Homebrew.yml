@@ -1,24 +1,26 @@
-name: S3 - Publish Homebrew
+name: S3 - Publish Homebrew (Cask + Formula)
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g., 1.0.0)"
+        description: "Release tag (e.g., 3.0.0)"
         required: true
         type: string
 
 env:
   TAP_REPO: zaai-com/homebrew-tap
-  FORMULA_NAME: git-same
+  FORMULA_NAME: git-same-cli
+  FORMULA_SHIM_NAME: git-same
+  CASK_NAME: git-same
 
 permissions:
   contents: read
 
 jobs:
-  homebrew:
-    name: Update Homebrew Formula
-    runs-on: ubuntu-latest
+  publish-homebrew:
+    name: Publish Cask + Formula to Tap
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
         with:
@@ -32,93 +34,90 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/}"
           fi
           if [ -z "$TAG" ] || [ "$TAG" = "${GITHUB_REF}" ]; then
-            echo "Invalid tag. Provide workflow_dispatch input 'tag' (e.g., 1.0.0)."
+            echo "Invalid tag. Provide workflow_dispatch input 'tag' (e.g., 3.0.0)."
             exit 1
           fi
           if ! [[ "$TAG" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Tag must be strict semver only, no leading zeros (e.g., 1.0.0). Got: $TAG"
+            echo "Tag must be strict semver only, no leading zeros (e.g., 3.0.0). Got: $TAG"
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "deprecation_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p assets
+          VERSION="${{ steps.version.outputs.version }}"
           gh release download "${{ steps.version.outputs.tag }}" \
-            --pattern "git-same-linux-x86_64" \
-            --pattern "git-same-linux-aarch64" \
-            --pattern "git-same-macos-x86_64" \
-            --pattern "git-same-macos-aarch64" \
+            --pattern "git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            --pattern "git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
+            --pattern "git-same-${VERSION}-x86_64-apple-darwin.tar.gz" \
+            --pattern "git-same-${VERSION}-aarch64-apple-darwin.tar.gz" \
             --dir assets
 
       - name: Compute SHA256 hashes
         id: sha
         run: |
-          echo "linux_x86_64=$(sha256sum assets/git-same-linux-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "linux_aarch64=$(sha256sum assets/git-same-linux-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "macos_x86_64=$(sha256sum assets/git-same-macos-x86_64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "macos_aarch64=$(sha256sum assets/git-same-macos-aarch64 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-
-      - name: Generate formula
-        run: |
           VERSION="${{ steps.version.outputs.version }}"
+          LINUX_X86="assets/git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          LINUX_ARM="assets/git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+          MAC_X86="assets/git-same-${VERSION}-x86_64-apple-darwin.tar.gz"
+          MAC_ARM="assets/git-same-${VERSION}-aarch64-apple-darwin.tar.gz"
+          echo "linux_x86_64=$(shasum -a 256 "$LINUX_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "linux_aarch64=$(shasum -a 256 "$LINUX_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "macos_x86_64=$(shasum -a 256 "$MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "macos_aarch64=$(shasum -a 256 "$MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute source archive SHA256
+        id: src_sha
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          URL="https://github.com/zaai-com/git-same/archive/refs/tags/${TAG}.tar.gz"
+          mkdir -p src-archive
+          curl -fsSL "$URL" -o "src-archive/source.tar.gz"
+          SHA=$(shasum -a 256 src-archive/source.tar.gz | cut -d' ' -f1)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Render formula-cli
+        run: |
           TAG="${{ steps.version.outputs.tag }}"
           REPO_URL="https://github.com/zaai-com/git-same/releases/download/${TAG}"
+          bash toolkit/homebrew/render-formula.sh \
+            "${{ steps.version.outputs.version }}" \
+            --kind cli \
+            --url "${REPO_URL}" \
+            --sha-macos-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
+            --sha-macos-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
+            --sha-linux-arm   "${{ steps.sha.outputs.linux_aarch64 }}" \
+            --sha-linux-intel "${{ steps.sha.outputs.linux_x86_64 }}" \
+            --out formula-cli.rb
 
-          cat > formula.rb << 'FORMULA'
-          class GitSame < Formula
-            desc "Discover and mirror GitHub org/repo structures locally"
-            homepage "https://github.com/zaai-com/git-same"
-            version "VERSION_PLACEHOLDER"
-            license "MIT"
+      - name: Render formula deprecation shim
+        run: |
+          bash toolkit/homebrew/render-formula.sh \
+            "${{ steps.version.outputs.version }}" \
+            --kind shim \
+            --deprecation-date "${{ steps.version.outputs.deprecation_date }}" \
+            --src-sha "${{ steps.src_sha.outputs.sha }}" \
+            --out formula-shim.rb
 
-            if OS.mac?
-              if Hardware::CPU.arm?
-                url "URL_PLACEHOLDER/git-same-macos-aarch64"
-                sha256 "SHA_MACOS_AARCH64_PLACEHOLDER"
-              else
-                url "URL_PLACEHOLDER/git-same-macos-x86_64"
-                sha256 "SHA_MACOS_X86_64_PLACEHOLDER"
-              end
-            elsif OS.linux?
-              if Hardware::CPU.arm?
-                url "URL_PLACEHOLDER/git-same-linux-aarch64"
-                sha256 "SHA_LINUX_AARCH64_PLACEHOLDER"
-              else
-                url "URL_PLACEHOLDER/git-same-linux-x86_64"
-                sha256 "SHA_LINUX_X86_64_PLACEHOLDER"
-              end
-            end
+      - name: Render cask
+        run: |
+          bash toolkit/homebrew/render-cask.sh \
+            "${{ steps.version.outputs.version }}" \
+            --sha-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
+            --sha-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
+            --out cask.rb
 
-            def install
-              if OS.mac?
-                bin.install "git-same-macos-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
-              elsif OS.linux?
-                bin.install "git-same-linux-#{Hardware::CPU.arm? ? "aarch64" : "x86_64"}" => "git-same"
-              end
-              bin.install_symlink "git-same" => "gitsame"
-              bin.install_symlink "git-same" => "gitsa"
-              bin.install_symlink "git-same" => "gisa"
-            end
-
-            test do
-              assert_match version.to_s, shell_output("#{bin}/git-same --version")
-              assert_match version.to_s, shell_output("#{bin}/gitsame --version")
-              assert_match version.to_s, shell_output("#{bin}/gitsa --version")
-              assert_match version.to_s, shell_output("#{bin}/gisa --version")
-            end
-          end
-          FORMULA
-
-          sed -i "s|VERSION_PLACEHOLDER|${VERSION}|g" formula.rb
-          sed -i "s|URL_PLACEHOLDER|${REPO_URL}|g" formula.rb
-          sed -i "s|SHA_LINUX_X86_64_PLACEHOLDER|${{ steps.sha.outputs.linux_x86_64 }}|g" formula.rb
-          sed -i "s|SHA_MACOS_X86_64_PLACEHOLDER|${{ steps.sha.outputs.macos_x86_64 }}|g" formula.rb
-          sed -i "s|SHA_LINUX_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.linux_aarch64 }}|g" formula.rb
-          sed -i "s|SHA_MACOS_AARCH64_PLACEHOLDER|${{ steps.sha.outputs.macos_aarch64 }}|g" formula.rb
+      - name: Verify rendered cask + formulae against a temp tap
+        run: |
+          bash toolkit/homebrew/verify-tap.sh \
+            --cask cask.rb \
+            --formula-cli formula-cli.rb \
+            --formula-shim formula-shim.rb
 
       - name: Checkout tap repository
         uses: actions/checkout@v6
@@ -128,17 +127,25 @@ jobs:
           path: tap
           fetch-depth: 0
 
-      - name: Push formula to tap
+      - name: Stage rendered files into tap
         run: |
-          mkdir -p tap/Formula
-          cp formula.rb "tap/Formula/${FORMULA_NAME}.rb"
+          mkdir -p tap/Formula tap/Casks
+          cp formula-cli.rb  "tap/Formula/${FORMULA_NAME}.rb"
+          cp formula-shim.rb "tap/Formula/${FORMULA_SHIM_NAME}.rb"
+          cp cask.rb         "tap/Casks/${CASK_NAME}.rb"
+
+      - name: Commit and push to tap
+        run: |
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "Formula/${FORMULA_NAME}.rb"
+          git add \
+            "Formula/${FORMULA_NAME}.rb" \
+            "Formula/${FORMULA_SHIM_NAME}.rb" \
+            "Casks/${CASK_NAME}.rb"
           if git diff --cached --quiet; then
-            echo "Formula unchanged, skipping commit"
+            echo "Cask + formula unchanged, skipping commit"
           else
-            git commit -m "Update ${FORMULA_NAME} to ${{ steps.version.outputs.version }}"
+            git commit -m "Update git-same to ${{ steps.version.outputs.version }} (cask + formula-cli + shim)"
             git push origin HEAD
           fi

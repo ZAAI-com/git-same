@@ -122,41 +122,71 @@ jobs:
         run: |
           set -e
 
-          # Manifest exists
-          if [ ! -f toolkit/packaging/binary-aliases.txt ]; then
-            echo "ERROR: toolkit/packaging/binary-aliases.txt not found"; exit 1
-          fi
+          # Manifests exist
+          for f in \
+            toolkit/packaging/binary-aliases.txt \
+            toolkit/packaging/targets.txt \
+            toolkit/packaging/tarball-manifest.txt; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: $f not found"; exit 1
+            fi
+            if [ ! -s "$f" ]; then
+              echo "ERROR: $f is empty"; exit 1
+            fi
+          done
 
-          # Only 1 [[bin]] in Cargo.toml
-          BIN_COUNT=$(grep -c '^[[:space:]]*\[\[bin\]\]' Cargo.toml || true)
-          if [ "$BIN_COUNT" -ne 1 ]; then
-            echo "ERROR: Cargo.toml has $BIN_COUNT [[bin]] entries, expected 1"; exit 1
-          fi
-
-          # Primary matches Cargo.toml bin name
-          MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
-          CARGO_BIN=$(awk '
-            /^\[\[bin\]\]/ { in_bin=1; next }
-            in_bin && /^\[/ { exit }
-            in_bin && $1 == "name" {
-              line = $0
-              sub(/^[^"]*"/, "", line)
-              sub(/".*$/, "", line)
-              if (line != "") { print line; exit }
+          # Exactly 1 default [[bin]] in Cargo.toml. [[bin]] entries gated by
+          # `required-features` (e.g. release-tools helpers gen-completions and
+          # gen-manpage) are excluded — they don't ship in normal builds.
+          read DEFAULT_COUNT CARGO_BIN <<<"$(awk '
+            function flush() {
+              if (in_bin && !has_req) {
+                default_count++
+                if (name != "" && default_name == "") default_name = name
+              }
             }
-          ' Cargo.toml)
-          if [ -z "$CARGO_BIN" ]; then
-            echo "ERROR: Could not resolve bin name from Cargo.toml"; exit 1
+            /^\[\[bin\]\]/ { flush(); in_bin=1; name=""; has_req=0; next }
+            in_bin && /^\[/ { flush(); in_bin=0 }
+            in_bin && /^[[:space:]]*name[[:space:]]*=/ {
+              line=$0; sub(/^[^"]*"/, "", line); sub(/".*$/, "", line); name=line
+            }
+            in_bin && /^[[:space:]]*required-features[[:space:]]*=/ { has_req=1 }
+            END { flush(); print default_count, default_name }
+          ' Cargo.toml)"
+          if [ "${DEFAULT_COUNT:-0}" -ne 1 ]; then
+            echo "ERROR: Cargo.toml has ${DEFAULT_COUNT:-0} default [[bin]] entries, expected 1"; exit 1
           fi
+          if [ -z "${CARGO_BIN:-}" ]; then
+            echo "ERROR: Could not resolve default bin name from Cargo.toml"; exit 1
+          fi
+
+          # Primary matches Cargo.toml default bin name
+          MANIFEST_PRIMARY=$(head -n1 toolkit/packaging/binary-aliases.txt)
           if [ "$MANIFEST_PRIMARY" != "$CARGO_BIN" ]; then
             echo "ERROR: Primary mismatch: manifest=$MANIFEST_PRIMARY cargo=$CARGO_BIN"; exit 1
           fi
 
-          # Homebrew workflow references all aliases
+          # Homebrew workflow + cask/formula templates reference all aliases
+          HOMEBREW_FILES=(
+            .github/workflows/S3-Publish-Homebrew.yml
+            toolkit/homebrew/cask.rb.tmpl
+            toolkit/homebrew/formula-cli.rb.tmpl
+            toolkit/homebrew/render-cask.sh
+            toolkit/homebrew/render-formula.sh
+          )
+          for f in "${HOMEBREW_FILES[@]}"; do
+            [ -f "$f" ] || { echo "ERROR: required Homebrew file not found: $f"; exit 1; }
+          done
           while IFS= read -r alias; do
             [ -z "$alias" ] && continue
-            if ! grep -Fq -- "$alias" .github/workflows/S3-Publish-Homebrew.yml; then
-              echo "ERROR: '$alias' missing from S3-Publish-Homebrew.yml"; exit 1
+            found=0
+            for f in "${HOMEBREW_FILES[@]}"; do
+              if grep -Fq -- "$alias" "$f"; then
+                found=1; break
+              fi
+            done
+            if [ "$found" -eq 0 ]; then
+              echo "ERROR: '$alias' not referenced in any Homebrew file"; exit 1
             fi
           done < toolkit/packaging/binary-aliases.txt
 

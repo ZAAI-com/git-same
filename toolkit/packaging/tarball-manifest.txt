@@ -1,0 +1,6 @@
+git-same
+LICENSE
+git-same.1
+_git-same
+git-same.bash
+git-same.fish
