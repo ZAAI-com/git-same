@@ -35,7 +35,7 @@ for entry in "${SHELLS[@]}"; do
     echo "==> $SHELL_NAME -> $OUT_PATH"
     cargo run \
         --release \
-        -p git-same-cli \
+        -p git-same \
         --features release-tools \
         --bin gen-completions \
         -- "$SHELL_NAME" \

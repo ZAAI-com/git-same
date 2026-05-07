@@ -68,7 +68,7 @@ cargo build --workspace
 cargo build --release --workspace
 ```
 
-The repository is a Cargo workspace with two member crates: `git-same-core` (engine library, `crates/git-same-core/`) and `git-same-cli` (the CLI binary + TUI, `crates/git-same-cli/`). The release binary is output at the workspace level: `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
+The repository is a Cargo workspace with two member crates: `git-same-core` (engine library, `crates/git-same-core/`) and `git-same` (the CLI binary + TUI, `crates/git-same-cli/` on disk). The release binary is output at the workspace level: `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
 
 ## Running tests
 
@@ -81,7 +81,7 @@ cargo test --workspace --all-features
 
 # Run tests for a single crate
 cargo test -p git-same-core
-cargo test -p git-same-cli
+cargo test -p git-same
 
 # Run tests that require GitHub authentication
 cargo test --workspace -- --ignored

@@ -7,7 +7,7 @@
 
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
-use git_same_cli::cli::Cli;
+use git_same::cli::Cli;
 use std::{env, io, process};
 
 fn main() {

@@ -1,5 +1,5 @@
 [package]
-name = "git-same-cli"
+name = "git-same"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,9 +10,14 @@ categories = ["command-line-utilities"]
 description = "Mirror GitHub structure /orgs/repos/ to local file system."
 
 # Naming notes:
-#   - Package on crates.io: git-same-cli (cargo install git-same-cli)
-#   - Library name (auto-derived): git_same_cli
+#   - Directory on disk: crates/git-same-cli/ (kept distinct from the engine
+#     crate's directory name for filesystem clarity)
+#   - Package on crates.io: git-same  (cargo install git-same; pre-3.2 install
+#     path preserved with no shim)
+#   - Library name (auto-derived from package): git_same
 #   - Binary produced: git-same (filesystem aliases: gisa, gitsa, gitsame)
+#   - Homebrew formula name: git-same-cli (independent of this; lives in
+#     zaai-com/homebrew-tap)
 
 [[bin]]
 name = "git-same"

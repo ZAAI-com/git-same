@@ -863,7 +863,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "git-same-cli"
+name = "git-same"
 version = "3.1.0"
 dependencies = [
  "anyhow",

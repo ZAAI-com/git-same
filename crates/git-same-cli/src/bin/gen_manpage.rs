@@ -5,7 +5,7 @@
 
 use clap::CommandFactory;
 use clap_mangen::Man;
-use git_same_cli::cli::Cli;
+use git_same::cli::Cli;
 use std::{io, process};
 
 fn main() {

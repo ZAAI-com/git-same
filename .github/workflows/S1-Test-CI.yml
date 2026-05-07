@@ -81,7 +81,7 @@ jobs:
           prefix-key: v1-rust-no-bin
 
       - name: Build release
-        run: cargo +stable build --release -p git-same-cli --target ${{ matrix.target }}
+        run: cargo +stable build --release -p git-same --target ${{ matrix.target }}
 
   coverage:
     name: Code Coverage

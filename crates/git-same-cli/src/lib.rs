@@ -1,4 +1,4 @@
-//! # git-same-cli — git-same CLI + TUI
+//! # git-same — CLI + TUI
 //!
 //! Library scaffolding for the `git-same` binary plus the release-tools
 //! helpers `gen-completions` and `gen-manpage`. Implementation detail of

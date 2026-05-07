@@ -1,6 +1,6 @@
 use super::*;
 use clap::Parser;
-use git_same_cli::cli::Command;
+use git_same::cli::Command;
 
 #[test]
 fn main_cli_parses_sync_subcommand() {
