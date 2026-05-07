@@ -1,6 +1,6 @@
 # Sync Screen Reference
 
-Validated against commit `9e7db03` on 2026-02-26.
+Validated against commit `e889b4b` on 2026-05-07.
 
 This is the implementation-level reference for the TUI Sync experience.
 
@@ -96,7 +96,7 @@ Notes:
 | `OrgComplete(name, count)` | `TuiDiscoveryProgress::on_org_complete` | `handle_backend_message` | appends `[ok] org (N repos)` line |
 | `DiscoveryComplete(repos)` | `run_sync_operation` | `handle_backend_message` | populates `orgs`, `repos_by_org`, `all_repos` |
 | `DiscoveryError(msg)` | `TuiDiscoveryProgress::on_error` | `handle_backend_message` | move to `Idle` + error |
-| `OperationStarted { total, to_clone, to_sync }` | `run_sync_operation` | `handle_backend_message` | move to `Running`, reset per-run UI state |
+| `OperationStarted { operation, total, to_clone, to_sync }` | `run_sync_operation` | `handle_backend_message` | move to `Running`, reset per-run UI state |
 | `RepoStarted { repo_name }` | clone/sync progress adapters | `handle_backend_message` | push active worker repo |
 | `RepoProgress { ... }` | clone/sync progress adapters | `handle_backend_message` | update counters + log entries |
 | `OperationComplete(summary)` | `run_sync_operation` | `handle_backend_message` | move to `Finished`, persist metadata/history |
