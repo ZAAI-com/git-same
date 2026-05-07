@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/git-same-core", "crates/git-same-cli"]
+members = [
+    "crates/git-same-core",
+    "crates/git-same-cli",
+    "crates/git-same-app",
+]
 resolver = "2"
 
 [workspace.package]
@@ -34,6 +38,7 @@ clap_mangen = "0.3"
 tokio-test = "0.4"
 mockito = "1"
 tempfile = "3"
+notify = "6"
 
 [profile.release]
 strip = true

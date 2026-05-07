@@ -13,6 +13,10 @@ fn tempdir_in_cwd(prefix: &str) -> tempfile::TempDir {
         .unwrap()
 }
 
+async fn lock_process_env() -> tokio::sync::MutexGuard<'static, ()> {
+    crate::test_support::ENV_LOCK.lock().await
+}
+
 fn find_entry_index(state: &SetupState, path: &std::path::Path) -> usize {
     let wanted = super::tilde_collapse(&path.to_string_lossy());
     state
@@ -153,6 +157,7 @@ async fn enter_in_suggestions_mode_does_not_change_base_path() {
 
 #[tokio::test]
 async fn b_opens_path_browser_from_suggestions_mode() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-path-browse-");
     std::fs::create_dir_all(temp.path().join("child")).unwrap();
 
@@ -207,6 +212,7 @@ async fn left_on_root_moves_popup_to_parent_directory() {
 
 #[tokio::test]
 async fn right_in_path_browse_mode_navigates_tree_without_advancing_step() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-path-nav-");
     let alpha = temp.path().join("alpha");
     std::fs::create_dir_all(&alpha).unwrap();
@@ -246,6 +252,7 @@ async fn right_in_path_browse_mode_navigates_tree_without_advancing_step() {
 
 #[tokio::test]
 async fn enter_in_browse_mode_sets_path_and_closes_popup() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-path-enter-");
     let alpha = temp.path().join("alpha");
     std::fs::create_dir_all(&alpha).unwrap();
@@ -317,6 +324,7 @@ async fn esc_in_popup_only_closes_popup() {
 
 #[tokio::test]
 async fn left_moves_to_parent_and_then_collapses() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-path-left-");
     let alpha = temp.path().join("alpha");
     let nested = alpha.join("nested");
@@ -362,6 +370,7 @@ async fn left_moves_to_parent_and_then_collapses() {
 
 #[tokio::test]
 async fn right_on_leaf_does_not_change_selection_until_enter() {
+    let _env_lock = lock_process_env().await;
     let leaf_temp = tempdir_in_cwd("gisa-path-leaf-");
     let expected = super::tilde_collapse(&leaf_temp.path().to_string_lossy());
 
@@ -393,6 +402,7 @@ async fn right_on_leaf_does_not_change_selection_until_enter() {
 
 #[tokio::test]
 async fn very_large_directory_list_is_loaded() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-path-many-");
     for i in 0..150 {
         std::fs::create_dir_all(temp.path().join(format!("d{i:03}"))).unwrap();
@@ -687,6 +697,7 @@ async fn space_toggles_org_selection() {
 /// Up at path_browse_index == 0 must not move (underflow guard).
 #[tokio::test]
 async fn up_at_first_browse_entry_does_not_move() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-hbrowse-up-");
     let alpha = temp.path().join("a-dir");
     std::fs::create_dir_all(&alpha).unwrap();
@@ -713,6 +724,7 @@ async fn up_at_first_browse_entry_does_not_move() {
 /// Down at the last browse entry must not move past the end.
 #[tokio::test]
 async fn down_at_last_browse_entry_does_not_move() {
+    let _env_lock = lock_process_env().await;
     let temp = tempdir_in_cwd("gisa-hbrowse-dn-");
     let alpha = temp.path().join("only-child");
     std::fs::create_dir_all(&alpha).unwrap();

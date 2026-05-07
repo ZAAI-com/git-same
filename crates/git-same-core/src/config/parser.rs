@@ -336,7 +336,7 @@ show_ambient = true
 
 # Roots to walk for ambient repos. "~" expands to your home directory.
 # If you change this, update the FinderSync extension entitlements
-# (macos/GitSameBadgeSync/GitSameBadgeSync.entitlements) and re-sign.
+# (macos/GitSameBadges/GitSameBadges.entitlements) and re-sign.
 scan_roots = ["~"]
 
 # Maximum directory depth for the ambient walk.

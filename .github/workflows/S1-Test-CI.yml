@@ -83,6 +83,39 @@ jobs:
       - name: Build release
         run: cargo +stable build --release -p git-same --target ${{ matrix.target }}
 
+  tauri-debug-build:
+    name: Tauri App Debug Build
+    needs: [test]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm --dir crates/git-same-app/ui install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir crates/git-same-app/ui build
+
+      - name: Build Tauri app binary
+        run: |
+          cd crates/git-same-app
+          ui/node_modules/.bin/tauri build --debug --no-bundle
+
   coverage:
     name: Code Coverage
     runs-on: macos-latest

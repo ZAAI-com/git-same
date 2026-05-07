@@ -7,7 +7,7 @@
     <string>com.zaai.git-same.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/git-same</string>
+        <string>__GIT_SAME_DAEMON_BINARY__</string>
         <string>daemon</string>
         <string>--foreground</string>
     </array>

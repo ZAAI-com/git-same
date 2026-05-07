@@ -30,8 +30,8 @@ usage() {
 Usage: $0 VERSION --sha-arm <hex> --sha-intel <hex> [--out PATH]
 
   VERSION       Strict semver, no leading zeros, no v prefix (e.g. 3.0.1)
-  --sha-arm     SHA256 of the aarch64 tarball (64 hex chars)
-  --sha-intel   SHA256 of the x86_64 tarball (64 hex chars)
+  --sha-arm     SHA256 of the aarch64 DMG (64 hex chars)
+  --sha-intel   SHA256 of the x86_64 DMG (64 hex chars)
   --out PATH    Write to PATH instead of stdout
 EOF
 }

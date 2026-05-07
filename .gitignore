@@ -3,6 +3,11 @@
 **/*.rs.bk
 *.pdb
 
+# Frontend
+node_modules/
+dist/
+crates/git-same-app/gen/
+
 # IDE
 .vscode/
 .idea/

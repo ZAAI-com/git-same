@@ -128,7 +128,7 @@ pub struct FinderWorkspaceInfo {
 /// Top-level status file written by the daemon.
 ///
 /// This is the single source of truth read by the FinderSync extension.
-/// Written atomically to `~/.config/git-same/finder/status.json`.
+/// Written atomically to the platform-default Finder IPC status path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinderStatus {
     pub version: u32,

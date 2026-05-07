@@ -1,0 +1,27 @@
+[package]
+name = "git-same-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Desktop app for git-same."
+publish = false
+
+[[bin]]
+name = "git-same-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+git-same-core = { path = "../git-same-core" }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shellexpand = { workspace = true }
+tauri = { version = "2", features = [] }
+tokio = { workspace = true }
