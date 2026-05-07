@@ -6,9 +6,9 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::setup::state::OrgEntry;
-use crate::types::{OpSummary, OwnedRepo};
+use crate::types::{OpSummary, OwnedRepo, RepoEntry};
 
-use super::app::{CheckEntry, Operation, RepoEntry};
+use super::app::{CheckEntry, Operation};
 
 /// Events that the TUI loop processes.
 #[derive(Debug)]

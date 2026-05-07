@@ -1,7 +1,7 @@
 use super::*;
 use crate::setup::state::OrgEntry;
-use crate::tui::app::{CheckEntry, Operation, RepoEntry};
-use crate::types::OpSummary;
+use crate::tui::app::{CheckEntry, Operation};
+use crate::types::{OpSummary, RepoEntry};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 

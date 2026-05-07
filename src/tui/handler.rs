@@ -4,9 +4,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::app::{
-    App, CheckEntry, LogFilter, Operation, OperationState, Screen, SyncHistoryEntry, SyncLogEntry,
-    SyncLogStatus,
+    App, CheckEntry, LogFilter, Operation, OperationState, Screen, SyncLogEntry, SyncLogStatus,
 };
+use crate::types::SyncHistoryEntry;
 use super::event::{AppEvent, BackendMessage};
 use super::screens;
 use crate::cache::SyncHistoryManager;

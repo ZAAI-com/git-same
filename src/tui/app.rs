@@ -2,13 +2,11 @@
 
 use crate::config::{Config, WorkspaceConfig};
 use crate::setup::state::{self, SetupState};
-use crate::types::{OpSummary, OwnedRepo};
+use crate::types::{OpSummary, OwnedRepo, RepoEntry, SyncHistoryEntry};
 use ratatui::widgets::TableState;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
-
-pub use crate::types::{RepoEntry, SyncHistoryEntry};
 
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
