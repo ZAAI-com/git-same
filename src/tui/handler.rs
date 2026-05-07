@@ -6,13 +6,13 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::app::{
     App, CheckEntry, LogFilter, Operation, OperationState, Screen, SyncLogEntry, SyncLogStatus,
 };
-use crate::types::SyncHistoryEntry;
 use super::event::{AppEvent, BackendMessage};
 use super::screens;
 use crate::cache::SyncHistoryManager;
 use crate::config::WorkspaceManager;
 use crate::domain::RepoPathTemplate;
 use crate::setup::state::{SetupOutcome, SetupStep};
+use crate::types::SyncHistoryEntry;
 
 const MAX_THROUGHPUT_SAMPLES: usize = 240;
 const MAX_LOG_LINES: usize = 5_000;

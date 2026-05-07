@@ -17,8 +17,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::banner::{render_animated_banner, render_banner};
 use crate::tui::app::{App, Operation, OperationState, Screen};
-use crate::types::RepoEntry;
 use crate::tui::event::AppEvent;
+use crate::types::RepoEntry;
 
 // ── Key handler ─────────────────────────────────────────────────────────────
 
