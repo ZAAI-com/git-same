@@ -30,7 +30,9 @@
 #   $OUT_DIR/git-same-${VERSION}-${TARGET}.tar.gz.sha256
 #
 # Stapling is intentionally skipped: stapler staple only works on bundles/.pkg/.dmg.
-# Gatekeeper resolves the notarization ticket online on first launch for bare binaries.
+# For bare CLI binaries the notarization ticket lives only in Apple's CDN; macOS
+# does not consult it for bare executables, and `spctl --assess` is not a valid
+# verification path for this artifact type.
 
 set -euo pipefail
 
@@ -159,12 +161,10 @@ xcrun notarytool submit "$NOTARIZE_ZIP" \
     --wait \
     --timeout 600
 
-# Bare CLI binaries can't be stapled (stapler only accepts bundles/.pkg/.dmg),
-# so spctl resolves the ticket online from Apple's CDN. This requires network
-# egress on the runner.
-echo "==> Verifying Gatekeeper acceptance"
-spctl --assess --type execute --verbose "$BINARY_PATH"
-
+# Skip `spctl --assess` on bare Mach-O CLI binaries: Gatekeeper only assesses
+# .app bundles, .pkg, and .dmg, and rejects bare executables with "does not
+# seem to be an app" even when correctly signed and notarized. The notarytool
+# Accepted result above plus `codesign --verify` are the correct gates here.
 TARBALL_NAME="git-same-${VERSION}-${TARGET}.tar.gz"
 TARBALL_PATH="$OUT_DIR_ABS/$TARBALL_NAME"
 
