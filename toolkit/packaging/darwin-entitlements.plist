@@ -1,16 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Entitlements applied by darwin-sign-and-notarize.sh via codesign --entitlements.
-
-  Today: a CLI signed with hardened runtime, no extra capabilities. The empty
-  dict here is intentional and is enough to keep notarytool happy.
-
-  Future Tauri + FinderSync GUI seam: the .app bundle and the FinderSync
-  extension will need their own entitlements files (com.apple.security.app-sandbox,
-  com.apple.developer.FinderSync, etc.) at codesign time. Keeping this plist
-  in the same directory means there is one obvious place to add them.
--->
 <plist version="1.0">
 <dict>
 </dict>
