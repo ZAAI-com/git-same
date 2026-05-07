@@ -7,6 +7,14 @@
 node_modules/
 dist/
 crates/git-same-app/gen/
+.pnpm-store/
+
+# Tauri local cache & bundle outputs outside of /target/
+.tauri/
+crates/git-same-app/ui/.svelte-kit/
+crates/git-same-app/ui/.vite/
+*.dmg
+*.app.zip
 
 # IDE
 .vscode/

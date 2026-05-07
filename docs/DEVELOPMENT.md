@@ -70,6 +70,20 @@ cargo build --release --workspace
 
 The repository is a Cargo workspace with two member crates: `git-same-core` (engine library, `crates/git-same-core/`) and `git-same` (the CLI binary + TUI, `crates/git-same-cli/` on disk). The release binary is output at the workspace level: `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
 
+## Running the macOS App in development
+
+The Tauri-based desktop app lives at `crates/git-same-app/`. You need [pnpm](https://pnpm.io/) and the [`tauri-cli`](https://v2.tauri.app/reference/cli/) (`cargo install tauri-cli --version "^2.0"`).
+
+```bash
+# Install frontend dependencies
+pnpm --dir crates/git-same-app/ui install
+
+# Start the dev server (Vite + Rust backend with hot reload)
+cargo tauri dev --manifest-path crates/git-same-app/Cargo.toml
+```
+
+The window opens with the workspace dashboard, reading from `~/.config/git-same/config.toml`. The app subscribes to the daemon's `status.json`, so updates from `git-same sync` (run in another terminal) appear live.
+
 ## Running tests
 
 ```bash
