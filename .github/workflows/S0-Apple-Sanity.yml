@@ -1,0 +1,134 @@
+name: S0 - Apple Secrets Sanity
+
+# Throwaway sanity check for the seven Apple secrets/variables used by S2's
+# sign + notarize step. Validates that:
+#   1. The .p12 base64 unlocks with APPLE_DEVELOPER_CERTIFICATE_PASSWORD and
+#      imports cleanly into a temp keychain locked with APPLE_KEYCHAIN_PASSWORD.
+#   2. APPLE_SIGNING_IDENTITY matches the imported cert and codesign succeeds
+#      against a stub Mach-O binary.
+#   3. notarytool accepts APPLE_ID + APPLE_TEAM_ID + APPLE_APP_SPECIFIC_PASSWORD
+#      by listing past submission history (does NOT submit anything, so no
+#      notarization slot is consumed and no Apple Developer record is created).
+#
+# Manual dispatch only. Safe to re-run any time. ~60 seconds end to end.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-secrets-sanity:
+    name: Apple Secrets Sanity
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Compile stub Mach-O binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stub
+          cat > stub/stub.c <<'EOF'
+          int main(void) { return 0; }
+          EOF
+          clang -o stub/stub stub/stub.c
+          file stub/stub
+
+      - name: Validate cert + signing identity
+        env:
+          APPLE_DEVELOPER_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
+          APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for v in APPLE_DEVELOPER_CERTIFICATE_P12 \
+                   APPLE_DEVELOPER_CERTIFICATE_PASSWORD \
+                   APPLE_SIGNING_IDENTITY \
+                   APPLE_KEYCHAIN_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "ERROR: $v is empty or unset" >&2
+              exit 1
+            fi
+            echo "present: $v"
+          done
+
+          KEYCHAIN_NAME="apple-sanity-$$.keychain"
+          KEYCHAIN_PATH="$HOME/Library/Keychains/${KEYCHAIN_NAME}-db"
+          CERT_FILE="$(mktemp -t apple-sanity-cert.XXXXXX).p12"
+
+          cleanup() {
+            rm -f "$CERT_FILE" || true
+            if security list-keychains | grep -q "$KEYCHAIN_NAME"; then
+              security delete-keychain "$KEYCHAIN_NAME" || true
+            fi
+            if [ -f "$KEYCHAIN_PATH" ]; then
+              rm -f "$KEYCHAIN_PATH" || true
+            fi
+          }
+          trap cleanup EXIT
+
+          echo "==> Creating temp keychain"
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security set-keychain-settings -lut 600 "$KEYCHAIN_NAME"
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security list-keychains -d user -s "$KEYCHAIN_NAME" $(security list-keychains -d user | tr -d '"')
+
+          echo "==> Decoding and importing .p12"
+          printf '%s' "$APPLE_DEVELOPER_CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
+          security import "$CERT_FILE" \
+            -k "$KEYCHAIN_NAME" \
+            -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$APPLE_KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_NAME" >/dev/null
+
+          echo "==> Identities visible in temp keychain:"
+          security find-identity -v -p codesigning "$KEYCHAIN_NAME"
+
+          echo "==> codesign stub binary"
+          /usr/bin/codesign \
+            --force \
+            --options runtime \
+            --timestamp=none \
+            --sign "Developer ID Application: $APPLE_SIGNING_IDENTITY" \
+            stub/stub
+          /usr/bin/codesign --verify --verbose=4 stub/stub
+
+          echo ""
+          echo "Sign-time validation complete: cert imports, signing identity matches, codesign succeeds."
+
+      - name: Validate notarytool credentials
+        env:
+          APPLE_ID: ${{ vars.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for v in APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              echo "ERROR: $v is empty or unset" >&2
+              exit 1
+            fi
+            echo "present: $v"
+          done
+
+          echo "==> notarytool history (does not submit anything)"
+          xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+          echo ""
+          echo "Notarytool credential validation complete: Apple accepted apple-id + team-id + app-specific-password."
