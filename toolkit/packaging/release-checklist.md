@@ -11,7 +11,7 @@ manual `workflow_dispatch` workflows under `.github/workflows/`.
 - [ ] Smoke-render the Homebrew artifacts locally:
   ```sh
   bash toolkit/homebrew/render-cask.sh    3.X.Y --sha-arm <64x0> --sha-intel <64x0>
-  bash toolkit/homebrew/render-formula.sh 3.X.Y --url https://example --sha-macos-arm <64x0> --sha-macos-intel <64x0> --sha-linux-arm <64x0> --sha-linux-intel <64x0>
+  bash toolkit/homebrew/render-formula.sh 3.X.Y --kind cli  --url https://example --sha-macos-arm <64x0> --sha-macos-intel <64x0> --sha-linux-arm <64x0> --sha-linux-intel <64x0>
   ```
 
 ## 2. S1 (test CI)
@@ -54,3 +54,4 @@ manual `workflow_dispatch` workflows under `.github/workflows/`.
 - [ ] On a clean Mac (x86_64): same as above.
 - [ ] On Linux (Docker is fine): `brew install zaai-com/tap/git-same-cli`. Same checks (sans `man` if unavailable).
 - [ ] `cargo install git-same` succeeds.
+- [ ] Old `brew install zaai-com/tap/git-same` formula path still works and shows the deprecation notice.

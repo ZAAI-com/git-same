@@ -56,8 +56,10 @@ brew install zaai-com/tap/git-same-cli
 #### From crates.io
 
 ```bash
-cargo install git-same
+cargo install git-same-cli
 ```
+
+> Pre-3.2 releases were published as `git-same`. The CLI now publishes as `git-same-cli` while the binary it installs is still named `git-same`.
 
 #### GitHub Releases
 
@@ -198,7 +200,7 @@ Git-Same installs multiple binary names so you can use whichever you prefer:
 | `gisa`     | Shortest alias (symlink)                       |
 | `git same` | Git subcommand (requires git-same in PATH)     |
 
-> **Install method differences:** Homebrew cask (`brew install --cask zaai-com/tap/git-same`) and the headless formula (`brew install zaai-com/tap/git-same-cli`) both install all aliases automatically. `cargo install git-same` installs only the primary binary.
+> **Install method differences:** Homebrew cask (`brew install --cask zaai-com/tap/git-same`) and the headless formula (`brew install zaai-com/tap/git-same-cli`) both install all aliases automatically. `cargo install git-same-cli` installs only the primary binary.
 
 All examples in this README use `git-same`, but any alias works interchangeably.
 
