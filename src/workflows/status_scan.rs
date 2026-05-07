@@ -3,10 +3,9 @@
 use crate::config::{Config, WorkspaceConfig};
 use crate::discovery::DiscoveryOrchestrator;
 use crate::git::{GitOperations, ShellGit};
-use crate::tui::app::RepoEntry;
+use crate::types::RepoEntry;
 
 /// Scan local repositories for git status for a workspace.
-#[cfg(feature = "tui")]
 pub fn scan_workspace_status(config: &Config, workspace: &WorkspaceConfig) -> Vec<RepoEntry> {
     let base_path = workspace.expanded_base_path();
     if !base_path.exists() {
@@ -62,6 +61,6 @@ pub fn scan_workspace_status(config: &Config, workspace: &WorkspaceConfig) -> Ve
     entries
 }
 
-#[cfg(all(test, feature = "tui"))]
+#[cfg(test)]
 #[path = "status_scan_tests.rs"]
 mod tests;

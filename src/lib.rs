@@ -69,7 +69,7 @@ pub mod workflows;
 /// Re-export commonly used types for convenience.
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult};
-    pub use crate::cache::{CacheManager, DiscoveryCache, CACHE_VERSION};
+    pub use crate::cache::{CacheManager, DiscoveryCache, SyncHistoryManager, CACHE_VERSION};
     pub use crate::cli::{Cli, Command, InitArgs, ResetArgs, StatusArgs, SyncCmdArgs};
     pub use crate::config::{
         Config, ConfigCloneOptions, FilterOptions, SyncMode as ConfigSyncMode, WorkspaceConfig,

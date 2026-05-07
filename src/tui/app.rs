@@ -4,10 +4,11 @@ use crate::config::{Config, WorkspaceConfig};
 use crate::setup::state::{self, SetupState};
 use crate::types::{OpSummary, OwnedRepo};
 use ratatui::widgets::TableState;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
+
+pub use crate::types::{RepoEntry, SyncHistoryEntry};
 
 /// Which screen is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,35 +125,6 @@ pub enum LogFilter {
     Failed,
     Skipped,
     Changelog,
-}
-
-/// A summary entry for sync history.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncHistoryEntry {
-    pub timestamp: String,
-    pub duration_secs: f64,
-    pub success: usize,
-    pub failed: usize,
-    pub skipped: usize,
-    pub with_updates: usize,
-    pub cloned: usize,
-    pub total_new_commits: u32,
-}
-
-/// A local repo with its computed status.
-#[derive(Debug, Clone)]
-pub struct RepoEntry {
-    pub owner: String,
-    pub name: String,
-    pub full_name: String,
-    pub path: PathBuf,
-    pub branch: Option<String>,
-    pub is_uncommitted: bool,
-    pub ahead: usize,
-    pub behind: usize,
-    pub staged_count: usize,
-    pub unstaged_count: usize,
-    pub untracked_count: usize,
 }
 
 /// A requirement check result for the init check screen.

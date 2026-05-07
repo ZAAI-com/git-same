@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::debug;
 
-use crate::tui::app::SyncHistoryEntry;
+use crate::types::SyncHistoryEntry;
 
 const HISTORY_VERSION: u32 = 1;
 const MAX_HISTORY_ENTRIES: usize = 50;

@@ -14,6 +14,7 @@
 pub mod finder_status;
 mod provider;
 mod repo;
+mod repo_status;
 
 pub use finder_status::{
     Badge, FinderBranchInfo, FinderRemoteInfo, FinderRepoStatus, FinderStatus, FinderWorkspaceInfo,
@@ -21,3 +22,4 @@ pub use finder_status::{
 };
 pub use provider::ProviderKind;
 pub use repo::{ActionPlan, OpResult, OpSummary, Org, OwnedRepo, Repo, SkippedRepo};
+pub use repo_status::{RepoEntry, SyncHistoryEntry};
