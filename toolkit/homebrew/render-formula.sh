@@ -56,17 +56,26 @@ Usage:
 EOF
 }
 
+require_flag_value() {
+    local flag="$1"
+    if [ "$#" -lt 2 ] || [[ "$2" == --* ]]; then
+        echo "ERROR: ${flag} requires a value" >&2
+        usage
+        exit 2
+    fi
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
-        --kind)              KIND="${2:-}"; shift 2 ;;
-        --url)               URL="${2:-}"; shift 2 ;;
-        --sha-macos-arm)     SHA_MAC_ARM="${2:-}"; shift 2 ;;
-        --sha-macos-intel)   SHA_MAC_INTEL="${2:-}"; shift 2 ;;
-        --sha-linux-arm)     SHA_LIN_ARM="${2:-}"; shift 2 ;;
-        --sha-linux-intel)   SHA_LIN_INTEL="${2:-}"; shift 2 ;;
-        --deprecation-date)  DEPRECATION_DATE="${2:-}"; shift 2 ;;
-        --src-sha)           SRC_SHA="${2:-}"; shift 2 ;;
-        --out)               OUT="${2:-}"; shift 2 ;;
+        --kind)              require_flag_value "$@"; KIND="$2"; shift 2 ;;
+        --url)               require_flag_value "$@"; URL="$2"; shift 2 ;;
+        --sha-macos-arm)     require_flag_value "$@"; SHA_MAC_ARM="$2"; shift 2 ;;
+        --sha-macos-intel)   require_flag_value "$@"; SHA_MAC_INTEL="$2"; shift 2 ;;
+        --sha-linux-arm)     require_flag_value "$@"; SHA_LIN_ARM="$2"; shift 2 ;;
+        --sha-linux-intel)   require_flag_value "$@"; SHA_LIN_INTEL="$2"; shift 2 ;;
+        --deprecation-date)  require_flag_value "$@"; DEPRECATION_DATE="$2"; shift 2 ;;
+        --src-sha)           require_flag_value "$@"; SRC_SHA="$2"; shift 2 ;;
+        --out)               require_flag_value "$@"; OUT="$2"; shift 2 ;;
         -h|--help)           usage; exit 0 ;;
         --*)                 echo "ERROR: unknown flag $1" >&2; usage; exit 2 ;;
         *)
@@ -104,14 +113,6 @@ case "$KIND" in
         require_sha --sha-macos-intel "$SHA_MAC_INTEL"
         require_sha --sha-linux-arm   "$SHA_LIN_ARM"
         require_sha --sha-linux-intel "$SHA_LIN_INTEL"
-        RENDERED="$(sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|URL_PLACEHOLDER|${URL}|g" \
-            -e "s|SHA_LINUX_X86_64_PLACEHOLDER|${SHA_LIN_INTEL}|g" \
-            -e "s|SHA_LINUX_AARCH64_PLACEHOLDER|${SHA_LIN_ARM}|g" \
-            -e "s|SHA_MACOS_X86_64_PLACEHOLDER|${SHA_MAC_INTEL}|g" \
-            -e "s|SHA_MACOS_AARCH64_PLACEHOLDER|${SHA_MAC_ARM}|g" \
-            "$TEMPLATE")"
         ;;
     shim)
         TEMPLATE="$SCRIPT_DIR/formula-shim.rb.tmpl"
@@ -122,11 +123,6 @@ case "$KIND" in
             echo "ERROR: --deprecation-date must be ISO date YYYY-MM-DD" >&2; exit 2
         fi
         require_sha --src-sha "$SRC_SHA"
-        RENDERED="$(sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|DEPRECATION_DATE_PLACEHOLDER|${DEPRECATION_DATE}|g" \
-            -e "s|SOURCE_TARBALL_SHA_PLACEHOLDER|${SRC_SHA}|g" \
-            "$TEMPLATE")"
         ;;
     "")
         echo "ERROR: --kind is required (cli|shim)" >&2; usage; exit 2 ;;
@@ -138,6 +134,26 @@ if [ ! -r "$TEMPLATE" ]; then
     echo "ERROR: template not readable: $TEMPLATE" >&2
     exit 1
 fi
+
+case "$KIND" in
+    cli)
+        RENDERED="$(sed \
+            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
+            -e "s|URL_PLACEHOLDER|${URL}|g" \
+            -e "s|SHA_LINUX_X86_64_PLACEHOLDER|${SHA_LIN_INTEL}|g" \
+            -e "s|SHA_LINUX_AARCH64_PLACEHOLDER|${SHA_LIN_ARM}|g" \
+            -e "s|SHA_MACOS_X86_64_PLACEHOLDER|${SHA_MAC_INTEL}|g" \
+            -e "s|SHA_MACOS_AARCH64_PLACEHOLDER|${SHA_MAC_ARM}|g" \
+            "$TEMPLATE")"
+        ;;
+    shim)
+        RENDERED="$(sed \
+            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
+            -e "s|DEPRECATION_DATE_PLACEHOLDER|${DEPRECATION_DATE}|g" \
+            -e "s|SOURCE_TARBALL_SHA_PLACEHOLDER|${SRC_SHA}|g" \
+            "$TEMPLATE")"
+        ;;
+esac
 
 if [ -n "$OUT" ]; then
     printf '%s\n' "$RENDERED" > "$OUT"

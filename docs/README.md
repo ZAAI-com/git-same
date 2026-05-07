@@ -61,7 +61,7 @@ cargo install git-same
 
 #### GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), and Windows (x86_64, ARM64). The macOS assets are signed and notarized tarballs (`git-same-<version>-<arch>-apple-darwin.tar.gz`).
+Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.0-aarch64-apple-darwin.tar.gz`).
 
 </details>
 

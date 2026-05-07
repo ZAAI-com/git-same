@@ -76,7 +76,7 @@ cp "$CASK"         "$TAP_PATH/Casks/git-same.rb"
 ( cd "$TAP_PATH" && git init -q && git add . && git -c user.email=verify@local -c user.name=verify commit -q -m init )
 
 echo "==> brew style (cask + formulae)"
-brew style "$TAP_PATH"
+brew style --strict "$TAP_PATH"
 
 AUDIT_FLAGS=(--strict)
 if [ "$ONLINE" -eq 1 ]; then

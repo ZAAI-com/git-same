@@ -96,11 +96,12 @@ done
 
 KEYCHAIN_NAME="git-same-build-$$.keychain"
 KEYCHAIN_PATH="$HOME/Library/Keychains/${KEYCHAIN_NAME}-db"
-CERT_FILE="$(mktemp -t git-same-cert.XXXXXX).p12"
+CERT_DIR="$(mktemp -d -t git-same-cert.XXXXXX)"
+CERT_FILE="$CERT_DIR/cert.p12"
 NOTARIZE_DIR="$(mktemp -d -t git-same-notarize.XXXXXX)"
 
 cleanup() {
-    rm -f "$CERT_FILE" || true
+    rm -rf "$CERT_DIR" || true
     rm -rf "$NOTARIZE_DIR" || true
     if security list-keychains | grep -q "$KEYCHAIN_NAME"; then
         security delete-keychain "$KEYCHAIN_NAME" || true
@@ -115,10 +116,10 @@ echo "==> Creating temp keychain"
 security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
 security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME"
 security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
-security list-keychains -d user -s "$KEYCHAIN_NAME" $(security list-keychains -d user | tr -d '"')
+security list-keychains -d user -s "$KEYCHAIN_NAME" "$(security list-keychains -d user | tr -d '"')"
 
 echo "==> Importing Developer ID Application certificate"
-echo "$APPLE_DEVELOPER_CERTIFICATE_P12" | base64 --decode > "$CERT_FILE"
+echo "$APPLE_DEVELOPER_CERTIFICATE_P12" | base64 -D > "$CERT_FILE"
 security import "$CERT_FILE" \
     -k "$KEYCHAIN_NAME" \
     -P "$APPLE_DEVELOPER_CERTIFICATE_PASSWORD" \
