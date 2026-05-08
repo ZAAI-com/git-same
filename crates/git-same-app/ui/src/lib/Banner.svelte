@@ -62,7 +62,7 @@
 {:else if showFda}
   <div class="banner info">
     <Info size={18} />
-    <span>Grant Full Disk Access to git-Same so badges can render on your repository folders.</span>
+    <span>Grant Full Disk Access to Git-Same so badges can render on your repository folders.</span>
     <button type="button" on:click={openFullDiskAccess}>Grant Full Disk Access</button>
   </div>
 {/if}

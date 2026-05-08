@@ -86,8 +86,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key><string>git-same-app</string>
   <key>CFBundleIconFile</key><string>icons.icns</string>
   <key>CFBundleIdentifier</key><string>com.zaai.git-same</string>
-  <key>CFBundleName</key><string>git-Same</string>
-  <key>CFBundleDisplayName</key><string>git-Same</string>
+  <key>CFBundleName</key><string>Git-Same</string>
+  <key>CFBundleDisplayName</key><string>Git-Same</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -130,7 +130,7 @@ fi
 echo "==> Creating DMG"
 if command -v create-dmg >/dev/null 2>&1; then
     create-dmg \
-        --volname "git-Same ${VERSION}" \
+        --volname "Git-Same ${VERSION}" \
         --window-size 540 380 \
         --icon-size 100 \
         --icon "git-same.app" 140 190 \
@@ -142,7 +142,7 @@ else
     mkdir -p "$DMG_ROOT"
     cp -R "$APP" "$DMG_ROOT/"
     ln -s /Applications "$DMG_ROOT/Applications"
-    hdiutil create -volname "git-Same ${VERSION}" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DMG"
+    hdiutil create -volname "Git-Same ${VERSION}" -srcfolder "$DMG_ROOT" -ov -format UDZO "$DMG"
 fi
 
 if [ "$SKIP_SIGNING" != "1" ]; then

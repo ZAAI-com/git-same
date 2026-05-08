@@ -164,11 +164,11 @@ class FinderSync: FIFinderSync {
     // MARK: - Toolbar
 
     override var toolbarItemName: String {
-        return "git-Same"
+        return "Git-Same"
     }
 
     override var toolbarItemToolTip: String {
-        return "git-Same repository status"
+        return "Git-Same repository status"
     }
 
     override var toolbarItemImage: NSImage {

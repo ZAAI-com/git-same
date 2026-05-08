@@ -20,7 +20,7 @@ enum ContextMenuBuilder {
         if repo.badge == .gray {
             socketClient.send("REFRESH \(repo.path)") { _ in }
         }
-        let menu = NSMenu(title: "git-Same")
+        let menu = NSMenu(title: "Git-Same")
         menu.addItem(parentItem(badge: repo.badge,
                                 submenu: repoRoot(repo: repo,
                                                   workspaceInfo: workspaceInfo,
@@ -33,7 +33,7 @@ enum ContextMenuBuilder {
                       repos: [FinderRepoStatus],
                       workspaceInfo: FinderWorkspaceInfo?,
                       timestamp: String?) -> NSMenu {
-        let menu = NSMenu(title: "git-Same")
+        let menu = NSMenu(title: "Git-Same")
         menu.addItem(parentItem(badge: nil,
                                 submenu: orgRoot(org: org, repos: repos,
                                                  workspaceInfo: workspaceInfo,
