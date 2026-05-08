@@ -105,6 +105,9 @@ jobs:
       - name: Enable pnpm
         run: corepack enable pnpm
 
+      - name: Verify entitlements parity
+        run: bash toolkit/packaging/macos/check-entitlements-parity.sh
+
       - name: Install frontend dependencies
         run: pnpm --dir crates/git-same-app/ui install --frozen-lockfile
 

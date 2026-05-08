@@ -40,6 +40,14 @@ cask "git-same" do
     File.write(plist_dst, rendered)
     system_command "/bin/launchctl", args: ["unload", plist_dst], sudo: false, must_succeed: false
     system_command "/bin/launchctl", args: ["load", plist_dst], sudo: false, must_succeed: false
+
+    # Clear stale FinderSync registration from pre-rename builds (id was
+    # `com.zaai.git-same.GitSameBadge.FinderSync`; renamed to
+    # `com.zaai.git-same.Badges` in 3.1.0). Best-effort: ignored if the id
+    # is not present in pluginkit's cache.
+    system_command "/usr/bin/pluginkit",
+                   args: ["-e", "ignore", "-i", "com.zaai.git-same.GitSameBadge.FinderSync"],
+                   sudo: false, must_succeed: false
   end
 
   uninstall launchctl: "com.zaai.git-same.daemon",

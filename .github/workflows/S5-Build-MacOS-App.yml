@@ -11,7 +11,7 @@ on:
         description: "Embed the FinderSync extension"
         required: true
         type: boolean
-        default: false
+        default: true
   push:
     tags:
       - "*.*.*"
@@ -71,13 +71,19 @@ jobs:
       - name: Enable pnpm
         run: corepack enable pnpm
 
+      - name: Verify entitlements parity
+        run: bash toolkit/packaging/macos/check-entitlements-parity.sh
+
       - name: Build signed app DMG
         env:
           VERSION: ${{ steps.version.outputs.version }}
           ARCH: ${{ matrix.arch }}
           WORKSPACE_ROOT: ${{ github.workspace }}
           OUTPUT_DIR: ${{ github.workspace }}/dist/macos
-          INCLUDE_FINDER_EXTENSION: ${{ inputs.include_finder_extension && '1' || '0' }}
+          # Default-on: tag pushes (where `inputs.include_finder_extension` is
+          # null) ship the full bundle. Only an explicit `false` from
+          # workflow_dispatch suppresses the appex.
+          INCLUDE_FINDER_EXTENSION: ${{ inputs.include_finder_extension == false && '0' || '1' }}
           APPLE_DEVELOPER_CERTIFICATE_P12: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12 }}
           APPLE_DEVELOPER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
