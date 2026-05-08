@@ -100,12 +100,16 @@ fi
 echo "tauri: $("$TAURI_CLI" --version)"
 echo ""
 
-# Clean build artifacts and update dependencies
+# Reset Rust state, then warm the workspace target/ cache so the next
+# run.sh is a tight incremental build instead of a full cold compile.
 echo "--- Cleaning Build Cache ---"
 cargo clean
 echo ""
 echo "--- Updating Dependencies ---"
 cargo update
+echo ""
+echo "--- Pre-building workspace (debug) to warm target/ cache ---"
+cargo build --workspace
 echo ""
 
 echo "========================================"

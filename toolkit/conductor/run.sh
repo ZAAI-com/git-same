@@ -31,25 +31,46 @@ fi
 PRIMARY_BIN="${BINARIES[0]}"
 GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
 
-# Install primary binary
-echo "Installing with: cargo install --path crates/git-same-cli --force"
-cargo install --path crates/git-same-cli --force
+# Build the CLI in the workspace target/ so deps are cached and shared
+# with `tauri dev` below. Debug by default; opt into release via
+# GIT_SAME_PROFILE=release for parity with shipped binaries.
+PROFILE="${GIT_SAME_PROFILE:-debug}"
+case "$PROFILE" in
+    debug)
+        echo "Building (debug): cargo build -p git-same"
+        cargo build -p git-same
+        BUILT_BIN="$PROJECT_DIR/target/debug/git-same"
+        ;;
+    release)
+        echo "Building (release): cargo build -p git-same --release"
+        cargo build -p git-same --release
+        BUILT_BIN="$PROJECT_DIR/target/release/git-same"
+        ;;
+    *)
+        echo "ERROR: GIT_SAME_PROFILE must be 'debug' or 'release' (got '$PROFILE')."
+        exit 1
+        ;;
+esac
 echo ""
 
-if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
-    echo "ERROR: $PRIMARY_BIN installation failed."
+if [ ! -x "$BUILT_BIN" ]; then
+    echo "ERROR: build did not produce $BUILT_BIN"
     exit 1
 fi
 
-# Create alias symlinks from manifest (skip primary)
-for alias in "${BINARIES[@]:1}"; do
-    # Replace stale standalone alias binaries with a symlink to the primary binary.
-    if [ -e "$CARGO_BIN_DIR/$alias" ] && [ ! -L "$CARGO_BIN_DIR/$alias" ]; then
-        rm -f "$CARGO_BIN_DIR/$alias"
+mkdir -p "$CARGO_BIN_DIR"
+
+# Symlink the primary name + every alias at the freshly built binary.
+# Replace any prior non-symlink (e.g. a copy left by an old `cargo install`)
+# so the new symlink takes precedence on PATH.
+for name in "${BINARIES[@]}"; do
+    target_path="$CARGO_BIN_DIR/$name"
+    if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+        rm -f "$target_path"
     fi
-    ln -sf "$CARGO_BIN_DIR/$PRIMARY_BIN" "$CARGO_BIN_DIR/$alias"
-    echo "  Symlinked: $alias -> $PRIMARY_BIN"
+    ln -sf "$BUILT_BIN" "$target_path"
 done
+echo "  Linked $PRIMARY_BIN + ${#BINARIES[@]} name(s) -> $BUILT_BIN"
 echo ""
 
 # Warn if gisa is also installed elsewhere (e.g. Homebrew)
