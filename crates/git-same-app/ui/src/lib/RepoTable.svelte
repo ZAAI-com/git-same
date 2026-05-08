@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { selectedWorkspaceId, snapshot } from '../stores/status';
+  import { currentWorkspace, selectedWorkspaceId, snapshot } from '../stores/status';
   import { badgeLabel, repoName } from './utils';
 
   $: repos = $snapshot?.status?.repos ?? [];
@@ -7,6 +7,9 @@
     ? repos.filter(
         (repo) =>
           repo.workspace === $selectedWorkspaceId ||
+          ($currentWorkspace?.root
+            ? repo.path.startsWith($currentWorkspace.root)
+            : false) ||
           repo.path.startsWith($selectedWorkspaceId),
       )
     : repos;

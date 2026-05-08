@@ -10,7 +10,7 @@ export function readStatus(): Promise<StatusSnapshot> {
   return invoke('read_status');
 }
 
-export function startSync(workspaceId: string): Promise<void> {
+export function startSync(workspaceId: string): Promise<StatusSnapshot> {
   return invoke('start_sync', { workspaceId });
 }
 

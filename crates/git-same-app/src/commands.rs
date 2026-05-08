@@ -1,6 +1,8 @@
+use git_same_core::api::RepoScanService;
 use git_same_core::config::workspace::tilde_collapse_path;
 use git_same_core::config::{Config, WorkspaceConfig, WorkspaceManager};
 use git_same_core::errors::AppError;
+use git_same_core::git::ShellGit;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::operations::clone::NoProgress as NoCloneProgress;
 use git_same_core::operations::sync::NoSyncProgress;
@@ -64,7 +66,7 @@ pub async fn read_status() -> Result<StatusSnapshot, String> {
 }
 
 #[tauri::command]
-pub async fn start_sync(workspace_id: String) -> Result<(), String> {
+pub async fn start_sync(workspace_id: String) -> Result<StatusSnapshot, String> {
     let config = Config::load().map_err(error_string)?;
     let mut workspace =
         WorkspaceManager::resolve(Some(&workspace_id), &config).map_err(error_string)?;
@@ -106,7 +108,8 @@ pub async fn start_sync(workspace_id: String) -> Result<(), String> {
 
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
-    Ok(())
+    let ipc = IpcConfig::default_path().map_err(error_string)?;
+    read_status_snapshot_with(&config, &ipc).map_err(error_string)
 }
 
 #[tauri::command]
@@ -167,7 +170,12 @@ fn parse_pluginkit_output(stdout: &str, target_id: &str) -> ExtensionStatus {
 }
 
 pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
+    let config = Config::load()?;
     let ipc = IpcConfig::default_path()?;
+    read_status_snapshot_with(&config, &ipc)
+}
+
+fn read_status_snapshot_with(config: &Config, ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
     ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
     let writer = StatusFileWriter::new(status_path.clone());
@@ -176,7 +184,7 @@ pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
         .as_ref()
         .and_then(|meta| meta.modified().ok())
         .map(system_time_to_rfc3339);
-    let stale = metadata
+    let stale_by_age = metadata
         .as_ref()
         .and_then(|meta| meta.modified().ok())
         .map(|modified| {
@@ -186,10 +194,21 @@ pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
                 > Duration::from_secs(DAEMON_STALE_AFTER_SECS)
         })
         .unwrap_or(true);
-    let status = if writer.exists() {
-        Some(writer.read()?)
+    let monitor_alive = if writer.exists() {
+        writer
+            .read()
+            .map(|status| is_process_alive(status.daemon_pid))
+            .unwrap_or(false)
     } else {
-        None
+        false
+    };
+    let stale = stale_by_age || !monitor_alive;
+    let status = if writer.exists() && !stale {
+        Some(writer.read()?)
+    } else if config.workspaces.is_empty() {
+        writer.exists().then(|| writer.read()).transpose()?
+    } else {
+        Some(scan_foreground_status(config))
     };
 
     Ok(StatusSnapshot {
@@ -198,6 +217,13 @@ pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
         stale,
         status,
     })
+}
+
+fn scan_foreground_status(config: &Config) -> FinderStatus {
+    let git = ShellGit::new();
+    RepoScanService::new(&git, config)
+        .scan_all(std::process::id())
+        .unwrap_or_else(|_| FinderStatus::new(std::process::id(), chrono::Utc::now().to_rfc3339()))
 }
 
 fn workspace_summary(
@@ -228,6 +254,29 @@ fn same_path_string(value: &str, path: &Path) -> bool {
 fn system_time_to_rfc3339(time: SystemTime) -> String {
     let datetime: chrono::DateTime<chrono::Utc> = time.into();
     datetime.to_rfc3339()
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
 }
 
 fn error_string(error: impl std::fmt::Display) -> String {

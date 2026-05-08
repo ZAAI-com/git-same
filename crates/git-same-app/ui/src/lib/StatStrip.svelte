@@ -1,8 +1,19 @@
 <script lang="ts">
-  import { snapshot } from '../stores/status';
+  import { currentWorkspace, selectedWorkspaceId, snapshot } from '../stores/status';
   import { summarize } from './utils';
 
-  $: counts = summarize($snapshot?.status?.repos ?? []);
+  $: repos = $snapshot?.status?.repos ?? [];
+  $: workspaceRepos = $selectedWorkspaceId
+    ? repos.filter(
+        (repo) =>
+          repo.workspace === $selectedWorkspaceId ||
+          ($currentWorkspace?.root
+            ? repo.path.startsWith($currentWorkspace.root)
+            : false) ||
+          repo.path.startsWith($selectedWorkspaceId),
+      )
+    : repos;
+  $: counts = summarize(workspaceRepos);
 </script>
 
 <section class="stats" aria-label="Repository status counts">

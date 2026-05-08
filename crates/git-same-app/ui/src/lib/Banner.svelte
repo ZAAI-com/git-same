@@ -50,7 +50,7 @@
 {:else if showStale}
   <div class="banner warning">
     <AlertTriangle size={18} />
-    <span>Monitor stopped</span>
+    <span>Monitor stopped; Finder badges may not update</span>
     <code>launchctl load ~/Library/LaunchAgents/com.zaai.git-same.monitor.plist</code>
   </div>
 {:else if showAllowExt}

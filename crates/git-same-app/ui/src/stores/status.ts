@@ -47,7 +47,8 @@ export async function startSyncCurrent(): Promise<void> {
   syncingId.set(workspace.id);
   errorMessage.set('');
   try {
-    await startSync(workspace.id);
+    const next = await startSync(workspace.id);
+    snapshot.set(next);
     await refresh();
   } catch (err) {
     errorMessage.set(String(err));
