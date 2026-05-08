@@ -104,7 +104,7 @@
   }
 
   .brand-wrap {
-    padding: 2px 4px 8px;
+    padding: 8px 8px 10px;
   }
 
   .nav {

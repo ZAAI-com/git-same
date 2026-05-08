@@ -1,66 +1,49 @@
-<div class="brand-logo" aria-label="Git-Same">
-  <div class="mark" aria-hidden="true">
-    <span>GIT</span>
-    <span>SAME</span>
-  </div>
-  <div class="copy">
-    <strong>Git-Same</strong>
-    <small>macOS utility</small>
-  </div>
+<div class="brand" aria-label="GIT-SAME">
+  <pre class="banner" aria-hidden="true">{` ██████╗ ██╗████████╗   ███████╗ █████╗ ███╗   ███╗███████╗
+██╔════╝ ██║╚══██╔══╝   ██╔════╝██╔══██╗████╗ ████║██╔════╝
+██║  ███╗██║   ██║█████╗███████╗███████║██╔████╔██║█████╗
+██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝
+╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝`}</pre>
+  <p class="subhead">Mirror GitHub structure /orgs/repos/ to local file system.</p>
 </div>
 
 <style>
-  .brand-logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  .brand {
+    display: grid;
+    gap: 6px;
     min-width: 0;
   }
 
-  .mark {
-    width: 44px;
-    height: 38px;
-    display: grid;
-    align-content: center;
-    border-radius: 8px;
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-    background:
-      linear-gradient(135deg, rgba(45, 125, 210, 0.16), rgba(38, 166, 91, 0.14)),
-      var(--panel);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
-    color: var(--accent);
+  .banner {
+    margin: 0;
     font-family: "SF Mono", "Menlo", "Consolas", monospace;
+    font-size: 5.5px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: pre;
+    overflow: hidden;
+    background: linear-gradient(90deg, #3b82f6 0%, #06b6d4 50%, #22c55e 100%);
+    color: #3b82f6;
+    background-clip: text;
+    -webkit-background-clip: text;
+  }
+
+  @supports (-webkit-background-clip: text) {
+    .banner {
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+    }
+  }
+
+  .subhead {
+    margin: 0;
+    color: var(--muted);
     font-size: 10px;
-    font-weight: 800;
-    line-height: 1.05;
-    text-align: center;
-  }
-
-  .mark span:last-child {
-    color: var(--ok);
-  }
-
-  .copy {
-    min-width: 0;
-    display: grid;
-    gap: 2px;
-  }
-
-  .copy strong,
-  .copy small {
+    line-height: 1.3;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .copy strong {
-    font-size: 15px;
-    line-height: 1.1;
-  }
-
-  .copy small {
-    color: var(--muted);
-    font-size: 11px;
-    font-weight: 600;
   }
 </style>

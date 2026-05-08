@@ -48,6 +48,7 @@
     grid-template-columns: 248px minmax(0, 1fr);
     min-height: 100vh;
     color: var(--text);
+    border-top: 1px solid var(--line);
   }
 
   .content {
