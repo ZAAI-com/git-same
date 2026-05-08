@@ -327,9 +327,9 @@ pub struct MonitorArgs {
     #[arg(long)]
     pub foreground: bool,
 
-    /// Polling interval in seconds
-    #[arg(long, default_value = "30")]
-    pub interval: u64,
+    /// Polling interval in seconds (overrides the value from config.toml)
+    #[arg(long)]
+    pub interval: Option<u64>,
 
     /// Stop a running monitor
     #[arg(long)]

@@ -46,6 +46,30 @@ pub struct FilterOptions {
     pub exclude_repos: Vec<String>,
 }
 
+/// Monitor process configuration.
+///
+/// Controls behavior of the long-running monitor (`gisa monitor`) that
+/// periodically rescans every workspace and ambient root, then writes
+/// `status.json` for the Finder extension to consume.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitorConfig {
+    /// Seconds between full rescans. The CLI flag `--interval` overrides this.
+    #[serde(default = "default_fullscan_interval_secs")]
+    pub fullscan_interval_secs: u64,
+}
+
+impl Default for MonitorConfig {
+    fn default() -> Self {
+        Self {
+            fullscan_interval_secs: default_fullscan_interval_secs(),
+        }
+    }
+}
+
+fn default_fullscan_interval_secs() -> u64 {
+    30
+}
+
 /// Finder-badge discovery configuration.
 ///
 /// Controls how the monitor finds ambient git repositories outside any
@@ -181,6 +205,10 @@ pub struct Config {
     /// Finder badge monitor configuration (ambient repo discovery).
     #[serde(default)]
     pub finder: FinderConfig,
+
+    /// Monitor process configuration (scan cadence, etc.).
+    #[serde(default)]
+    pub monitor: MonitorConfig,
 }
 
 fn default_structure() -> String {
@@ -207,6 +235,7 @@ impl Default for Config {
             filters: FilterOptions::default(),
             workspaces: Vec::new(),
             finder: FinderConfig::default(),
+            monitor: MonitorConfig::default(),
         }
     }
 }
@@ -348,6 +377,11 @@ exclude_dirs = [
     "Library", ".cache", ".cargo", ".rustup", ".npm", ".yarn", ".venv",
     ".Trash", ".git-same", ".zsh_sessions",
 ]
+
+[monitor]
+# Seconds between full rescans by the background monitor. The CLI flag
+# `gisa monitor --interval N` overrides this when set explicitly.
+fullscan_interval_secs = 30
 "#
     }
 

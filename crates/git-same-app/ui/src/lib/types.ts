@@ -32,6 +32,10 @@ export interface FinderConfigDto {
   show_ambient: boolean;
 }
 
+export interface MonitorConfigDto {
+  fullscan_interval_secs: number;
+}
+
 export interface AppConfigDto {
   config_path: string;
   exists: boolean;
@@ -44,6 +48,7 @@ export interface AppConfigDto {
   filters: FilterOptionsDto;
   workspaces: string[];
   finder: FinderConfigDto;
+  monitor: MonitorConfigDto;
 }
 
 export type AppConfigInput = Omit<AppConfigDto, 'config_path' | 'exists'>;

@@ -1,4 +1,3 @@
-use git_same_core::api::RepoScanService;
 use git_same_core::auth::get_auth_for_provider;
 use git_same_core::cache::{CacheManager, DiscoveryCache};
 use git_same_core::checks::CheckResult;
@@ -10,7 +9,6 @@ use git_same_core::config::{
 use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::AppError;
-use git_same_core::git::ShellGit;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
@@ -31,7 +29,7 @@ use std::time::{Duration, SystemTime};
 use tauri::Emitter;
 
 const DAEMON_STALE_AFTER_SECS: u64 = 90;
-const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.Badges";
+const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.badges";
 const MONITOR_LAUNCH_AGENT_LABEL: &str = "com.zaai.git-same.monitor";
 const MONITOR_LAUNCH_AGENT_FILE: &str = "com.zaai.git-same.monitor.plist";
 const MONITOR_PLIST_TEMPLATE: &str = include_str!("../../../macos/com.zaai.git-same.monitor.plist");
@@ -75,6 +73,11 @@ pub struct FinderConfigDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MonitorConfigDto {
+    pub fullscan_interval_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfigDto {
     pub config_path: String,
     pub exists: bool,
@@ -87,6 +90,7 @@ pub struct AppConfigDto {
     pub filters: FilterOptionsDto,
     pub workspaces: Vec<String>,
     pub finder: FinderConfigDto,
+    pub monitor: MonitorConfigDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +104,7 @@ pub struct AppConfigInput {
     pub filters: FilterOptionsDto,
     pub workspaces: Vec<String>,
     pub finder: FinderConfigDto,
+    pub monitor: MonitorConfigDto,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -465,7 +470,7 @@ pub async fn start_sync(
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
     let ipc = IpcConfig::default_path().map_err(error_string)?;
-    read_status_snapshot_with(&config, &ipc).map_err(error_string)
+    read_status_snapshot_with(&ipc).map_err(error_string)
 }
 
 fn sync_progress_reporter(app: tauri::AppHandle, workspace_id: String) -> ProgressReporter {
@@ -822,6 +827,9 @@ fn app_config_dto(config: &Config, path: &Path, exists: bool) -> AppConfigDto {
             exclude_dirs: config.finder.exclude_dirs.clone(),
             show_ambient: config.finder.show_ambient,
         },
+        monitor: MonitorConfigDto {
+            fullscan_interval_secs: config.monitor.fullscan_interval_secs,
+        },
     }
 }
 
@@ -843,6 +851,7 @@ fn app_config_input(input: AppConfigInput) -> Result<Config, AppError> {
     config.finder.max_depth = input.finder.max_depth;
     config.finder.exclude_dirs = clean_string_list(input.finder.exclude_dirs);
     config.finder.show_ambient = input.finder.show_ambient;
+    config.monitor.fullscan_interval_secs = input.monitor.fullscan_interval_secs;
     config.validate()?;
     Ok(config)
 }
@@ -1221,12 +1230,11 @@ fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {
 }
 
 pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
-    let config = Config::load()?;
     let ipc = IpcConfig::default_path()?;
-    read_status_snapshot_with(&config, &ipc)
+    read_status_snapshot_with(&ipc)
 }
 
-fn read_status_snapshot_with(config: &Config, ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
+fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
     ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
     let writer = StatusFileWriter::new(status_path.clone());
@@ -1256,10 +1264,10 @@ fn read_status_snapshot_with(config: &Config, ipc: &IpcConfig) -> Result<StatusS
     let stale = stale_by_age || !monitor_alive;
     let status = if writer.exists() && !stale {
         Some(writer.read()?)
-    } else if config.workspaces.is_empty() {
-        writer.exists().then(|| writer.read()).transpose()?
+    } else if writer.exists() {
+        writer.read().ok()
     } else {
-        Some(scan_foreground_status(config))
+        None
     };
 
     Ok(StatusSnapshot {
@@ -1268,13 +1276,6 @@ fn read_status_snapshot_with(config: &Config, ipc: &IpcConfig) -> Result<StatusS
         stale,
         status,
     })
-}
-
-fn scan_foreground_status(config: &Config) -> FinderStatus {
-    let git = ShellGit::new();
-    RepoScanService::new(&git, config)
-        .scan_all(std::process::id())
-        .unwrap_or_else(|_| FinderStatus::new(std::process::id(), chrono::Utc::now().to_rfc3339()))
 }
 
 fn workspace_summary(

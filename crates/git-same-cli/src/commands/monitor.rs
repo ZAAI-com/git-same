@@ -30,12 +30,19 @@ pub async fn run(args: &MonitorArgs, config: &Config, output: &Output) -> Result
 
     info!("Starting git-same monitor");
 
+    let interval_secs = resolve_interval_secs(args.interval, config.monitor.fullscan_interval_secs);
     let opts = monitor::Options {
-        interval: Duration::from_secs(args.interval),
+        interval: Duration::from_secs(interval_secs),
         ipc_config,
     };
 
     monitor::run(config, output, opts, shutdown_signal()).await
+}
+
+/// Resolve the effective polling interval: an explicit `--interval` flag wins,
+/// otherwise fall back to the value from `config.toml`.
+fn resolve_interval_secs(cli_flag: Option<u64>, config_value: u64) -> u64 {
+    cli_flag.unwrap_or(config_value)
 }
 
 /// Resolve when the user hits ctrl-c (SIGINT) or `gisa monitor --stop`

@@ -268,3 +268,34 @@ fn finder_config_missing_section_uses_defaults() {
     assert!(cfg.finder.show_ambient);
     assert_eq!(cfg.finder.max_depth, 8);
 }
+
+#[test]
+fn monitor_config_defaults() {
+    let cfg = MonitorConfig::default();
+    assert_eq!(cfg.fullscan_interval_secs, 30);
+}
+
+#[test]
+fn monitor_config_parses_from_toml() {
+    let content = r#"
+[monitor]
+fullscan_interval_secs = 120
+"#;
+    let cfg = Config::parse(content).unwrap();
+    assert_eq!(cfg.monitor.fullscan_interval_secs, 120);
+}
+
+#[test]
+fn monitor_config_missing_section_uses_defaults() {
+    let cfg = Config::parse("concurrency = 4").unwrap();
+    assert_eq!(cfg.monitor.fullscan_interval_secs, 30);
+}
+
+#[test]
+fn default_toml_includes_monitor_section() {
+    let toml = Config::default_toml();
+    assert!(toml.contains("[monitor]"));
+    assert!(toml.contains("fullscan_interval_secs = 30"));
+    let cfg = Config::parse(&toml).unwrap();
+    assert_eq!(cfg.monitor.fullscan_interval_secs, 30);
+}

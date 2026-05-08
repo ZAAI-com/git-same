@@ -30,6 +30,7 @@
   let finderMaxDepth = 8;
   let finderExcludeText =
     'node_modules\ntarget\nbuild\ndist\nDerivedData\nPods\nLibrary\n.cache\n.cargo\n.rustup\n.npm\n.yarn\n.venv\n.Trash\n.git-same\n.zsh_sessions';
+  let monitorFullscanInterval = 30;
 
   $: if ($appConfig && $appConfig.config_path !== loadedPath) {
     applyConfig($appConfig);
@@ -54,6 +55,7 @@
     scanRootsText = listToLines(config.finder.scan_roots);
     finderMaxDepth = config.finder.max_depth;
     finderExcludeText = listToLines(config.finder.exclude_dirs);
+    monitorFullscanInterval = config.monitor.fullscan_interval_secs;
   }
 
   function restoreDefaults() {
@@ -74,6 +76,7 @@
     finderMaxDepth = 8;
     finderExcludeText =
       'node_modules\ntarget\nbuild\ndist\nDerivedData\nPods\nLibrary\n.cache\n.cargo\n.rustup\n.npm\n.yarn\n.venv\n.Trash\n.git-same\n.zsh_sessions';
+    monitorFullscanInterval = 30;
   }
 
   async function submit() {
@@ -102,6 +105,9 @@
           max_depth: Number(finderMaxDepth) || 8,
           exclude_dirs: linesToList(finderExcludeText),
           show_ambient: showAmbient,
+        },
+        monitor: {
+          fullscan_interval_secs: Number(monitorFullscanInterval) || 30,
         },
       };
       await saveConfig(input);
@@ -208,6 +214,15 @@
     </section>
 
     <section class="panel fields">
+      <h2>Monitor</h2>
+      <label>
+        <span>Fullscan interval (seconds)</span>
+        <input type="number" min="5" max="3600" bind:value={monitorFullscanInterval} />
+      </label>
+      <p class="hint">Restart the monitor on the Requirements screen for changes to take effect.</p>
+    </section>
+
+    <section class="panel fields">
       <h2>Finder Ambient Badges</h2>
       <label>
         <span>Show ambient repos</span>
@@ -278,6 +293,12 @@
 
   .fields h2 {
     grid-column: 1 / -1;
+  }
+
+  .fields .hint {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: var(--muted);
   }
 
   label {

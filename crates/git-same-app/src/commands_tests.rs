@@ -57,34 +57,6 @@ impl Drop for TestDir {
     }
 }
 
-fn config_with_workspace(root: &std::path::Path) -> Config {
-    let mut config = Config::default();
-    config.finder.show_ambient = false;
-    config.workspaces = vec![root.to_string_lossy().to_string()];
-    config
-}
-
-fn create_workspace_with_repo(base: &std::path::Path) -> std::path::PathBuf {
-    let root = base.join("workspace");
-    let repo = root.join("acme/widgets");
-    std::fs::create_dir_all(&repo).unwrap();
-
-    let status = std::process::Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(&repo)
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    let mut workspace = WorkspaceConfig::new_from_root(&root);
-    workspace.orgs = vec!["acme".to_string()];
-    let dot_dir = root.join(".git-same");
-    std::fs::create_dir_all(&dot_dir).unwrap();
-    std::fs::write(dot_dir.join("config.toml"), workspace.to_toml().unwrap()).unwrap();
-
-    root
-}
-
 fn default_provider_input() -> WorkspaceProviderDto {
     WorkspaceProviderDto {
         kind: "github".to_string(),
@@ -192,30 +164,25 @@ fn monitor_requirement_message_distinguishes_missing_plist() {
 }
 
 #[test]
-fn read_status_snapshot_scans_foreground_when_status_file_is_missing() {
+fn read_status_snapshot_returns_none_when_status_file_is_missing() {
     let temp = TestDir::new("missing-status");
-    let root = create_workspace_with_repo(temp.path());
-    let config = config_with_workspace(&root);
     let ipc = IpcConfig {
         dir: temp.path().join("ipc"),
     };
 
-    let snapshot = read_status_snapshot_with(&config, &ipc).unwrap();
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
 
     assert!(snapshot.stale);
     assert!(snapshot.updated_at.is_none());
-    let status = snapshot
-        .status
-        .expect("foreground scan should provide data");
-    assert_eq!(status.repos.len(), 1);
-    assert!(status.repos[0].path.ends_with("acme/widgets"));
+    assert!(
+        snapshot.status.is_none(),
+        "missing status file must not trigger a fallback scan"
+    );
 }
 
 #[test]
-fn read_status_snapshot_uses_foreground_data_when_monitor_pid_is_stale() {
+fn read_status_snapshot_returns_last_known_status_when_monitor_pid_is_stale() {
     let temp = TestDir::new("stale-monitor");
-    let root = create_workspace_with_repo(temp.path());
-    let config = config_with_workspace(&root);
     let ipc = IpcConfig {
         dir: temp.path().join("ipc"),
     };
@@ -227,14 +194,14 @@ fn read_status_snapshot_uses_foreground_data_when_monitor_pid_is_stale() {
         .write(&stale_status)
         .unwrap();
 
-    let snapshot = read_status_snapshot_with(&config, &ipc).unwrap();
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
 
     assert!(snapshot.stale);
     assert!(snapshot.updated_at.is_some());
     let status = snapshot
         .status
-        .expect("stale monitor should fall back to scan");
-    assert_eq!(status.repos.len(), 1);
+        .expect("stale monitor should still surface the last-known status from disk");
+    assert!(status.repos.is_empty());
 }
 
 #[test]
@@ -280,6 +247,9 @@ fn save_app_config_round_trips_structured_fields() {
             exclude_dirs: vec!["node_modules".to_string(), "target".to_string()],
             show_ambient: false,
         },
+        monitor: MonitorConfigDto {
+            fullscan_interval_secs: 90,
+        },
     })
     .unwrap();
     let loaded = read_app_config().unwrap();
@@ -290,6 +260,7 @@ fn save_app_config_round_trips_structured_fields() {
     assert_eq!(loaded.clone.depth, 1);
     assert_eq!(loaded.filters.orgs, vec!["acme"]);
     assert!(!loaded.finder.show_ambient);
+    assert_eq!(loaded.monitor.fullscan_interval_secs, 90);
 }
 
 #[test]
@@ -430,7 +401,7 @@ fn requirement_check_dto_maps_core_result() {
 
 #[test]
 fn parse_pluginkit_output_marks_enabled_extension() {
-    let stdout = "+    com.zaai.git-same.Badges(3.1.0)    \
+    let stdout = "+    com.zaai.git-same.badges(3.1.0)    \
                   /Applications/Git-Same.app/Contents/PlugIns/GitSameBadges.appex\n";
     let result = parse_pluginkit_output(stdout, FINDER_EXTENSION_ID);
     assert_eq!(
@@ -444,7 +415,7 @@ fn parse_pluginkit_output_marks_enabled_extension() {
 
 #[test]
 fn parse_pluginkit_output_marks_disabled_extension() {
-    let stdout = "-    com.zaai.git-same.Badges(3.1.0)    \
+    let stdout = "-    com.zaai.git-same.badges(3.1.0)    \
                   /Applications/Git-Same.app/Contents/PlugIns/GitSameBadges.appex\n";
     let result = parse_pluginkit_output(stdout, FINDER_EXTENSION_ID);
     assert_eq!(
