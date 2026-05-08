@@ -94,7 +94,8 @@
 
 <style>
   .sidebar {
-    min-height: 100vh;
+    height: 100%;
+    min-height: 0;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     gap: 16px;
@@ -211,6 +212,7 @@
 
   @media (max-width: 860px) {
     .sidebar {
+      height: auto;
       min-height: auto;
       border-right: 0;
       border-bottom: 1px solid var(--line);

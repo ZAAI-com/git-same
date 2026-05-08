@@ -46,14 +46,16 @@
   .shell {
     display: grid;
     grid-template-columns: 248px minmax(0, 1fr);
-    min-height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
     color: var(--text);
     border-top: 1px solid var(--line);
   }
 
   .content {
     min-width: 0;
-    min-height: 100vh;
+    height: 100%;
+    min-height: 0;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
   }
@@ -68,6 +70,9 @@
   @media (max-width: 860px) {
     .shell {
       grid-template-columns: 1fr;
+      height: auto;
+      min-height: 100dvh;
+      overflow: visible;
     }
   }
 </style>
