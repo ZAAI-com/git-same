@@ -25,7 +25,7 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.FinderSync</string>
 		<key>NSExtensionPrincipalClass</key>
-		<string>$(PRODUCT_MODULE_NAME).FinderSync</string>
+		<string>$(PRODUCT_MODULE_NAME).Principal</string>
 	</dict>
 </dict>
 </plist>

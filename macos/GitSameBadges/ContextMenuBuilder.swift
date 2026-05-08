@@ -74,12 +74,12 @@ enum ContextMenuBuilder {
         root.addItem(NSMenuItem.separator())
         root.addItem(NSMenuItem(
             title: "\u{21BB} Refresh Status",
-            action: #selector(FinderSync.refreshStatus(_:)),
+            action: #selector(Principal.refreshStatus(_:)),
             keyEquivalent: ""
         ))
         root.addItem(NSMenuItem(
             title: "Open in Terminal",
-            action: #selector(FinderSync.openInTerminal(_:)),
+            action: #selector(Principal.openInTerminal(_:)),
             keyEquivalent: ""
         ))
         return root
@@ -192,7 +192,7 @@ enum ContextMenuBuilder {
         root.addItem(NSMenuItem.separator())
         root.addItem(NSMenuItem(
             title: "\u{21BB} Refresh Status",
-            action: #selector(FinderSync.refreshStatus(_:)),
+            action: #selector(Principal.refreshStatus(_:)),
             keyEquivalent: ""
         ))
         return root

@@ -11,13 +11,13 @@
 		5367D36A8F6767ED63560577 /* SocketProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = E81934E8C1D14054D093A454 /* SocketProtocol.swift */; };
 		B3B75C712A824804DCF981B0 /* ContextMenuBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */; };
 		DAB8F1E9D9269A7732C09F70 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 545B0726C8517036CC45E5F5 /* Constants.swift */; };
-		DC172C62A207996085942C13 /* FinderSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15307DCF3AB10B0512CD020A /* FinderSync.swift */; };
+		DC172C62A207996085942C13 /* Principal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15307DCF3AB10B0512CD020A /* Principal.swift */; };
 		EB3305CF18666124EB44A7EE /* StatusModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D8F66E45A3050726370F5B8 /* StatusModels.swift */; };
 		FFC45929858BE49E81222E0E /* StatusReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6F95DF884CB07855C1D7C66 /* StatusReader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		15307DCF3AB10B0512CD020A /* FinderSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSync.swift; sourceTree = "<group>"; };
+		15307DCF3AB10B0512CD020A /* Principal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Principal.swift; sourceTree = "<group>"; };
 		545B0726C8517036CC45E5F5 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		61AF581BDDD5DCB1387D64E4 /* GitSameBadges.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GitSameBadges.entitlements; sourceTree = "<group>"; };
 		913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextMenuBuilder.swift; sourceTree = "<group>"; };
@@ -63,7 +63,7 @@
 			children = (
 				B8343F7967B3F8D7E6AB7A91 /* BadgeManager.swift */,
 				913AFE8244CDF6AE9829DB27 /* ContextMenuBuilder.swift */,
-				15307DCF3AB10B0512CD020A /* FinderSync.swift */,
+				15307DCF3AB10B0512CD020A /* Principal.swift */,
 				61AF581BDDD5DCB1387D64E4 /* GitSameBadges.entitlements */,
 				AB229AA7479834C325EB99A8 /* Info.plist */,
 			);
@@ -131,7 +131,7 @@
 				0C33F590E865457705EBD3FC /* BadgeManager.swift in Sources */,
 				DAB8F1E9D9269A7732C09F70 /* Constants.swift in Sources */,
 				B3B75C712A824804DCF981B0 /* ContextMenuBuilder.swift in Sources */,
-				DC172C62A207996085942C13 /* FinderSync.swift in Sources */,
+				DC172C62A207996085942C13 /* Principal.swift in Sources */,
 				5367D36A8F6767ED63560577 /* SocketProtocol.swift in Sources */,
 				EB3305CF18666124EB44A7EE /* StatusModels.swift in Sources */,
 				FFC45929858BE49E81222E0E /* StatusReader.swift in Sources */,

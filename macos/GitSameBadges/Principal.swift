@@ -1,5 +1,6 @@
-// FinderSync.swift
-// macOS FinderSync extension that displays git status badges and context menus.
+// Principal.swift
+// macOS FinderSync extension principal class. Displays Git-Same status
+// badges and right-click context menus on workspace and ambient repos.
 
 import Cocoa
 import FinderSync
@@ -7,7 +8,7 @@ import os
 
 private let gsbLog = OSLog(subsystem: "com.zaai.git-same.badges", category: "ext")
 
-class FinderSync: FIFinderSync {
+class Principal: FIFinderSync {
 
     let statusReader = StatusReader.shared
     let socketClient = SocketClient()
@@ -17,7 +18,7 @@ class FinderSync: FIFinderSync {
 
     override init() {
         super.init()
-        os_log("FinderSync init entered", log: gsbLog, type: .default)
+        os_log("Principal init entered", log: gsbLog, type: .default)
 
         BadgeManager.registerBadges()
 
