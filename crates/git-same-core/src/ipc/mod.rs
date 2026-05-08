@@ -1,8 +1,8 @@
-//! IPC (Inter-Process Communication) for the daemon and Finder extension.
+//! IPC (Inter-Process Communication) for the monitor and Finder extension.
 //!
 //! This module provides cross-platform abstractions for:
-//! - **Status file**: Atomic JSON writes from the daemon, read by the extension.
-//! - **Socket/pipe**: Refresh requests from the extension to the daemon.
+//! - **Status file**: Atomic JSON writes from the monitor, read by the extension.
+//! - **Socket/pipe**: Refresh requests from the extension to the monitor.
 //!
 //! On macOS/Linux, communication uses Unix domain sockets.
 //! On Windows, named pipes are used instead.
@@ -31,7 +31,7 @@ pub use unix_socket::{UnixSocketClient, UnixSocketListener};
 use crate::errors::AppError;
 use std::path::PathBuf;
 
-/// App group identifier shared by the daemon, Tauri host, and Badges extension on macOS.
+/// App group identifier shared by the monitor, Tauri host, and Badges extension on macOS.
 ///
 /// Apple requires the team-id prefix; `57KL6Y7V32` is the zaai-com Apple Developer team.
 /// The Tauri host's `entitlements.plist` and the Badges extension's

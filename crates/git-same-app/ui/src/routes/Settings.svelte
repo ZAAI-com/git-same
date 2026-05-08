@@ -15,7 +15,7 @@
       <dd>{relativeTime($snapshot?.updated_at)}</dd>
     </div>
     <div>
-      <dt>Daemon PID</dt>
+      <dt>Monitor PID</dt>
       <dd>{$snapshot?.status?.daemon_pid ?? 'Unavailable'}</dd>
     </div>
   </dl>

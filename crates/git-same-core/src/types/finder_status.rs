@@ -1,6 +1,6 @@
 //! Types for the Finder extension status data.
 //!
-//! These types define the JSON schema written by the daemon and read by
+//! These types define the JSON schema written by the monitor and read by
 //! the FinderSync extension. They represent the complete state needed to
 //! render badges, icons, and context menus.
 
@@ -125,7 +125,7 @@ pub struct FinderWorkspaceInfo {
     pub orgs: Vec<String>,
 }
 
-/// Top-level status file written by the daemon.
+/// Top-level status file written by the monitor.
 ///
 /// This is the single source of truth read by the FinderSync extension.
 /// Written atomically to the platform-default Finder IPC status path.

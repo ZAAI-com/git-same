@@ -1,6 +1,6 @@
 //! File-backed cache of GitHub owner classifications.
 //!
-//! Used by the Finder badge daemon so that `OrgFolderInfo.owner_type` can be
+//! Used by the Finder badge monitor so that `OrgFolderInfo.owner_type` can be
 //! populated without hitting the GitHub API on every scan.
 
 use crate::errors::Result;

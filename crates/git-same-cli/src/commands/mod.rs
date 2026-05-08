@@ -3,8 +3,8 @@
 //! This module contains the runtime behavior for each subcommand,
 //! separated from `main.rs` so the entrypoint stays focused on bootstrapping.
 
-pub mod daemon;
 pub mod init;
+pub mod monitor;
 pub mod refresh;
 pub mod reset;
 pub mod scan;
@@ -61,7 +61,7 @@ pub async fn run_command(
         Command::Init(_) | Command::Reset(_) | Command::Scan(_) => unreachable!(),
         #[cfg(feature = "tui")]
         Command::Setup(_) => unreachable!(),
-        Command::Daemon(args) => daemon::run(args, &config, output).await,
+        Command::Monitor(args) => monitor::run(args, &config, output).await,
         Command::Sync(args) => run_sync_cmd(args, &config, output).await,
         Command::Status(args) => run_status(args, &config, output).await,
         Command::Workspace(args) => workspace::run(args, &config, output),

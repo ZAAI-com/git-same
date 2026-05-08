@@ -14,6 +14,7 @@ pub mod errors;
 pub mod git;
 pub mod infra;
 pub mod ipc;
+pub mod monitor;
 pub mod operations;
 pub mod output;
 pub mod provider;

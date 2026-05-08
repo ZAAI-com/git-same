@@ -150,22 +150,22 @@ Examples:
     )]
     Reset(ResetArgs),
 
-    /// Run background daemon for Finder/file manager extension
+    /// Monitor workspace repos for the macOS Finder extension (and similar)
     #[command(
-        long_about = "Run a background daemon that monitors workspace repositories and \
-            writes status data for the macOS Finder extension (or other file manager \
-            plugins). The daemon periodically scans repos, computes badge colors, and \
-            writes status to ~/.config/git-same/finder/status.json. It also listens \
-            on a Unix socket for refresh requests from the extension.",
+        alias = "daemon",
+        long_about = "Run the git-same monitor: a long-running process that scans \
+            workspace repositories, computes Finder badge colors, and writes status \
+            to ~/.config/git-same/finder/status.json. It also listens on a Unix socket \
+            for refresh requests from the macOS Finder Sync extension. The `daemon` \
+            alias is kept for backward compatibility and may be removed in 4.0.",
         after_help = "\
 Examples:
-  gisa daemon                      Start daemon (daemonizes by default)
-  gisa daemon --foreground         Run in foreground (useful for debugging)
-  gisa daemon --interval 60        Poll every 60 seconds
-  gisa daemon --status             Check if daemon is running
-  gisa daemon --stop               Stop a running daemon"
+  gisa monitor                     Start the monitor in the foreground
+  gisa monitor --interval 60       Poll every 60 seconds
+  gisa monitor --status            Check if the monitor is running
+  gisa monitor --stop              Stop a running monitor"
     )]
-    Daemon(DaemonArgs),
+    Monitor(MonitorArgs),
 
     /// Scan a directory tree for unregistered workspaces (.git-same/ folders)
     #[command(
@@ -183,15 +183,15 @@ Examples:
     )]
     Scan(ScanArgs),
 
-    /// Ask the running daemon to refresh status.json immediately
+    /// Ask the running monitor to refresh status.json immediately
     #[command(
-        long_about = "Send a refresh request to the background daemon so it \
+        long_about = "Send a refresh request to the background monitor so it \
             rewrites ~/.config/git-same/finder/status.json right now. Useful \
             after manually deleting a repo, or when debugging Finder badges. \
-            Fails with a clear error if the daemon is not running.",
+            Fails with a clear error if the monitor is not running.",
         after_help = "\
 Examples:
-  gisa refresh                      Refresh everything the daemon knows about
+  gisa refresh                      Refresh everything the monitor knows about
   gisa refresh --path ~/work/org    Refresh a single folder"
     )]
     Refresh(RefreshArgs),
@@ -320,10 +320,10 @@ pub struct ResetArgs {
     pub force: bool,
 }
 
-/// Arguments for the daemon command
+/// Arguments for the monitor command
 #[derive(Args, Debug)]
-pub struct DaemonArgs {
-    /// Run in foreground instead of daemonizing
+pub struct MonitorArgs {
+    /// Run in foreground (legacy flag; the monitor always runs in the foreground today)
     #[arg(long)]
     pub foreground: bool,
 
@@ -331,11 +331,11 @@ pub struct DaemonArgs {
     #[arg(long, default_value = "30")]
     pub interval: u64,
 
-    /// Stop a running daemon
+    /// Stop a running monitor
     #[arg(long)]
     pub stop: bool,
 
-    /// Show daemon status (running, PID, last scan)
+    /// Show monitor status (running, PID, last scan)
     #[arg(long)]
     pub status: bool,
 }
@@ -343,7 +343,7 @@ pub struct DaemonArgs {
 /// Arguments for the refresh command
 #[derive(Args, Debug)]
 pub struct RefreshArgs {
-    /// Refresh a specific folder instead of everything the daemon monitors
+    /// Refresh a specific folder instead of everything the monitor watches
     #[arg(long)]
     pub path: Option<PathBuf>,
 }

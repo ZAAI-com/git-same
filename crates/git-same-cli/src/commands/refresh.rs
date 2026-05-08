@@ -1,15 +1,15 @@
 //! Refresh command handler.
 //!
-//! User-facing wrapper around the daemon's REFRESH / REFRESH_ALL socket commands.
+//! User-facing wrapper around the monitor's REFRESH / REFRESH_ALL socket commands.
 //! Forces an immediate status.json rewrite so the Finder extension picks up
-//! on-disk changes without waiting for the daemon's next poll.
+//! on-disk changes without waiting for the monitor's next poll.
 
 use crate::cli::RefreshArgs;
 use git_same_core::config::Config;
 use git_same_core::errors::Result;
 use git_same_core::output::Output;
 
-/// Ask the running daemon to refresh its status cache.
+/// Ask the running monitor to refresh its status cache.
 pub async fn run(args: &RefreshArgs, _config: &Config, output: &Output) -> Result<()> {
     run_impl(args, output).await
 }
@@ -28,11 +28,11 @@ async fn run_impl(args: &RefreshArgs, output: &Output) -> Result<()> {
 
     match response {
         Ok(_) => {
-            output.success("Daemon refreshed");
+            output.success("Monitor refreshed");
             Ok(())
         }
         Err(e) => {
-            output.error("Daemon not reachable. Start it with `gisa daemon`.");
+            output.error("Monitor not reachable. Start it with `gisa monitor`.");
             Err(e)
         }
     }
@@ -40,7 +40,7 @@ async fn run_impl(args: &RefreshArgs, output: &Output) -> Result<()> {
 
 #[cfg(not(unix))]
 async fn run_impl(_args: &RefreshArgs, output: &Output) -> Result<()> {
-    output.warn("`gisa refresh` is unix-only for now (no daemon socket on this platform).");
+    output.warn("`gisa refresh` is unix-only for now (no monitor socket on this platform).");
     Ok(())
 }
 

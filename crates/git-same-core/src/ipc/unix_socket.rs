@@ -1,6 +1,6 @@
 //! Unix domain socket IPC for macOS and Linux.
 //!
-//! The daemon listens on a Unix socket for commands from the FinderSync
+//! The monitor listens on a Unix socket for commands from the FinderSync
 //! extension (or CLI tools). Commands are text-based, one per line.
 //!
 //! ## Protocol
@@ -18,7 +18,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 use tracing::{debug, warn};
 
-/// Commands the daemon can receive over the socket.
+/// Commands the monitor can receive over the socket.
+///
+/// The enum name `DaemonCommand` is preserved (not renamed to `MonitorCommand`)
+/// because it is purely an internal Rust type; renaming it would be wire-format
+/// churn with zero user benefit. The text protocol words (`PING`, `REFRESH`,
+/// `STATUS`, `REFRESH_ALL`) are likewise unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonCommand {
     /// Re-scan a specific path and its subfolders.
@@ -51,7 +56,7 @@ impl DaemonCommand {
     }
 }
 
-/// Unix socket listener for the daemon.
+/// Unix socket listener for the monitor.
 pub struct UnixSocketListener {
     path: PathBuf,
 }
@@ -142,7 +147,7 @@ pub async fn write_response(stream: &mut UnixStream, response: &str) -> Result<(
     Ok(())
 }
 
-/// Client for connecting to the daemon's Unix socket.
+/// Client for connecting to the monitor's Unix socket.
 pub struct UnixSocketClient {
     path: PathBuf,
 }
@@ -157,7 +162,7 @@ impl UnixSocketClient {
     pub async fn send(&self, command: &str) -> Result<String, AppError> {
         let mut stream = UnixStream::connect(&self.path).await.map_err(|e| {
             AppError::path(format!(
-                "Failed to connect to daemon socket '{}': {}",
+                "Failed to connect to monitor socket '{}': {}",
                 self.path.display(),
                 e
             ))
@@ -190,7 +195,7 @@ impl UnixSocketClient {
         Ok(response)
     }
 
-    /// Ping the daemon. Returns true if it responds.
+    /// Ping the monitor. Returns true if it responds.
     pub async fn ping(&self) -> bool {
         match self.send("PING").await {
             Ok(response) => response.trim() == "PONG",

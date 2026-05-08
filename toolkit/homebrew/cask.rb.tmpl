@@ -31,12 +31,18 @@ cask "git-same" do
   binary "#{appdir}/git-same.app/Contents/Helpers/git-same", target: "gisa"
 
   postflight do
-    plist_src = "#{appdir}/git-same.app/Contents/Resources/com.zaai.git-same.daemon.plist"
-    plist_dst = "#{Dir.home}/Library/LaunchAgents/com.zaai.git-same.daemon.plist"
-    daemon_binary = "#{appdir}/git-same.app/Contents/Helpers/git-same"
+    legacy_plist_dst = "#{Dir.home}/Library/LaunchAgents/com.zaai.git-same.daemon.plist"
+    if File.exist?(legacy_plist_dst)
+      system_command "/bin/launchctl", args: ["unload", legacy_plist_dst], sudo: false, must_succeed: false
+      File.delete(legacy_plist_dst)
+    end
+
+    plist_src = "#{appdir}/git-same.app/Contents/Resources/com.zaai.git-same.monitor.plist"
+    plist_dst = "#{Dir.home}/Library/LaunchAgents/com.zaai.git-same.monitor.plist"
+    monitor_binary = "#{appdir}/git-same.app/Contents/Helpers/git-same"
 
     FileUtils.mkdir_p(File.dirname(plist_dst))
-    rendered = File.read(plist_src).gsub("__GIT_SAME_DAEMON_BINARY__", daemon_binary)
+    rendered = File.read(plist_src).gsub("__GIT_SAME_MONITOR_BINARY__", monitor_binary)
     File.write(plist_dst, rendered)
     system_command "/bin/launchctl", args: ["unload", plist_dst], sudo: false, must_succeed: false
     system_command "/bin/launchctl", args: ["load", plist_dst], sudo: false, must_succeed: false
@@ -50,8 +56,16 @@ cask "git-same" do
                    sudo: false, must_succeed: false
   end
 
-  uninstall launchctl: "com.zaai.git-same.daemon",
-            delete: ["~/Library/LaunchAgents/com.zaai.git-same.daemon.plist"]
+  # Both labels listed for one release: `com.zaai.git-same.daemon` is the
+  # legacy label (3.0.x); `com.zaai.git-same.monitor` is the renamed agent
+  # introduced after the daemon→monitor rename. Cask upgrades from 3.0.x
+  # need the legacy label so launchctl unloads the old plist before the new
+  # one is installed.
+  uninstall launchctl: ["com.zaai.git-same.monitor", "com.zaai.git-same.daemon"],
+            delete: [
+              "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
+              "~/Library/LaunchAgents/com.zaai.git-same.daemon.plist",
+            ]
 
   zap trash: [
     "~/.config/git-same",
@@ -59,6 +73,7 @@ cask "git-same" do
     "~/Library/Caches/com.zaai.git-same",
     "~/Library/Caches/git-same",
     "~/Library/Group Containers/group.57KL6Y7V32.com.zaai.git-same",
+    "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
     "~/Library/LaunchAgents/com.zaai.git-same.daemon.plist",
   ]
 end

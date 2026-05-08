@@ -1,5 +1,5 @@
 // StatusModels.swift
-// Codable types matching the daemon's finder-status.json schema.
+// Codable types matching the monitor's finder-status.json schema.
 
 import Foundation
 
@@ -107,7 +107,7 @@ struct FinderWorkspaceInfo: Codable {
     let orgs: [String]
 }
 
-/// Top-level status file written by the daemon.
+/// Top-level status file written by the monitor.
 struct FinderStatus: Codable {
     let version: UInt32
     let timestamp: String

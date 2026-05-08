@@ -82,7 +82,7 @@ pnpm --dir crates/git-same-app/ui install
 cargo tauri dev --manifest-path crates/git-same-app/Cargo.toml
 ```
 
-The window opens with the workspace dashboard, reading from `~/.config/git-same/config.toml`. The app subscribes to the daemon's `status.json`, so updates from `git-same sync` (run in another terminal) appear live.
+The window opens with the workspace dashboard, reading from `~/.config/git-same/config.toml`. The app subscribes to the monitor's `status.json`, so updates from `git-same sync` (run in another terminal) appear live.
 
 ## Running tests
 

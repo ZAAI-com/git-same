@@ -1,10 +1,10 @@
 // SocketProtocol.swift
-// Unix socket client for sending refresh requests to the daemon.
+// Unix socket client for sending refresh requests to the monitor.
 
 import Foundation
 import Network
 
-/// Client for communicating with the git-same daemon via Unix socket.
+/// Client for communicating with the git-same monitor via Unix socket.
 class SocketClient {
     private let socketPath: String
 
@@ -12,7 +12,7 @@ class SocketClient {
         self.socketPath = socketPath
     }
 
-    /// Send a command to the daemon and receive the response.
+    /// Send a command to the monitor and receive the response.
     func send(_ command: String, completion: @escaping (Swift.Result<String, Error>) -> Void) {
         let endpoint = NWEndpoint.unix(path: socketPath)
         let connection = NWConnection(to: endpoint, using: .tcp)
@@ -50,7 +50,7 @@ class SocketClient {
         connection.start(queue: .global(qos: .utility))
     }
 
-    /// Ping the daemon. Returns true if it responds.
+    /// Ping the monitor. Returns true if it responds.
     func ping(completion: @escaping (Bool) -> Void) {
         send("PING") { result in
             switch result {

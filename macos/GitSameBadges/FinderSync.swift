@@ -29,7 +29,7 @@ class FinderSync: FIFinderSync {
 
         // StatusReader reads the file eagerly in its init but only invokes
         // onStatusUpdate on subsequent file-change events. Without this call,
-        // directoryURLs stays empty until the daemon next rewrites the file,
+        // directoryURLs stays empty until the monitor next rewrites the file,
         // so Finder never asks us for badges.
         updateMonitoredDirectories()
         prefillBadges()
@@ -44,9 +44,9 @@ class FinderSync: FIFinderSync {
         }
 
         var urls = Set<URL>()
-        // Prefer the daemon-provided monitored_roots (workspace roots ∪ ambient
+        // Prefer the monitor-provided monitored_roots (workspace roots ∪ ambient
         // scan roots). Fall back to the workspace+custom_folders union for
-        // older daemons that predate that field.
+        // older monitors that predate that field.
         if let roots = status.monitoredRoots, !roots.isEmpty {
             for root in roots {
                 urls.insert(URL(fileURLWithPath: root))
@@ -91,7 +91,7 @@ class FinderSync: FIFinderSync {
             return
         }
 
-        // Unknown path under a monitored root: no badge. Nudge the daemon so
+        // Unknown path under a monitored root: no badge. Nudge the monitor so
         // its next ambient scan picks up any new repo here; prefillBadges
         // then paints the real (or grey-ambient) badge on reload.
         requestRefresh(path: resolved)
@@ -100,7 +100,7 @@ class FinderSync: FIFinderSync {
     /// Look up a repo status under both the raw URL path and the symlink-
     /// resolved path. Needed because Finder may present folders reached
     /// through volume aliases (e.g. /Volumes/Manuel-SSD-4TB -> /) with the
-    /// alias prefix, while the daemon writes canonical paths to status.json.
+    /// alias prefix, while the monitor writes canonical paths to status.json.
     private func repoLookup(path: String, resolved: String) -> FinderRepoStatus? {
         if let hit = statusReader.repoStatus(forPath: path) { return hit }
         if resolved != path, let hit = statusReader.repoStatus(forPath: resolved) {

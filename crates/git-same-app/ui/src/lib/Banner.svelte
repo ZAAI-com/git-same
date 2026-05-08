@@ -23,7 +23,7 @@
     !showStale &&
     Boolean($extensionStatus?.installed && !$extensionStatus?.enabled);
   // FDA hint: extension is allowed and the user has at least one workspace,
-  // but status.json reports zero repos. The daemon writes status regardless
+  // but status.json reports zero repos. The monitor writes status regardless
   // of FDA, so a zero-repo result with workspaces configured is the most
   // common signal that the extension cannot read those folders.
   $: showFda =
@@ -50,8 +50,8 @@
 {:else if showStale}
   <div class="banner warning">
     <AlertTriangle size={18} />
-    <span>Daemon stopped</span>
-    <code>launchctl load ~/Library/LaunchAgents/com.zaai.git-same.daemon.plist</code>
+    <span>Monitor stopped</span>
+    <code>launchctl load ~/Library/LaunchAgents/com.zaai.git-same.monitor.plist</code>
   </div>
 {:else if showAllowExt}
   <div class="banner info">

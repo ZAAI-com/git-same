@@ -84,7 +84,7 @@ async fn nudge_daemon_refresh() {
     };
     let client = UnixSocketClient::new(cfg.socket_path());
     if let Err(e) = client.refresh_all().await {
-        tracing::debug!(error = %e, "Daemon refresh nudge skipped");
+        tracing::debug!(error = %e, "Monitor refresh nudge skipped");
     }
 }
 

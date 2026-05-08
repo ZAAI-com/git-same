@@ -2,7 +2,7 @@
 # Verify that the Tauri host and the FinderSync extension declare matching
 # `com.apple.security.application-groups` entries.
 #
-# A typo here silently splits the runtime container: the daemon writes to
+# A typo here silently splits the runtime container: the monitor writes to
 # one group and the extension reads from another, and badges stop rendering
 # without an obvious error. CI must catch this before signing.
 #

@@ -169,27 +169,27 @@ pub async fn run(args: &SyncCmdArgs, config: &Config, output: &Output) -> Result
         output.verbose(&format!("Warning: Failed to update last_synced: {}", e));
     }
 
-    // Best-effort: nudge the Finder daemon so badges refresh for new clones.
-    // If the daemon is not running we silently skip; sync still succeeded.
-    nudge_daemon_refresh().await;
+    // Best-effort: nudge the Finder monitor so badges refresh for new clones.
+    // If the monitor is not running we silently skip; sync still succeeded.
+    nudge_monitor_refresh().await;
 
     Ok(())
 }
 
 #[cfg(unix)]
-async fn nudge_daemon_refresh() {
+async fn nudge_monitor_refresh() {
     use git_same_core::ipc::{IpcConfig, UnixSocketClient};
     let Ok(cfg) = IpcConfig::default_path() else {
         return;
     };
     let client = UnixSocketClient::new(cfg.socket_path());
     if let Err(e) = client.refresh_all().await {
-        tracing::debug!(error = %e, "Daemon refresh nudge skipped");
+        tracing::debug!(error = %e, "Monitor refresh nudge skipped");
     }
 }
 
 #[cfg(not(unix))]
-async fn nudge_daemon_refresh() {}
+async fn nudge_monitor_refresh() {}
 
 #[cfg(test)]
 #[path = "sync_cmd_tests.rs"]

@@ -8,14 +8,14 @@
 //     `~/.config/git-same/finder/` path. This branch is only taken when the
 //     app group container URL is nil, which happens when the running binary
 //     does not declare `com.apple.security.application-groups` (e.g.
-//     `tauri dev` or a `cargo run` of the daemon without the bundled
+//     `tauri dev` or a `cargo run` of the monitor without the bundled
 //     entitlements).
 
 import Foundation
 
 enum GitSameBadgesConstants {
     /// App group shared between the host app, the Badges extension, and the
-    /// daemon. Apple requires the team-id prefix.
+    /// monitor. Apple requires the team-id prefix.
     /// Mirrors the Rust `git_same_core::ipc::APP_GROUP_ID`.
     static let appGroupIdentifier = "group.57KL6Y7V32.com.zaai.git-same"
 
@@ -52,22 +52,6 @@ enum GitSameBadgesConstants {
     /// Path to the Unix socket for refresh requests.
     static var socketPath: String {
         return "\(ipcDirectory)/finder.sock"
-    }
-
-    /// Path to the git-same binary.
-    static var daemonBinaryPath: String {
-        // Check common installation locations
-        let candidates = [
-            "/usr/local/bin/git-same",
-            "/opt/homebrew/bin/git-same",
-            "/usr/bin/git-same",
-        ]
-        for path in candidates {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-        return "git-same" // Fall back to PATH lookup
     }
 
     /// Badge identifiers used by FinderSync.

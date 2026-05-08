@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.zaai.git-same.daemon</string>
+    <string>com.zaai.git-same.monitor</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__GIT_SAME_DAEMON_BINARY__</string>
-        <string>daemon</string>
+        <string>__GIT_SAME_MONITOR_BINARY__</string>
+        <string>monitor</string>
         <string>--foreground</string>
     </array>
     <key>RunAtLoad</key>
@@ -16,8 +16,8 @@
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/git-same-daemon.log</string>
+    <string>/tmp/git-same-monitor.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/git-same-daemon.err</string>
+    <string>/tmp/git-same-monitor.err</string>
 </dict>
 </plist>

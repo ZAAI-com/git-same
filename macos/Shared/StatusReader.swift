@@ -1,5 +1,5 @@
 // StatusReader.swift
-// Watches the daemon's status.json file and parses it.
+// Watches the monitor's status.json file and parses it.
 
 import Foundation
 
@@ -65,9 +65,9 @@ class StatusReader {
 
         // The DispatchSource only fires on subsequent writes. If the file
         // already exists when we first successfully open it (e.g. the
-        // extension started before the daemon and this is a retry that
+        // extension started before the monitor and this is a retry that
         // finally caught the file), seed currentStatus now so observers see
-        // the status without waiting for the next daemon write.
+        // the status without waiting for the next monitor write.
         reload()
         DispatchQueue.main.async { [weak self] in
             self?.onStatusUpdate?()

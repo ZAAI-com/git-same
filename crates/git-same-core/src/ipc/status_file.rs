@@ -1,6 +1,6 @@
 //! Atomic JSON status file writer and reader.
 //!
-//! The daemon writes the status file atomically by writing to a temporary
+//! The monitor writes the status file atomically by writing to a temporary
 //! file first, then renaming it. This ensures the FinderSync extension
 //! never reads a partial/corrupt file.
 
@@ -93,9 +93,9 @@ impl StatusFileWriter {
 /// line is emitted, then the symlink is created. If the legacy directory
 /// itself does not exist (fresh install), this is a no-op.
 ///
-/// Pre-existing 3.x users had the daemon writing to `~/.config/git-same/finder/`
+/// Pre-existing 3.x users had the monitor writing to `~/.config/git-same/finder/`
 /// and the FinderSync extension reading from it via an absolute-path entitlement
-/// exception. After Phase B.5, the daemon writes to the group container
+/// exception. After Phase B.5, the monitor writes to the group container
 /// directly; this helper makes any tool that hardcoded the legacy path
 /// continue to work via symlink redirection.
 #[cfg(target_os = "macos")]
@@ -119,7 +119,7 @@ pub fn ensure_legacy_symlinks(group_dir: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Non-macOS no-op so the daemon can call this unconditionally without `cfg`
+/// Non-macOS no-op so the monitor can call this unconditionally without `cfg`
 /// gates at the call site.
 #[cfg(not(target_os = "macos"))]
 pub fn ensure_legacy_symlinks(_group_dir: &Path) -> Result<(), AppError> {

@@ -48,7 +48,7 @@ pub struct FilterOptions {
 
 /// Finder-badge discovery configuration.
 ///
-/// Controls how the daemon finds ambient git repositories outside any
+/// Controls how the monitor finds ambient git repositories outside any
 /// configured workspace. Ambient repos get a neutral gray badge until the
 /// user opens their context menu, which triggers an on-demand upgrade.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +68,7 @@ pub struct FinderConfig {
     #[serde(default = "default_finder_excludes")]
     pub exclude_dirs: Vec<String>,
 
-    /// Feature flag: when false, the daemon skips the ambient scan and only
+    /// Feature flag: when false, the monitor skips the ambient scan and only
     /// workspace repos get badged (pre-change behaviour).
     #[serde(default = "default_true")]
     pub show_ambient: bool,
@@ -178,7 +178,7 @@ pub struct Config {
     #[serde(default)]
     pub workspaces: Vec<String>,
 
-    /// Finder badge daemon configuration (ambient repo discovery).
+    /// Finder badge monitor configuration (ambient repo discovery).
     #[serde(default)]
     pub finder: FinderConfig,
 }

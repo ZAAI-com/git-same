@@ -21,7 +21,7 @@ use tracing::debug;
 
 /// Service that scans repositories and computes badge status.
 ///
-/// This is the core API. The daemon, CLI, and any future frontend
+/// This is the core API. The monitor, CLI, and any future frontend
 /// (HTTP server, native app) use this to get repository status.
 pub struct RepoScanService<'a> {
     git: &'a dyn GitOperations,
@@ -69,7 +69,7 @@ impl<'a> RepoScanService<'a> {
 
     /// Scan all workspaces and build a complete `FinderStatus`.
     ///
-    /// Used by: daemon loop, REFRESH_ALL socket command.
+    /// Used by: monitor loop, REFRESH_ALL socket command.
     pub fn scan_all(&self, pid: u32) -> Result<FinderStatus> {
         let timestamp = chrono::Utc::now().to_rfc3339();
         let mut status = FinderStatus::new(pid, timestamp);
@@ -220,7 +220,7 @@ impl<'a> RepoScanService<'a> {
                 continue;
             }
 
-            // Upgraded ambient repos stay upgraded until the daemon exits
+            // Upgraded ambient repos stay upgraded until the monitor exits
             // or the repo disappears.
             let entry = self
                 .ambient_upgrades

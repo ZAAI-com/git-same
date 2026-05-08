@@ -14,7 +14,7 @@ enum ContextMenuBuilder {
                       timestamp: String?,
                       socketClient: SocketClient) -> NSMenu {
         // Ambient repos ship with `.gray` and no git details. Fire a targeted
-        // REFRESH so the daemon runs a full scan_repo on this path; the
+        // REFRESH so the monitor runs a full scan_repo on this path; the
         // StatusReader file watcher will then replace the gray badge with a
         // semantic color within the next Finder tick.
         if repo.badge == .gray {
