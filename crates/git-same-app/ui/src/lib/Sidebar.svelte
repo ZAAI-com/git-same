@@ -22,7 +22,7 @@
 
   function newWorkspace() {
     selectedWorkspaceId.set(NEW_WORKSPACE_ID);
-    void push('/workspace');
+    void push('/workspace/screen');
   }
 
   function openWorkspace(id: string) {

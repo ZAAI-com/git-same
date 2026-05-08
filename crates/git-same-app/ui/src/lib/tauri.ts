@@ -5,6 +5,7 @@ import type {
   AppConfigDto,
   AppConfigInput,
   ExtensionStatus,
+  MonitorLaunchAgentStatusDto,
   ProviderDiscoveryDto,
   RequirementCheckDto,
   StatusSnapshot,
@@ -12,6 +13,7 @@ import type {
   WorkspaceDetailDto,
   WorkspaceInput,
   WorkspaceProviderDto,
+  WorkspaceStructureDto,
   WorkspaceSummary,
 } from './types';
 
@@ -53,10 +55,28 @@ export function checkRequirements(): Promise<RequirementCheckDto[]> {
   return invoke('check_requirements');
 }
 
+export function monitorLaunchAgentStatus(): Promise<MonitorLaunchAgentStatusDto> {
+  return invoke('monitor_launch_agent_status');
+}
+
+export function installMonitorLaunchAgent(): Promise<MonitorLaunchAgentStatusDto> {
+  return invoke('install_monitor_launch_agent');
+}
+
+export function restartMonitorLaunchAgent(): Promise<MonitorLaunchAgentStatusDto> {
+  return invoke('restart_monitor_launch_agent');
+}
+
 export function discoverProviderOrgs(
   provider: WorkspaceProviderDto,
 ): Promise<ProviderDiscoveryDto> {
   return invoke('discover_provider_orgs', { provider });
+}
+
+export function readWorkspaceStructure(
+  workspaceId: string,
+): Promise<WorkspaceStructureDto> {
+  return invoke('read_workspace_structure', { workspaceId });
 }
 
 export function readStatus(): Promise<StatusSnapshot> {

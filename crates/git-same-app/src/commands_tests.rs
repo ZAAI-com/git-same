@@ -131,6 +131,67 @@ fn workspace_input(root: &std::path::Path) -> WorkspaceInput {
 }
 
 #[test]
+fn render_monitor_plist_replaces_binary_placeholder() {
+    let temp = TestDir::new("monitor-plist");
+    let binary = temp.path().join("git-same");
+    std::fs::write(&binary, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&binary, permissions).unwrap();
+    }
+
+    let rendered = render_monitor_plist(&binary).unwrap();
+
+    assert!(rendered.contains(&binary.display().to_string()));
+    assert!(!rendered.contains("__GIT_SAME_MONITOR_BINARY__"));
+    assert!(rendered.contains("com.zaai.git-same.monitor"));
+}
+
+#[test]
+fn render_monitor_plist_rejects_non_executable_binary() {
+    let temp = TestDir::new("monitor-plist-invalid");
+    let binary = temp.path().join("git-same");
+    std::fs::write(&binary, "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
+        permissions.set_mode(0o644);
+        std::fs::set_permissions(&binary, permissions).unwrap();
+    }
+
+    let error = render_monitor_plist(&binary).unwrap_err().to_string();
+
+    assert!(error.contains("not executable"));
+}
+
+#[test]
+fn monitor_requirement_message_distinguishes_missing_plist() {
+    let agent = MonitorLaunchAgentStatusDto {
+        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
+        plist_path: "/tmp/missing.plist".to_string(),
+        binary_path: None,
+        installed: false,
+        loaded: false,
+        running: false,
+        state: "missing_plist".to_string(),
+        message: "LaunchAgent plist is missing".to_string(),
+    };
+
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), None),
+        "LaunchAgent plist missing"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), None),
+        Some("Install the Git-Same monitor LaunchAgent".to_string())
+    );
+}
+
+#[test]
 fn read_status_snapshot_scans_foreground_when_status_file_is_missing() {
     let temp = TestDir::new("missing-status");
     let root = create_workspace_with_repo(temp.path());
@@ -299,6 +360,56 @@ fn save_workspace_can_clear_existing_default() {
 
     assert!(!updated.default);
     assert!(Config::load().unwrap().default_workspace.is_none());
+}
+
+#[tokio::test]
+async fn read_workspace_structure_uses_discovery_cache() {
+    let temp = TestDir::new("workspace-structure");
+    let _env = ConfigEnvGuard::new(temp.path());
+    ensure_config().unwrap();
+    let root = temp.path().join("workspace");
+    let detail = save_workspace(WorkspaceInput {
+        structure: Some("{provider}/{org}/{repo}".to_string()),
+        ..workspace_input(&root)
+    })
+    .unwrap();
+    let local_repo = root.join("github/acme/widgets");
+    std::fs::create_dir_all(&local_repo).unwrap();
+
+    let repo = git_same_core::types::Repo {
+        id: 42,
+        name: "widgets".to_string(),
+        full_name: "acme/widgets".to_string(),
+        ssh_url: "git@github.com:acme/widgets.git".to_string(),
+        clone_url: "https://github.com/acme/widgets.git".to_string(),
+        default_branch: "main".to_string(),
+        private: false,
+        archived: false,
+        fork: false,
+        pushed_at: None,
+        description: None,
+    };
+    let cache = DiscoveryCache::new(
+        "manuel".to_string(),
+        HashMap::from([("github".to_string(), vec![OwnedRepo::new("acme", repo)])]),
+    );
+    CacheManager::for_workspace(&root)
+        .unwrap()
+        .save(&cache)
+        .unwrap();
+
+    let structure = read_workspace_structure_inner(detail.id).await.unwrap();
+
+    assert_eq!(structure.source, "cache");
+    assert_eq!(structure.host, "github.com");
+    assert_eq!(structure.repos.len(), 1);
+    assert_eq!(structure.repos[0].full_name, "acme/widgets");
+    assert_eq!(structure.repos[0].url, "https://github.com/acme/widgets");
+    assert_eq!(
+        std::fs::canonicalize(&structure.repos[0].local_path).unwrap(),
+        std::fs::canonicalize(&local_repo).unwrap()
+    );
+    assert!(structure.repos[0].local_exists);
 }
 
 #[test]

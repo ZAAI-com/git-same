@@ -3,6 +3,7 @@
   import {
     errorMessage,
     extensionStatus,
+    installMonitor,
     snapshot,
     syncProgress,
     workspaces,
@@ -86,7 +87,7 @@
   <div class="banner warning">
     <AlertTriangle size={18} />
     <span>Monitor stopped; Finder badges may not update</span>
-    <code>launchctl load ~/Library/LaunchAgents/com.zaai.git-same.monitor.plist</code>
+    <button type="button" on:click={installMonitor}>Install Monitor</button>
   </div>
 {:else if showAllowExt}
   <div class="banner info">
@@ -163,13 +164,6 @@
     height: 100%;
     border-radius: inherit;
     background: var(--accent);
-  }
-
-  code {
-    color: var(--text);
-    background: var(--panel-alt);
-    padding: 3px 6px;
-    border-radius: 6px;
   }
 
   button {

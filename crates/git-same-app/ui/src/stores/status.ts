@@ -3,12 +3,15 @@ import {
   checkRequirements,
   deleteWorkspace,
   ensureConfig,
+  installMonitorLaunchAgent,
   listWorkspaces,
   onStatusUpdated,
   onSyncProgress,
   readAppConfig,
   readExtensionStatus,
   readStatus,
+  readWorkspaceStructure,
+  restartMonitorLaunchAgent,
   saveAppConfig,
   setDefaultWorkspace,
   startSync,
@@ -23,6 +26,7 @@ import type {
   SyncProgressPayload,
   SyncProgressState,
   WorkspaceInput,
+  WorkspaceStructureDto,
   WorkspaceSummary,
 } from '../lib/types';
 import { saveWorkspace as saveWorkspaceCommand } from '../lib/tauri';
@@ -34,6 +38,8 @@ export const workspaces = writable<WorkspaceSummary[]>([]);
 export const extensionStatus = writable<ExtensionStatus | null>(null);
 export const appConfig = writable<AppConfigDto | null>(null);
 export const requirements = writable<RequirementCheckDto[]>([]);
+export const workspaceStructure = writable<WorkspaceStructureDto | null>(null);
+export const workspaceStructureLoading = writable<boolean>(false);
 export const selectedWorkspaceId = writable<string>('');
 export const loading = writable<boolean>(true);
 export const requirementsLoading = writable<boolean>(false);
@@ -90,6 +96,7 @@ export async function saveWorkspace(input: WorkspaceInput): Promise<string> {
   selectedWorkspaceId.set(saved.id);
   successMessage.set('Workspace saved');
   await refresh();
+  await loadCurrentWorkspaceStructure();
   return saved.id;
 }
 
@@ -100,6 +107,7 @@ export async function removeWorkspace(workspaceId: string): Promise<void> {
   selectedWorkspaceId.set(next.find((workspace) => workspace.default)?.id ?? next[0]?.id ?? '');
   successMessage.set('Workspace metadata removed');
   await refresh();
+  await loadCurrentWorkspaceStructure();
 }
 
 export async function updateDefaultWorkspace(workspaceId: string | null): Promise<void> {
@@ -113,6 +121,34 @@ export async function loadRequirements(): Promise<void> {
   errorMessage.set('');
   try {
     requirements.set(await checkRequirements());
+  } catch (err) {
+    errorMessage.set(String(err));
+  } finally {
+    requirementsLoading.set(false);
+  }
+}
+
+export async function installMonitor(): Promise<void> {
+  requirementsLoading.set(true);
+  errorMessage.set('');
+  try {
+    await installMonitorLaunchAgent();
+    successMessage.set('Monitor LaunchAgent installed');
+    await Promise.all([refresh(), loadRequirements()]);
+  } catch (err) {
+    errorMessage.set(String(err));
+  } finally {
+    requirementsLoading.set(false);
+  }
+}
+
+export async function restartMonitor(): Promise<void> {
+  requirementsLoading.set(true);
+  errorMessage.set('');
+  try {
+    await restartMonitorLaunchAgent();
+    successMessage.set('Monitor LaunchAgent restarted');
+    await Promise.all([refresh(), loadRequirements()]);
   } catch (err) {
     errorMessage.set(String(err));
   } finally {
@@ -137,6 +173,7 @@ export async function startSyncCurrent(): Promise<void> {
     const next = await startSync(workspace.id);
     snapshot.set(next);
     await refresh();
+    await loadCurrentWorkspaceStructure();
   } catch (err) {
     errorMessage.set(String(err));
   } finally {
@@ -146,6 +183,23 @@ export async function startSyncCurrent(): Promise<void> {
         current?.workspaceId === workspace.id ? null : current,
       );
     }, 1200);
+  }
+}
+
+export async function loadCurrentWorkspaceStructure(): Promise<void> {
+  const workspace = get(currentWorkspace);
+  if (!workspace) {
+    workspaceStructure.set(null);
+    return;
+  }
+  workspaceStructureLoading.set(true);
+  try {
+    workspaceStructure.set(await readWorkspaceStructure(workspace.id));
+  } catch (err) {
+    errorMessage.set(String(err));
+    workspaceStructure.set(null);
+  } finally {
+    workspaceStructureLoading.set(false);
   }
 }
 

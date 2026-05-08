@@ -17,7 +17,11 @@
   $: route = $location || '/dashboard';
   $: title = routeTitle(route);
   $: subtitle = routeSubtitle(route);
-  $: showSync = route === '/dashboard' || route === '/' || route === '/workspace';
+  $: showSync =
+    route === '/dashboard' ||
+    route === '/' ||
+    route === '/workspace' ||
+    route === '/workspace/screen';
   $: showRecheck = route === '/requirements';
   $: syncing = Boolean($syncingId);
 
@@ -31,9 +35,11 @@
       case '/badge-browser':
         return 'Badge Browser';
       case '/workspace':
+        return $currentWorkspace?.name ?? 'Workspace';
+      case '/workspace/screen':
         return $selectedWorkspaceId === NEW_WORKSPACE_ID
           ? 'New Workspace'
-          : $currentWorkspace?.name ?? 'Workspace';
+          : 'Workspace screen';
       case '/settings':
         return 'Settings';
       case '/requirements':
@@ -45,7 +51,9 @@
 
   function routeSubtitle(route: string): string {
     if (route === '/workspace' && $currentWorkspace) return $currentWorkspace.root;
-    if (route === '/workspace' && $selectedWorkspaceId === NEW_WORKSPACE_ID) {
+    if (route === '/workspace') return 'Select a workspace from the sidebar';
+    if (route === '/workspace/screen' && $currentWorkspace) return $currentWorkspace.root;
+    if (route === '/workspace/screen' && $selectedWorkspaceId === NEW_WORKSPACE_ID) {
       return 'Create a portable .git-same workspace config';
     }
     if (route === '/finder-badges') return $snapshot?.status_path ?? 'Finder status file';

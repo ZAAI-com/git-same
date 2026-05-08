@@ -5,10 +5,11 @@
     ExternalLink,
     FolderSearch,
     Info,
+    Play,
   } from 'lucide-svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
-  import { extensionStatus, snapshot, workspaces } from '../stores/status';
+  import { extensionStatus, installMonitor, restartMonitor, snapshot, workspaces } from '../stores/status';
   import { openUrl } from '../lib/tauri';
   import { relativeTime } from '../lib/utils';
 
@@ -40,7 +41,7 @@
       label: 'Monitor status file fresh',
       passed: Boolean($snapshot && !$snapshot.stale),
       detail: $snapshot?.updated_at ? `Updated ${relativeTime($snapshot.updated_at)}` : 'No status update yet',
-      action: null,
+      action: $snapshot?.updated_at ? 'restart-monitor' : 'install-monitor',
     },
     {
       label: 'Full Disk Access',
@@ -50,8 +51,11 @@
     },
   ];
 
-  function openSystemUrl(url: string | null) {
-    if (url) void openUrl(url);
+  function runAction(action: string | null) {
+    if (!action) return;
+    if (action === 'install-monitor') void installMonitor();
+    else if (action === 'restart-monitor') void restartMonitor();
+    else void openUrl(action);
   }
 </script>
 
@@ -72,9 +76,9 @@
             <small>{row.detail}</small>
           </div>
           {#if row.action && !row.passed}
-            <button type="button" on:click={() => openSystemUrl(row.action)}>
-              <ExternalLink size={15} />
-              <span>Open</span>
+            <button type="button" on:click={() => runAction(row.action)}>
+              {#if row.action.includes('monitor')}<Play size={15} />{:else}<ExternalLink size={15} />{/if}
+              <span>{row.action === 'install-monitor' ? 'Install' : row.action === 'restart-monitor' ? 'Restart' : 'Open'}</span>
             </button>
           {/if}
         </article>

@@ -100,6 +100,17 @@ export interface RequirementCheckDto {
   critical: boolean;
 }
 
+export interface MonitorLaunchAgentStatusDto {
+  label: string;
+  plist_path: string;
+  binary_path: string | null;
+  installed: boolean;
+  loaded: boolean;
+  running: boolean;
+  state: string;
+  message: string;
+}
+
 export interface ProviderOrgDto {
   name: string;
   repo_count: number;
@@ -109,6 +120,27 @@ export interface ProviderOrgDto {
 export interface ProviderDiscoveryDto {
   username: string | null;
   orgs: ProviderOrgDto[];
+}
+
+export interface WorkspaceStructureRepoDto {
+  owner: string;
+  name: string;
+  full_name: string;
+  url: string;
+  local_path: string;
+  local_exists: boolean;
+}
+
+export interface WorkspaceStructureDto {
+  workspace_id: string;
+  name: string;
+  root: string;
+  provider: string;
+  host: string;
+  source: 'cache' | 'remote' | 'unavailable' | string;
+  cache_age_secs: number | null;
+  error: string | null;
+  repos: WorkspaceStructureRepoDto[];
 }
 
 export interface FinderWorkspaceInfo {

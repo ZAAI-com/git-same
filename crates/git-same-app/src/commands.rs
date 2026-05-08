@@ -1,22 +1,30 @@
 use git_same_core::api::RepoScanService;
+use git_same_core::auth::get_auth_for_provider;
+use git_same_core::cache::{CacheManager, DiscoveryCache};
 use git_same_core::checks::CheckResult;
 use git_same_core::config::workspace::tilde_collapse_path;
 use git_same_core::config::{
     Config, ConfigCloneOptions, FilterOptions, SyncMode, WorkspaceConfig, WorkspaceManager,
     WorkspaceProvider,
 };
+use git_same_core::discovery::DiscoveryOrchestrator;
+use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::AppError;
 use git_same_core::git::ShellGit;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
+use git_same_core::provider::{create_provider, NoProgress};
 use git_same_core::setup::{authenticate_provider, discover_org_entries};
-use git_same_core::types::{FinderStatus, ProviderKind};
+use git_same_core::types::{FinderStatus, OwnedRepo, ProviderKind};
 use git_same_core::workflows::sync_workspace::{
     execute_prepared_sync, prepare_sync_workspace, SyncWorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -24,6 +32,9 @@ use tauri::Emitter;
 
 const DAEMON_STALE_AFTER_SECS: u64 = 90;
 const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.Badges";
+const MONITOR_LAUNCH_AGENT_LABEL: &str = "com.zaai.git-same.monitor";
+const MONITOR_LAUNCH_AGENT_FILE: &str = "com.zaai.git-same.monitor.plist";
+const MONITOR_PLIST_TEMPLATE: &str = include_str!("../../../macos/com.zaai.git-same.monitor.plist");
 
 #[cfg(test)]
 #[path = "commands_tests.rs"]
@@ -160,6 +171,29 @@ pub struct ProviderOrgDto {
     pub selected: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceStructureDto {
+    pub workspace_id: String,
+    pub name: String,
+    pub root: String,
+    pub provider: String,
+    pub host: String,
+    pub source: String,
+    pub cache_age_secs: Option<u64>,
+    pub error: Option<String>,
+    pub repos: Vec<WorkspaceStructureRepoDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceStructureRepoDto {
+    pub owner: String,
+    pub name: String,
+    pub full_name: String,
+    pub url: String,
+    pub local_path: String,
+    pub local_exists: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusSnapshot {
     pub status_path: String,
@@ -172,6 +206,18 @@ pub struct StatusSnapshot {
 pub struct ExtensionStatus {
     pub installed: bool,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MonitorLaunchAgentStatusDto {
+    pub label: String,
+    pub plist_path: String,
+    pub binary_path: Option<String>,
+    pub installed: bool,
+    pub loaded: bool,
+    pub running: bool,
+    pub state: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -318,6 +364,21 @@ pub async fn check_requirements() -> Result<Vec<RequirementCheckDto>, String> {
 }
 
 #[tauri::command]
+pub fn monitor_launch_agent_status() -> Result<MonitorLaunchAgentStatusDto, String> {
+    monitor_launch_agent_status_inner().map_err(error_string)
+}
+
+#[tauri::command]
+pub fn install_monitor_launch_agent() -> Result<MonitorLaunchAgentStatusDto, String> {
+    install_monitor_launch_agent_inner().map_err(error_string)
+}
+
+#[tauri::command]
+pub fn restart_monitor_launch_agent() -> Result<MonitorLaunchAgentStatusDto, String> {
+    restart_monitor_launch_agent_inner().map_err(error_string)
+}
+
+#[tauri::command]
 pub async fn discover_provider_orgs(
     provider: WorkspaceProviderDto,
 ) -> Result<ProviderDiscoveryDto, String> {
@@ -341,6 +402,15 @@ pub async fn discover_provider_orgs(
         username: auth.username,
         orgs,
     })
+}
+
+#[tauri::command]
+pub async fn read_workspace_structure(
+    workspace_id: String,
+) -> Result<WorkspaceStructureDto, String> {
+    read_workspace_structure_inner(workspace_id)
+        .await
+        .map_err(error_string)
 }
 
 #[tauri::command]
@@ -444,6 +514,241 @@ pub fn open_url(url: String) -> Result<(), String> {
     {
         let _ = url;
         Err("open_url is only implemented on macOS".to_string())
+    }
+}
+
+fn monitor_launch_agent_status_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
+    let plist_path = monitor_launch_agent_path()?;
+    let installed = plist_path.exists();
+    let binary_path = monitor_binary_path().ok();
+    let launchctl = launchctl_print_monitor();
+    let loaded = launchctl
+        .as_ref()
+        .is_ok_and(|output| output.status.success());
+    let stdout = launchctl
+        .as_ref()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+        .unwrap_or_default();
+    let running = loaded && launchctl_output_has_pid(&stdout);
+    let state = monitor_agent_state(installed, loaded, running);
+    Ok(MonitorLaunchAgentStatusDto {
+        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
+        plist_path: plist_path.display().to_string(),
+        binary_path: binary_path.map(|path| path.display().to_string()),
+        installed,
+        loaded,
+        running,
+        message: monitor_agent_message(&state),
+        state,
+    })
+}
+
+fn install_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
+    let plist_path = monitor_launch_agent_path()?;
+    let binary_path = monitor_binary_path()?;
+    let rendered = render_monitor_plist(&binary_path)?;
+    if let Some(parent) = plist_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            AppError::path(format!(
+                "Failed to create LaunchAgents directory '{}': {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    fs::write(&plist_path, rendered).map_err(|error| {
+        AppError::path(format!(
+            "Failed to write LaunchAgent '{}': {error}",
+            plist_path.display()
+        ))
+    })?;
+    restart_monitor_launch_agent_inner()
+}
+
+fn restart_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
+    let plist_path = monitor_launch_agent_path()?;
+    if !plist_path.exists() {
+        return install_monitor_launch_agent_inner();
+    }
+    let domain = launchctl_domain();
+    let service = format!("{domain}/{MONITOR_LAUNCH_AGENT_LABEL}");
+    let plist_arg = plist_path.display().to_string();
+    let _ = Command::new("/bin/launchctl")
+        .args(["bootout", &domain, &plist_arg])
+        .output();
+    run_launchctl(&["bootstrap", &domain, &plist_arg])?;
+    run_launchctl(&["kickstart", "-k", &service])?;
+    monitor_launch_agent_status_inner()
+}
+
+fn monitor_launch_agent_path() -> Result<PathBuf, AppError> {
+    let home = env::var_os("HOME")
+        .ok_or_else(|| AppError::config("HOME is not set; cannot resolve LaunchAgents path"))?;
+    Ok(PathBuf::from(home)
+        .join("Library")
+        .join("LaunchAgents")
+        .join(MONITOR_LAUNCH_AGENT_FILE))
+}
+
+fn monitor_binary_path() -> Result<PathBuf, AppError> {
+    for candidate in monitor_binary_candidates() {
+        if candidate.is_file() && is_executable(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::config(
+        "Could not find an executable git-same binary for the monitor LaunchAgent",
+    ))
+}
+
+fn monitor_binary_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = env::current_exe() {
+        if let Some(contents) = exe.ancestors().find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == "Contents")
+        }) {
+            candidates.push(contents.join("Helpers").join("git-same"));
+        }
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("git-same"));
+        }
+    }
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.push(home.join(".cargo/bin/git-same"));
+        candidates.push(home.join(".cargo/bin/gisa"));
+    }
+    if let Some(path) = find_on_path("git-same") {
+        candidates.push(path);
+    }
+    if let Some(path) = find_on_path("gisa") {
+        candidates.push(path);
+    }
+    dedupe_paths(candidates)
+}
+
+fn render_monitor_plist(binary_path: &Path) -> Result<String, AppError> {
+    if !binary_path.is_file() || !is_executable(binary_path) {
+        return Err(AppError::config(format!(
+            "Monitor binary is not executable: {}",
+            binary_path.display()
+        )));
+    }
+    Ok(MONITOR_PLIST_TEMPLATE.replace(
+        "__GIT_SAME_MONITOR_BINARY__",
+        &escape_xml(&binary_path.display().to_string()),
+    ))
+}
+
+fn escape_xml(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
+fn find_on_path(binary: &str) -> Option<PathBuf> {
+    let paths = env::var_os("PATH")?;
+    env::split_paths(&paths)
+        .map(|dir| dir.join(binary))
+        .find(|path| path.is_file() && is_executable(path))
+}
+
+fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut deduped = Vec::new();
+    for path in paths {
+        if !deduped.iter().any(|existing| existing == &path) {
+            deduped.push(path);
+        }
+    }
+    deduped
+}
+
+fn launchctl_print_monitor() -> std::io::Result<std::process::Output> {
+    Command::new("/bin/launchctl")
+        .args([
+            "print",
+            &format!("{}/{}", launchctl_domain(), MONITOR_LAUNCH_AGENT_LABEL),
+        ])
+        .output()
+}
+
+fn run_launchctl(args: &[&str]) -> Result<(), AppError> {
+    let output = Command::new("/bin/launchctl")
+        .args(args)
+        .output()
+        .map_err(|error| AppError::config(format!("launchctl failed to start: {error}")))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(AppError::config(format!(
+        "launchctl {} failed: {}{}",
+        args.join(" "),
+        stdout,
+        stderr
+    )))
+}
+
+fn launchctl_domain() -> String {
+    let uid = Command::new("/usr/bin/id")
+        .arg("-u")
+        .output()
+        .ok()
+        .and_then(|output| output.status.success().then_some(output.stdout))
+        .and_then(|stdout| String::from_utf8(stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "0".to_string());
+    format!("gui/{uid}")
+}
+
+fn launchctl_output_has_pid(output: &str) -> bool {
+    output.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("pid = ") || trimmed.starts_with("pid =")
+    })
+}
+
+fn monitor_agent_state(installed: bool, loaded: bool, running: bool) -> String {
+    if !installed {
+        "missing_plist"
+    } else if !loaded {
+        "not_loaded"
+    } else if !running {
+        "not_running"
+    } else {
+        "running"
+    }
+    .to_string()
+}
+
+fn monitor_agent_message(state: &str) -> String {
+    match state {
+        "missing_plist" => "LaunchAgent plist is missing".to_string(),
+        "not_loaded" => "LaunchAgent is installed but not loaded".to_string(),
+        "not_running" => "LaunchAgent is loaded but the monitor is not running".to_string(),
+        "running" => "Monitor LaunchAgent is running".to_string(),
+        _ => "Unknown monitor LaunchAgent state".to_string(),
     }
 }
 
@@ -659,18 +964,13 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
     }];
 
     let snapshot = read_status_snapshot().ok();
+    let monitor_agent = monitor_launch_agent_status_inner().ok();
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
-        passed: snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
-        message: snapshot
-            .as_ref()
-            .and_then(|snapshot| snapshot.updated_at.clone())
-            .unwrap_or_else(|| "no fresh status file".to_string()),
-        suggestion: snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.stale)
-            .unwrap_or(true)
-            .then(|| "Load the Git-Same LaunchAgent or run gisa monitor --foreground".to_string()),
+        passed: monitor_agent.as_ref().is_some_and(|agent| agent.running)
+            && snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
+        message: monitor_requirement_message(monitor_agent.as_ref(), snapshot.as_ref()),
+        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref(), snapshot.as_ref()),
         critical: false,
     });
 
@@ -714,6 +1014,200 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
     });
 
     checks
+}
+
+fn monitor_requirement_message(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+) -> String {
+    match agent {
+        Some(agent) if !agent.installed => "LaunchAgent plist missing".to_string(),
+        Some(agent) if !agent.loaded => "LaunchAgent installed but not loaded".to_string(),
+        Some(agent) if !agent.running => {
+            "LaunchAgent loaded but monitor process is not running".to_string()
+        }
+        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
+            "Monitor running but status file is stale".to_string()
+        }
+        Some(_) => snapshot
+            .and_then(|snapshot| snapshot.updated_at.clone())
+            .unwrap_or_else(|| "Monitor running".to_string()),
+        None => "Unable to inspect LaunchAgent".to_string(),
+    }
+}
+
+fn monitor_requirement_suggestion(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+) -> Option<String> {
+    match agent {
+        Some(agent) if !agent.installed => {
+            Some("Install the Git-Same monitor LaunchAgent".to_string())
+        }
+        Some(agent) if !agent.loaded || !agent.running => {
+            Some("Restart the Git-Same monitor LaunchAgent".to_string())
+        }
+        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
+            Some("Restart the monitor or wait for the next scan".to_string())
+        }
+        Some(_) => None,
+        None => Some("Check LaunchAgent permissions and the git-same binary path".to_string()),
+    }
+}
+
+async fn read_workspace_structure_inner(
+    workspace_id: String,
+) -> Result<WorkspaceStructureDto, AppError> {
+    let config = Config::load()?;
+    let workspace = WorkspaceManager::resolve(Some(&workspace_id), &config)?;
+    let base_path = workspace.expanded_base_path();
+    let structure = workspace
+        .structure
+        .clone()
+        .unwrap_or_else(|| config.structure.clone());
+    let provider_name = workspace.provider.kind.slug().to_string();
+    let orchestrator = workspace_orchestrator(&workspace, &config, structure.clone());
+
+    let mut source = "cache".to_string();
+    let mut cache_age_secs = None;
+    let mut error = None;
+    let repos = match load_structure_cache(&workspace, &orchestrator) {
+        Ok(Some((repos, age_secs))) => {
+            cache_age_secs = Some(age_secs);
+            repos
+        }
+        Ok(None) | Err(_) => match discover_structure_repos(&workspace, &orchestrator).await {
+            Ok(repos) => {
+                source = "remote".to_string();
+                save_structure_cache(&workspace, &provider_name, &repos);
+                repos
+            }
+            Err(err) => {
+                source = "unavailable".to_string();
+                error = Some(err);
+                Vec::new()
+            }
+        },
+    };
+
+    Ok(WorkspaceStructureDto {
+        workspace_id: tilde_collapse_path(&workspace.root_path),
+        name: workspace_name(&workspace.root_path),
+        root: base_path.display().to_string(),
+        provider: workspace.provider.kind.display_name().to_string(),
+        host: provider_host(&workspace.provider),
+        source,
+        cache_age_secs,
+        error,
+        repos: structure_repo_dtos(&repos, &base_path, &provider_name, &structure),
+    })
+}
+
+fn workspace_orchestrator(
+    workspace: &WorkspaceConfig,
+    _config: &Config,
+    structure: String,
+) -> DiscoveryOrchestrator {
+    let mut filters = workspace.filters.clone();
+    if !workspace.orgs.is_empty() {
+        filters.orgs = workspace.orgs.clone();
+    }
+    filters.exclude_repos = workspace.exclude_repos.clone();
+    DiscoveryOrchestrator::new(filters, structure)
+}
+
+fn load_structure_cache(
+    workspace: &WorkspaceConfig,
+    orchestrator: &DiscoveryOrchestrator,
+) -> anyhow::Result<Option<(Vec<OwnedRepo>, u64)>> {
+    let Some(cache) = CacheManager::for_workspace(&workspace.root_path)?.load()? else {
+        return Ok(None);
+    };
+    let age_secs = cache.age_secs();
+    let options = orchestrator.to_discovery_options();
+    let repos = cache
+        .repos
+        .values()
+        .flat_map(|provider_repos| provider_repos.iter())
+        .filter(|owned| {
+            options.should_include_org(&owned.owner) && options.should_include(&owned.repo)
+        })
+        .cloned()
+        .collect();
+    Ok(Some((repos, age_secs)))
+}
+
+async fn discover_structure_repos(
+    workspace: &WorkspaceConfig,
+    orchestrator: &DiscoveryOrchestrator,
+) -> Result<Vec<OwnedRepo>, String> {
+    let provider_cfg = workspace.provider.clone();
+    let auth = tokio::task::spawn_blocking(move || get_auth_for_provider(&provider_cfg))
+        .await
+        .map_err(|err| format!("Auth task failed: {err}"))?
+        .map_err(|err| err.to_string())?;
+    let provider =
+        create_provider(&workspace.provider, &auth.token).map_err(|err| err.to_string())?;
+    orchestrator
+        .discover(provider.as_ref(), &NoProgress)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+fn save_structure_cache(workspace: &WorkspaceConfig, provider_name: &str, repos: &[OwnedRepo]) {
+    let Ok(cache_manager) = CacheManager::for_workspace(&workspace.root_path) else {
+        return;
+    };
+    let mut repos_by_provider = HashMap::new();
+    repos_by_provider.insert(provider_name.to_string(), repos.to_vec());
+    let cache = DiscoveryCache::new(workspace.username.clone(), repos_by_provider);
+    let _ = cache_manager.save(&cache);
+}
+
+fn structure_repo_dtos(
+    repos: &[OwnedRepo],
+    base_path: &Path,
+    provider_name: &str,
+    structure: &str,
+) -> Vec<WorkspaceStructureRepoDto> {
+    let template = RepoPathTemplate::new(structure.to_string());
+    let mut dtos: Vec<_> = repos
+        .iter()
+        .map(|owned| {
+            let local_path = template.render_owned_repo(base_path, owned, provider_name);
+            WorkspaceStructureRepoDto {
+                owner: owned.owner.clone(),
+                name: owned.repo.name.clone(),
+                full_name: owned.repo.full_name.clone(),
+                url: repo_url(owned),
+                local_exists: local_path.exists(),
+                local_path: local_path.display().to_string(),
+            }
+        })
+        .collect();
+    dtos.sort_by(|left, right| left.full_name.cmp(&right.full_name));
+    dtos
+}
+
+fn repo_url(owned: &OwnedRepo) -> String {
+    if !owned.repo.clone_url.is_empty() {
+        return owned.repo.clone_url.trim_end_matches(".git").to_string();
+    }
+    format!("https://github.com/{}", owned.repo.full_name)
+}
+
+fn provider_host(provider: &WorkspaceProvider) -> String {
+    match provider.kind {
+        ProviderKind::GitHub => "github.com".to_string(),
+        _ => provider
+            .api_url
+            .clone()
+            .unwrap_or_else(|| provider.kind.default_api_url().to_string())
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_string(),
+    }
 }
 
 fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {

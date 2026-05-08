@@ -5,6 +5,7 @@ import FinderBadges from './FinderBadges.svelte';
 import Requirements from './Requirements.svelte';
 import Settings from './Settings.svelte';
 import Workspace from './Workspace.svelte';
+import WorkspaceScreen from './WorkspaceScreen.svelte';
 
 export const routes: RouteDefinition = {
   '/': Dashboard,
@@ -12,6 +13,7 @@ export const routes: RouteDefinition = {
   '/finder-badges': FinderBadges,
   '/badge-browser': BadgeBrowser,
   '/workspace': Workspace,
+  '/workspace/screen': WorkspaceScreen,
   '/settings': Settings,
   '/requirements': Requirements,
   '*': Dashboard,
