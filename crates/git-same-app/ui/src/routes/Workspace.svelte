@@ -15,6 +15,13 @@
   import { badgeLabel, formatCount, repoName } from '../lib/utils';
   import type { FinderRepoStatus, WorkspaceStructureRepoDto } from '../lib/types';
 
+  type PairEntry = {
+    remote?: WorkspaceStructureRepoDto;
+    local?: FinderRepoStatus;
+    name: string;
+  };
+  type OwnerGroup = { owner: string; entries: PairEntry[] };
+
   let loadedWorkspaceId = '';
 
   $: route = $location || '/workspace';
@@ -26,11 +33,13 @@
 
   $: localRepos = workspaceRepos();
   $: remoteRepos = $workspaceStructure?.repos ?? [];
-  $: remoteGroups = groupRemote(remoteRepos);
-  $: localGroups = groupLocal(localRepos);
-  $: remotePaths = new Set(remoteRepos.map((repo) => normalizePath(repo.local_path)));
-  $: localOnlyCount = localRepos.filter((repo) => !remotePaths.has(normalizePath(repo.path))).length;
-  $: missingCount = remoteRepos.filter((repo) => !repo.local_exists).length;
+  $: pairedGroups = buildPairs(remoteRepos, localRepos);
+  $: missingCount = pairedGroups
+    .flatMap((group) => group.entries)
+    .filter((entry) => entry.remote && !entry.remote.local_exists).length;
+  $: localOnlyCount = pairedGroups
+    .flatMap((group) => group.entries)
+    .filter((entry) => !entry.remote).length;
 
   function workspaceRepos(): FinderRepoStatus[] {
     const workspace = $currentWorkspace;
@@ -44,37 +53,45 @@
     );
   }
 
-  function groupRemote(repos: WorkspaceStructureRepoDto[]) {
-    const groups = new Map<string, WorkspaceStructureRepoDto[]>();
-    for (const repo of repos) {
-      const ownerRepos = groups.get(repo.owner) ?? [];
-      ownerRepos.push(repo);
-      groups.set(repo.owner, ownerRepos);
+  function buildPairs(
+    remotes: WorkspaceStructureRepoDto[],
+    locals: FinderRepoStatus[],
+  ): OwnerGroup[] {
+    const byPath = new Map<string, PairEntry>();
+    for (const remote of remotes) {
+      const key = normalizePath(remote.local_path);
+      if (!byPath.has(key)) byPath.set(key, { remote, name: remote.name });
     }
-    return [...groups.entries()].map(([owner, ownerRepos]) => ({
-      owner,
-      repos: ownerRepos.sort((left, right) => left.name.localeCompare(right.name)),
-    }));
-  }
-
-  function groupLocal(repos: FinderRepoStatus[]) {
-    const groups = new Map<string, FinderRepoStatus[]>();
-    for (const repo of repos) {
-      const owner = repo.org ?? ownerFromPath(repo.path);
-      const ownerRepos = groups.get(owner) ?? [];
-      ownerRepos.push(repo);
-      groups.set(owner, ownerRepos);
+    for (const local of locals) {
+      const key = normalizePath(local.path);
+      const slot = byPath.get(key);
+      if (slot && !slot.local) {
+        slot.local = local;
+      } else if (!slot) {
+        byPath.set(key, { local, name: repoName(local.path) });
+      }
     }
-    return [...groups.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([owner, ownerRepos]) => ({
-        owner,
-        repos: ownerRepos.sort((left, right) => repoName(left.path).localeCompare(repoName(right.path))),
+    const groups = new Map<string, { display: string; entries: PairEntry[] }>();
+    for (const entry of byPath.values()) {
+      const rawOwner =
+        entry.remote?.owner ?? entry.local?.org ?? ownerFromPath(entry.local?.path ?? '');
+      const key = rawOwner.toLowerCase();
+      const slot = groups.get(key) ?? { display: rawOwner, entries: [] };
+      if (entry.remote) slot.display = entry.remote.owner;
+      slot.entries.push(entry);
+      groups.set(key, slot);
+    }
+    return [...groups.values()]
+      .sort((left, right) => left.display.localeCompare(right.display))
+      .map((group) => ({
+        owner: group.display,
+        entries: group.entries.sort((left, right) => left.name.localeCompare(right.name)),
       }));
   }
 
   function ownerFromPath(path: string): string {
     const workspace = $currentWorkspace;
+    if (!path) return workspace?.name ?? 'Local';
     if (workspace && path.startsWith(workspace.root)) {
       const relative = path.slice(workspace.root.length).split('/').filter(Boolean);
       return relative.length > 1 ? relative[0] : workspace.name;
@@ -85,6 +102,10 @@
 
   function normalizePath(path: string): string {
     return path.replace(/\/+$/, '');
+  }
+
+  function entryKey(entry: PairEntry): string {
+    return entry.remote?.full_name ?? entry.local?.path ?? entry.name;
   }
 
   function sourceLabel(): string {
@@ -145,83 +166,104 @@
       <div class="inline-warning">{$workspaceStructure.error}</div>
     {/if}
 
-    <div class="hierarchy-grid">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>GitHub Structure</h2>
-            <p>{$workspaceStructure?.host ?? 'github.com'}</p>
-          </div>
-          <Github size={19} />
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-head-text">
+          <h2>Repositories</h2>
+          <p>{$workspaceStructure?.host ?? 'github.com'} · {$currentWorkspace.root}</p>
         </div>
-
-        {#if $workspaceStructureLoading}
-          <div class="loading">Loading GitHub structure</div>
-        {:else if remoteGroups.length === 0}
-          <EmptyState title="No GitHub structure" detail="Run sync or refresh discovery to populate the workspace cache." />
-        {:else}
-          <div class="tree">
-            <div class="root-row">
-              <Github size={16} />
-              <strong>{$workspaceStructure?.host ?? 'github.com'}</strong>
-            </div>
-            {#each remoteGroups as group}
-              <div class="owner-row">
-                <span class="branch">├─</span>
-                <strong>{group.owner}</strong>
-              </div>
-              {#each group.repos as repo}
-                <a class:missing={!repo.local_exists} class="repo-row" href={repo.url} target="_blank" rel="noreferrer">
-                  <span class="branch">│ ├─</span>
-                  <span>{repo.name}</span>
-                  {#if repo.local_exists}
-                    <small>mirrored</small>
-                  {:else}
-                    <small>missing</small>
-                  {/if}
-                  <ExternalLink size={13} />
-                </a>
-              {/each}
-            {/each}
-          </div>
-        {/if}
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>Filesystem Structure</h2>
-            <p>{$currentWorkspace.root}</p>
-          </div>
+        <div class="head-icons">
+          <Github size={19} />
           <FolderGit2 size={19} />
         </div>
+      </div>
 
-        {#if localGroups.length === 0}
-          <EmptyState title="No local repositories" detail="Synced repositories will appear under this workspace root." />
-        {:else}
-          <div class="tree">
-            <div class="root-row">
-              <FolderGit2 size={16} />
-              <strong>{$currentWorkspace.name}</strong>
+      {#if $workspaceStructureLoading && remoteRepos.length === 0 && localRepos.length === 0}
+        <div class="table-empty">Loading workspace…</div>
+      {:else if pairedGroups.length === 0}
+        <EmptyState
+          title="No repositories"
+          detail="Run sync or refresh discovery to populate this workspace."
+        />
+      {:else}
+        <div class="table">
+          <span class="cell-header gh-side"></span>
+          <span class="cell-header gh-side label">
+            <Github size={15} />
+            <strong>GitHub</strong>
+          </span>
+          <span class="cell-header gh-side"></span>
+          <span class="cell-header gh-side"></span>
+          <span class="cell-header divider" aria-hidden="true"></span>
+          <span class="cell-header local-side"></span>
+          <span class="cell-header local-side label">
+            <FolderGit2 size={15} />
+            <strong>Local</strong>
+          </span>
+          <span class="cell-header local-side"></span>
+          <span class="cell-header local-side"></span>
+
+          {#each pairedGroups as group (group.owner)}
+            <div class="owner-row">
+              <span class="branch">├─</span>
+              <strong>{group.owner}</strong>
             </div>
-            {#each localGroups as group}
-              <div class="owner-row">
-                <span class="branch">├─</span>
-                <strong>{group.owner}</strong>
-              </div>
-              {#each group.repos as repo}
-                <div class:local-only={!remotePaths.has(normalizePath(repo.path))} class="repo-row">
-                  <span class="branch">│ ├─</span>
-                  <span>{repoName(repo.path)}</span>
-                  <BadgeChip badge={repo.badge} />
-                  <small>{badgeLabel(repo.badge)}</small>
-                </div>
-              {/each}
+
+            {#each group.entries as entry (entryKey(entry))}
+              {#if entry.remote}
+                <a
+                  class="cell branch"
+                  class:missing={!entry.remote.local_exists}
+                  href={entry.remote.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >│ ├─</a>
+                <a
+                  class="cell name"
+                  class:missing={!entry.remote.local_exists}
+                  href={entry.remote.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >{entry.remote.name}</a>
+                <a
+                  class="cell meta"
+                  class:missing={!entry.remote.local_exists}
+                  href={entry.remote.url}
+                  target="_blank"
+                  rel="noreferrer"
+                ><small>{entry.remote.local_exists ? 'mirrored' : 'missing'}</small></a>
+                <a
+                  class="cell icon"
+                  class:missing={!entry.remote.local_exists}
+                  href={entry.remote.url}
+                  target="_blank"
+                  rel="noreferrer"
+                ><ExternalLink size={13} /></a>
+              {:else}
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+              {/if}
+
+              <span class="cell divider" aria-hidden="true"></span>
+
+              {#if entry.local}
+                <span class="cell branch" class:local-only={!entry.remote}>│ ├─</span>
+                <span class="cell name" class:local-only={!entry.remote}>{repoName(entry.local.path)}</span>
+                <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
+                <span class="cell meta"><small>{badgeLabel(entry.local.badge)}</small></span>
+              {:else}
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+                <span class="cell empty"></span>
+              {/if}
             {/each}
-          </div>
-        {/if}
-      </section>
-    </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
   {/if}
 </section>
 
@@ -302,13 +344,6 @@
     padding: 12px 14px;
   }
 
-  .hierarchy-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    align-items: start;
-  }
-
   .panel {
     min-width: 0;
     overflow: hidden;
@@ -325,6 +360,17 @@
     padding: 12px 14px;
   }
 
+  .panel-head-text {
+    min-width: 0;
+  }
+
+  .head-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+  }
+
   h2,
   p {
     margin: 0;
@@ -338,50 +384,109 @@
     margin-top: 3px;
   }
 
-  .tree {
-    max-height: min(640px, 62vh);
+  .table {
+    display: grid;
+    grid-template-columns:
+      36px              /* GH branch    */
+      minmax(0, 1fr)    /* GH name      */
+      auto              /* GH meta      */
+      18px              /* GH ext-link  */
+      1px               /* divider      */
+      36px              /* local branch */
+      minmax(0, 1fr)    /* local name   */
+      auto              /* badge chip   */
+      auto;             /* badge label  */
+    align-items: center;
+    column-gap: 8px;
+    max-height: min(720px, 70vh);
     overflow: auto;
-    padding: 12px 10px 14px;
+    padding: 0 12px 14px;
   }
 
-  .root-row,
-  .owner-row,
-  .repo-row,
-  .loading {
-    min-height: 30px;
-    display: grid;
+  .cell-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--panel-alt);
+    border-bottom: 1px solid var(--line);
+    min-height: 34px;
+    display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 8px;
+    color: var(--muted);
   }
 
-  .root-row {
-    grid-template-columns: 20px minmax(0, 1fr);
+  .cell-header.label strong {
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .cell-header.divider {
+    border-left: 1px solid var(--line);
+    align-self: stretch;
   }
 
   .owner-row {
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 8px 8px 0;
     color: var(--accent);
   }
 
-  .repo-row {
-    grid-template-columns: 44px minmax(0, 1fr) auto auto;
-    border-radius: 6px;
-    color: var(--text);
-    text-decoration: none;
-  }
-
-  .repo-row:hover {
-    background: var(--hover);
-  }
-
-  .repo-row span,
-  .owner-row strong,
-  .root-row strong {
+  .owner-row strong {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .cell {
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .cell.name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    line-height: 30px;
+  }
+
+  .cell.divider {
+    align-self: stretch;
+    border-left: 1px solid var(--line);
+  }
+
+  .cell.empty {
+    background: transparent;
+  }
+
+  .cell.icon {
+    color: var(--muted);
+  }
+
+  a.cell {
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  a.cell:hover {
+    background: var(--hover);
+  }
+
+  a.cell.missing {
+    color: var(--warning);
+  }
+
+  .cell.local-only {
+    color: var(--warning);
   }
 
   .branch {
@@ -389,18 +494,13 @@
     font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
   }
 
-  .missing,
-  .local-only {
-    color: var(--warning);
-  }
-
-  .loading {
+  .table-empty {
+    padding: 20px;
     color: var(--muted);
   }
 
   @media (max-width: 980px) {
-    .summary-grid,
-    .hierarchy-grid {
+    .summary-grid {
       grid-template-columns: 1fr;
     }
   }
