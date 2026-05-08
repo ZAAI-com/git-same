@@ -10,7 +10,7 @@
 <aside class="sidebar">
   <div class="brand">
     <FolderGit2 size={22} />
-    <span>git-Same</span>
+    <span>Git-Same</span>
   </div>
 
   <nav class="nav">

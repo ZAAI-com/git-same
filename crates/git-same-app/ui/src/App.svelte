@@ -28,7 +28,7 @@
 </script>
 
 <svelte:head>
-  <title>git-Same</title>
+  <title>Git-Same</title>
 </svelte:head>
 
 <main class="shell">

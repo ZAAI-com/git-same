@@ -15,5 +15,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running git-Same");
+        .expect("error while running Git-Same");
 }
