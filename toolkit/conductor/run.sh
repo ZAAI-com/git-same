@@ -137,9 +137,27 @@ if [ ! -x "$TAURI_CLI" ]; then
     exit 1
 fi
 
+APP_PORT="${GIT_SAME_APP_PORT:-${CONDUCTOR_PORT:-${PORT:-1420}}}"
+if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
+    echo "ERROR: Invalid app port '$APP_PORT'. Set GIT_SAME_APP_PORT to a value from 1-65535."
+    exit 1
+fi
+export GIT_SAME_APP_PORT="$APP_PORT"
+
+TAURI_DEV_CONFIG="$(mktemp -t git-same-tauri-dev.XXXXXX.json)"
+trap 'rm -f "$TAURI_DEV_CONFIG"' EXIT
+cat > "$TAURI_DEV_CONFIG" <<EOF
+{
+  "build": {
+    "devUrl": "http://127.0.0.1:$APP_PORT"
+  }
+}
+EOF
+
 echo "========================================"
 echo "  Launching Tauri app (dev mode)"
 echo "========================================"
+echo "  Dev URL: http://127.0.0.1:$APP_PORT"
 echo ""
 cd "$PROJECT_DIR/crates/git-same-app"
-exec "$TAURI_CLI" dev
+"$TAURI_CLI" dev --config "$TAURI_DEV_CONFIG"
