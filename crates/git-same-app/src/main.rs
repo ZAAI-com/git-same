@@ -7,6 +7,8 @@ fn main() {
             commands::list_workspaces,
             commands::read_status,
             commands::start_sync,
+            commands::extension_status,
+            commands::open_url,
         ])
         .setup(|app| {
             if let Err(error) = status_stream::spawn_watcher(app.handle().clone()) {

@@ -52,3 +52,8 @@ export interface StatusSnapshot {
   stale: boolean;
   status: FinderStatus | null;
 }
+
+export interface ExtensionStatus {
+  installed: boolean;
+  enabled: boolean;
+}

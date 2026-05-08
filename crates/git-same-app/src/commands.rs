@@ -16,6 +16,11 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 const DAEMON_STALE_AFTER_SECS: u64 = 90;
+const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.Badges";
+
+#[cfg(test)]
+#[path = "commands_tests.rs"]
+mod tests;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceSummary {
@@ -33,6 +38,12 @@ pub struct StatusSnapshot {
     pub updated_at: Option<String>,
     pub stale: bool,
     pub status: Option<FinderStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ExtensionStatus {
+    pub installed: bool,
+    pub enabled: bool,
 }
 
 #[tauri::command]
@@ -96,6 +107,63 @@ pub async fn start_sync(workspace_id: String) -> Result<(), String> {
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn extension_status() -> Result<ExtensionStatus, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("/usr/bin/pluginkit")
+            .args(["-m", "-v", "-i", FINDER_EXTENSION_ID])
+            .output()
+            .map_err(|err| format!("pluginkit invocation failed: {err}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_pluginkit_output(&stdout, FINDER_EXTENSION_ID))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(ExtensionStatus {
+            installed: false,
+            enabled: false,
+        })
+    }
+}
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|err| format!("open failed: {err}"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Err("open_url is only implemented on macOS".to_string())
+    }
+}
+
+// `pluginkit -m -v -i <id>` prints one line per plugin matching the id, or
+// nothing if no match. Each line begins with `+` (enabled) or `-` (disabled),
+// followed by the plugin id and bundle path. We treat any line containing
+// our id as "installed" and the leading `+` as "enabled".
+fn parse_pluginkit_output(stdout: &str, target_id: &str) -> ExtensionStatus {
+    for line in stdout.lines() {
+        if line.contains(target_id) {
+            let enabled = line.trim_start().starts_with('+');
+            return ExtensionStatus {
+                installed: true,
+                enabled,
+            };
+        }
+    }
+    ExtensionStatus {
+        installed: false,
+        enabled: false,
+    }
 }
 
 pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {

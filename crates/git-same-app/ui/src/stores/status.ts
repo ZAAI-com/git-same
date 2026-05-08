@@ -2,13 +2,15 @@ import { derived, get, writable } from 'svelte/store';
 import {
   listWorkspaces,
   onStatusUpdated,
+  readExtensionStatus,
   readStatus,
   startSync,
 } from '../lib/tauri';
-import type { StatusSnapshot, WorkspaceSummary } from '../lib/types';
+import type { ExtensionStatus, StatusSnapshot, WorkspaceSummary } from '../lib/types';
 
 export const snapshot = writable<StatusSnapshot | null>(null);
 export const workspaces = writable<WorkspaceSummary[]>([]);
+export const extensionStatus = writable<ExtensionStatus | null>(null);
 export const selectedWorkspaceId = writable<string>('');
 export const loading = writable<boolean>(true);
 export const syncingId = writable<string>('');
@@ -23,12 +25,14 @@ export const currentWorkspace = derived(
 
 export async function refresh(): Promise<void> {
   errorMessage.set('');
-  const [workspaceList, status] = await Promise.all([
+  const [workspaceList, status, ext] = await Promise.all([
     listWorkspaces(),
     readStatus(),
+    readExtensionStatus().catch(() => null),
   ]);
   workspaces.set(workspaceList);
   snapshot.set(status);
+  extensionStatus.set(ext);
   if (!get(selectedWorkspaceId) && workspaceList.length > 0) {
     const defaultId =
       workspaceList.find((workspace) => workspace.default)?.id ??
