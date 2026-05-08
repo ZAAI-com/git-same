@@ -14,11 +14,26 @@ fn prelude_reexports_core_types() {
     let repo = Repo::test("rocket", "acme");
     let owned = OwnedRepo::new("acme", repo);
     assert_eq!(owned.full_name(), "acme/rocket");
+
+    let progress = ProgressEvent::DiscoveryOrgsDiscovered { count: 1 };
+    assert!(matches!(
+        progress,
+        ProgressEvent::DiscoveryOrgsDiscovered { count: 1 }
+    ));
+
+    let setup = SetupState::new("~/Git-Same/GitHub");
+    assert_eq!(setup.step, SetupStep::Requirements);
 }
 
 #[test]
 fn top_level_modules_are_accessible() {
+    let _ = discovery::DiscoveryOrchestrator::new(
+        config::FilterOptions::default(),
+        "{org}/{repo}".to_string(),
+    );
     let _ = output::Verbosity::Normal;
     let _ = operations::sync::SyncMode::Fetch;
+    let _ = progress::ProgressEvent::DiscoveryPersonalReposStarted;
+    let _ = setup::SetupStep::Requirements;
     let _ = types::ProviderKind::GitLab;
 }

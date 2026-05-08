@@ -8,16 +8,27 @@ pub mod auth;
 pub mod cache;
 pub mod checks;
 pub mod config;
+/// Public discovery planning APIs.
+///
+/// This module is part of the crate's public surface and is re-exported by
+/// [`prelude`]. Prefer the higher-level [`workflows`] and [`api`] modules for
+/// end-user flows unless callers need to build an action plan directly.
 pub mod discovery;
 pub mod domain;
 pub mod errors;
 pub mod git;
+#[deprecated(
+    since = "3.2.0",
+    note = "use the cache, config, git, and provider modules directly; infra is a legacy facade"
+)]
 pub mod infra;
 pub mod ipc;
 pub mod monitor;
 pub mod operations;
 pub mod output;
+pub mod progress;
 pub mod provider;
+pub mod setup;
 pub mod types;
 pub mod workflows;
 
@@ -44,9 +55,16 @@ pub mod prelude {
     pub use crate::output::{
         CloneProgressBar, DiscoveryProgressBar, Output, SyncProgressBar, Verbosity,
     };
+    pub use crate::progress::{ProgressEvent, ProgressReporter};
     pub use crate::provider::{
         create_provider, Credentials, DiscoveryOptions, DiscoveryProgress, NoProgress, Provider,
         RateLimitInfo,
+    };
+    pub use crate::setup::{
+        apply_requirements_check_results, authenticate_provider, discover_org_entries,
+        maybe_start_requirements_checks, run_requirements_checks, save_workspace, AuthStatus,
+        OrgEntry, PathBrowseEntry, PathSuggestion, ProviderChoice, SetupAuthResult, SetupOutcome,
+        SetupState, SetupStep,
     };
     pub use crate::types::{
         ActionPlan, OpResult, OpSummary, Org, OwnedRepo, ProviderKind, Repo, RepoEntry,

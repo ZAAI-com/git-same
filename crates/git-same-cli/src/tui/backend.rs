@@ -263,7 +263,7 @@ pub fn spawn_setup_org_discovery(
     tx: UnboundedSender<AppEvent>,
 ) {
     tokio::spawn(async move {
-        match crate::setup::handler::discover_org_entries(ws_provider, token).await {
+        match git_same_core::setup::discover_org_entries(ws_provider, token).await {
             Ok(orgs) => {
                 let _ = tx.send(AppEvent::Backend(BackendMessage::SetupOrgsDiscovered(orgs)));
             }

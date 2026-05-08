@@ -1,6 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { ExtensionStatus, StatusSnapshot, WorkspaceSummary } from './types';
+import type {
+  ExtensionStatus,
+  StatusSnapshot,
+  SyncProgressPayload,
+  WorkspaceSummary,
+} from './types';
 
 export function listWorkspaces(): Promise<WorkspaceSummary[]> {
   return invoke('list_workspaces');
@@ -24,4 +29,8 @@ export function openUrl(url: string): Promise<void> {
 
 export function onStatusUpdated(callback: (snapshot: StatusSnapshot) => void) {
   return listen<StatusSnapshot>('status-updated', (event) => callback(event.payload));
+}
+
+export function onSyncProgress(callback: (payload: SyncProgressPayload) => void) {
+  return listen<SyncProgressPayload>('sync-progress', (event) => callback(event.payload));
 }

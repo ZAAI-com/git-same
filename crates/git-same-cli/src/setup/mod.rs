@@ -15,6 +15,9 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use git_same_core::errors::Result;
+pub(crate) use git_same_core::setup::{
+    apply_requirements_check_results, maybe_start_requirements_checks, run_requirements_checks,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use state::{SetupOutcome, SetupState, SetupStep};
@@ -132,33 +135,3 @@ async fn run_wizard(
     }
     Ok(())
 }
-
-pub(crate) fn maybe_start_requirements_checks(state: &mut SetupState) -> bool {
-    if state.step != SetupStep::Requirements || state.checks_triggered {
-        return false;
-    }
-
-    state.checks_triggered = true;
-    state.checks_loading = true;
-    state.config_path_display = git_same_core::config::Config::default_path()
-        .ok()
-        .map(|p| p.display().to_string());
-    true
-}
-
-pub(crate) fn apply_requirements_check_results(
-    state: &mut SetupState,
-    results: Vec<git_same_core::checks::CheckResult>,
-) {
-    state.check_results = results;
-    state.checks_loading = false;
-}
-
-pub(crate) async fn run_requirements_checks(state: &mut SetupState) {
-    let results = git_same_core::checks::check_requirements().await;
-    apply_requirements_check_results(state, results);
-}
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

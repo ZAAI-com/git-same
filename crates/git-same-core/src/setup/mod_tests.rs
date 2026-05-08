@@ -1,7 +1,7 @@
 use super::*;
 
-fn sample_check(name: &str, passed: bool, critical: bool) -> git_same_core::checks::CheckResult {
-    git_same_core::checks::CheckResult {
+fn sample_check(name: &str, passed: bool, critical: bool) -> crate::checks::CheckResult {
+    crate::checks::CheckResult {
         name: name.to_string(),
         passed,
         message: "ok".to_string(),
@@ -22,7 +22,7 @@ fn maybe_start_requirements_checks_sets_expected_state() {
     assert!(state.checks_loading);
     assert_eq!(
         state.config_path_display,
-        git_same_core::config::Config::default_path()
+        crate::config::Config::default_path()
             .ok()
             .map(|p| p.display().to_string())
     );

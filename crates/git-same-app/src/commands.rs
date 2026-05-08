@@ -4,9 +4,7 @@ use git_same_core::config::{Config, WorkspaceConfig, WorkspaceManager};
 use git_same_core::errors::AppError;
 use git_same_core::git::ShellGit;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
-use git_same_core::operations::clone::NoProgress as NoCloneProgress;
-use git_same_core::operations::sync::NoSyncProgress;
-use git_same_core::provider::NoProgress as NoDiscoveryProgress;
+use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::types::FinderStatus;
 use git_same_core::workflows::sync_workspace::{
     execute_prepared_sync, prepare_sync_workspace, SyncWorkspaceRequest,
@@ -16,6 +14,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tauri::Emitter;
 
 const DAEMON_STALE_AFTER_SECS: u64 = 90;
 const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.Badges";
@@ -48,6 +47,12 @@ pub struct ExtensionStatus {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncProgressPayload {
+    pub workspace_id: String,
+    pub event: ProgressEvent,
+}
+
 #[tauri::command]
 pub async fn list_workspaces() -> Result<Vec<WorkspaceSummary>, String> {
     let config = Config::load().map_err(error_string)?;
@@ -66,11 +71,14 @@ pub async fn read_status() -> Result<StatusSnapshot, String> {
 }
 
 #[tauri::command]
-pub async fn start_sync(workspace_id: String) -> Result<StatusSnapshot, String> {
+pub async fn start_sync(
+    app: tauri::AppHandle,
+    workspace_id: String,
+) -> Result<StatusSnapshot, String> {
     let config = Config::load().map_err(error_string)?;
     let mut workspace =
         WorkspaceManager::resolve(Some(&workspace_id), &config).map_err(error_string)?;
-    let progress = NoDiscoveryProgress;
+    let progress = sync_progress_reporter(app, workspace_id.clone());
 
     let prepared = prepare_sync_workspace(
         SyncWorkspaceRequest {
@@ -90,8 +98,8 @@ pub async fn start_sync(workspace_id: String) -> Result<StatusSnapshot, String> 
     let outcome = execute_prepared_sync(
         &prepared,
         false,
-        Arc::new(NoCloneProgress),
-        Arc::new(NoSyncProgress),
+        Arc::new(progress.clone()),
+        Arc::new(progress.clone()),
     )
     .await;
     if outcome
@@ -110,6 +118,18 @@ pub async fn start_sync(workspace_id: String) -> Result<StatusSnapshot, String> 
     WorkspaceManager::save(&workspace).map_err(error_string)?;
     let ipc = IpcConfig::default_path().map_err(error_string)?;
     read_status_snapshot_with(&config, &ipc).map_err(error_string)
+}
+
+fn sync_progress_reporter(app: tauri::AppHandle, workspace_id: String) -> ProgressReporter {
+    ProgressReporter::new(move |event| {
+        let _ = app.emit(
+            "sync-progress",
+            SyncProgressPayload {
+                workspace_id: workspace_id.clone(),
+                event,
+            },
+        );
+    })
 }
 
 #[tauri::command]

@@ -144,14 +144,14 @@ fn test_cancel_from_requirements() {
 fn test_requirements_passed_all_critical_pass() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
     state.check_results = vec![
-        git_same_core::checks::CheckResult {
+        crate::checks::CheckResult {
             name: "Git".to_string(),
             passed: true,
             message: "ok".to_string(),
             suggestion: None,
             critical: true,
         },
-        git_same_core::checks::CheckResult {
+        crate::checks::CheckResult {
             name: "SSH".to_string(),
             passed: false,
             message: "not found".to_string(),
@@ -165,7 +165,7 @@ fn test_requirements_passed_all_critical_pass() {
 #[test]
 fn test_requirements_passed_critical_fail() {
     let mut state = SetupState::new("~/Git-Same/GitHub");
-    state.check_results = vec![git_same_core::checks::CheckResult {
+    state.check_results = vec![crate::checks::CheckResult {
         name: "Git".to_string(),
         passed: false,
         message: "not found".to_string(),

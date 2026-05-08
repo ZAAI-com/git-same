@@ -1,12 +1,10 @@
 //! Setup wizard event handling.
 
 use super::state::{
-    tilde_collapse, AuthStatus, OrgEntry, PathBrowseEntry, SetupOutcome, SetupState, SetupStep,
+    tilde_collapse, AuthStatus, PathBrowseEntry, SetupOutcome, SetupState, SetupStep,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use git_same_core::auth::{get_auth_for_provider, gh_cli};
-use git_same_core::config::{WorkspaceConfig, WorkspaceManager};
-use git_same_core::provider::create_provider;
+use git_same_core::setup::{authenticate_provider, discover_org_entries, save_workspace};
 
 /// Handle a key event in the setup wizard.
 ///
@@ -192,29 +190,13 @@ async fn handle_auth(state: &mut SetupState, key: KeyEvent) {
 
 async fn do_authenticate(state: &mut SetupState) {
     let ws_provider = state.build_workspace_provider();
-    // Auth shells out to `gh`; run it on the blocking pool so the TUI event
-    // loop keeps rendering instead of freezing on a stalled subprocess.
-    let result = tokio::task::spawn_blocking(move || match get_auth_for_provider(&ws_provider) {
+    match authenticate_provider(ws_provider).await {
         Ok(auth) => {
-            let username = auth.username.or_else(|| gh_cli::get_username().ok());
-            Ok((auth.token, username))
-        }
-        Err(e) => Err(e.to_string()),
-    })
-    .await;
-
-    match result {
-        Ok(Ok((token, username))) => {
-            state.username = username;
-            state.auth_token = Some(token);
+            state.username = auth.username;
+            state.auth_token = Some(auth.token);
             state.auth_status = AuthStatus::Success;
         }
-        Ok(Err(e)) => {
-            state.auth_status = AuthStatus::Failed(e);
-        }
-        Err(e) => {
-            state.auth_status = AuthStatus::Failed(format!("Auth task failed: {}", e));
-        }
+        Err(e) => state.auth_status = AuthStatus::Failed(e),
     }
 }
 
@@ -639,35 +621,6 @@ async fn do_discover_orgs(state: &mut SetupState) {
     }
 }
 
-pub(crate) async fn discover_org_entries(
-    ws_provider: git_same_core::config::WorkspaceProvider,
-    token: String,
-) -> Result<Vec<OrgEntry>, String> {
-    match create_provider(&ws_provider, &token) {
-        Ok(provider) => match provider.get_organizations().await {
-            Ok(orgs) => {
-                let mut org_entries: Vec<OrgEntry> = Vec::new();
-                for org in &orgs {
-                    let repo_count = provider
-                        .get_org_repos(&org.login)
-                        .await
-                        .map(|r| r.len())
-                        .unwrap_or(0);
-                    org_entries.push(OrgEntry {
-                        name: org.login.clone(),
-                        repo_count,
-                        selected: true,
-                    });
-                }
-                org_entries.sort_by(|a, b| a.name.cmp(&b.name));
-                Ok(org_entries)
-            }
-            Err(e) => Err(e.to_string()),
-        },
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 fn handle_confirm(state: &mut SetupState, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
@@ -698,27 +651,6 @@ fn handle_complete(state: &mut SetupState, key: KeyEvent) {
         }
         _ => {}
     }
-}
-
-fn save_workspace(state: &SetupState) -> Result<(), git_same_core::errors::AppError> {
-    let expanded = shellexpand::tilde(&state.base_path);
-    let root = std::path::Path::new(expanded.as_ref());
-    std::fs::create_dir_all(root).map_err(|e| {
-        git_same_core::errors::AppError::config(format!(
-            "Failed to create workspace directory '{}': {}",
-            root.display(),
-            e
-        ))
-    })?;
-    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-
-    let mut ws = WorkspaceConfig::new_from_root(&root);
-    ws.provider = state.build_workspace_provider();
-    ws.username = state.username.clone().unwrap_or_default();
-    ws.orgs = state.selected_orgs();
-
-    WorkspaceManager::save(&ws)?;
-    Ok(())
 }
 
 #[cfg(test)]

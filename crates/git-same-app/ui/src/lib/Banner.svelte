@@ -4,6 +4,7 @@
     errorMessage,
     extensionStatus,
     snapshot,
+    syncProgress,
     workspaces,
   } from '../stores/status';
   import { openUrl } from './tauri';
@@ -17,7 +18,26 @@
     'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
 
   $: showError = Boolean($errorMessage);
-  $: showStale = !showError && Boolean($snapshot?.stale);
+  $: showProgress = !showError && Boolean($syncProgress);
+  $: progressPercent =
+    $syncProgress?.total && $syncProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round(($syncProgress.completed / $syncProgress.total) * 100),
+        )
+      : 0;
+  $: progressCount =
+    $syncProgress?.total && $syncProgress.total > 0
+      ? `${Math.min($syncProgress.completed, $syncProgress.total)} / ${$syncProgress.total}`
+      : '';
+  $: progressMeta = [
+    progressCount,
+    $syncProgress?.failed ? `${$syncProgress.failed} failed` : '',
+    $syncProgress?.skipped ? `${$syncProgress.skipped} skipped` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  $: showStale = !showError && !showProgress && Boolean($snapshot?.stale);
   $: showAllowExt =
     !showError &&
     !showStale &&
@@ -46,6 +66,21 @@
   <div class="banner error">
     <AlertTriangle size={18} />
     <span>{$errorMessage}</span>
+  </div>
+{:else if showProgress}
+  <div class="banner progress">
+    <Info size={18} />
+    <div class="progress-copy">
+      <span>{$syncProgress?.message}</span>
+      {#if progressMeta}
+        <small>{progressMeta}</small>
+      {/if}
+    </div>
+    {#if $syncProgress?.total}
+      <div class="progress-track" aria-hidden="true">
+        <span style={`width: ${progressPercent}%`}></span>
+      </div>
+    {/if}
   </div>
 {:else if showStale}
   <div class="banner warning">
@@ -93,6 +128,43 @@
     color: var(--text);
   }
 
+  .banner.progress {
+    align-items: center;
+  }
+
+  .progress-copy {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .progress-copy span,
+  .progress-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progress-copy small {
+    color: var(--muted);
+  }
+
+  .progress-track {
+    width: min(220px, 28vw);
+    height: 6px;
+    margin-left: auto;
+    border-radius: 999px;
+    background: var(--panel-alt);
+    overflow: hidden;
+  }
+
+  .progress-track span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+  }
+
   code {
     color: var(--text);
     background: var(--panel-alt);
@@ -113,5 +185,20 @@
 
   button:hover {
     background: var(--panel);
+  }
+
+  @media (max-width: 640px) {
+    .banner.progress {
+      align-items: flex-start;
+    }
+
+    .progress-copy span,
+    .progress-copy small {
+      white-space: normal;
+    }
+
+    .progress-track {
+      display: none;
+    }
   }
 </style>
