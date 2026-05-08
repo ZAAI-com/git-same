@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import Router from 'svelte-spa-router';
-  import Banner from './lib/Banner.svelte';
   import Sidebar from './lib/Sidebar.svelte';
-  import Topbar from './lib/Topbar.svelte';
+  import StatusBanner from './lib/StatusBanner.svelte';
+  import TitleBar from './lib/TitleBar.svelte';
   import { errorMessage, loading, refresh, subscribePush } from './stores/status';
   import { routes } from './routes/router';
 
@@ -34,23 +34,34 @@
 <main class="shell">
   <Sidebar />
   <section class="content">
-    <Topbar />
-    <Banner />
-    <Router {routes} />
+    <TitleBar />
+    <div class="content-scroll">
+      <StatusBanner />
+      <Router {routes} />
+    </div>
   </section>
 </main>
 
 <style>
   .shell {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: 248px minmax(0, 1fr);
     min-height: 100vh;
     color: var(--text);
   }
 
   .content {
     min-width: 0;
-    padding: 22px;
+    min-height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .content-scroll {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 18px 22px 28px;
   }
 
   @media (max-width: 860px) {

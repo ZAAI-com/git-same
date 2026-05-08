@@ -1,52 +1,122 @@
 import { derived, get, writable } from 'svelte/store';
 import {
+  checkRequirements,
+  deleteWorkspace,
+  ensureConfig,
   listWorkspaces,
   onStatusUpdated,
   onSyncProgress,
+  readAppConfig,
   readExtensionStatus,
   readStatus,
+  saveAppConfig,
+  setDefaultWorkspace,
   startSync,
 } from '../lib/tauri';
 import type {
+  AppConfigDto,
+  AppConfigInput,
   ExtensionStatus,
   ProgressEvent,
+  RequirementCheckDto,
   StatusSnapshot,
   SyncProgressPayload,
   SyncProgressState,
+  WorkspaceInput,
   WorkspaceSummary,
 } from '../lib/types';
+import { saveWorkspace as saveWorkspaceCommand } from '../lib/tauri';
+
+export const NEW_WORKSPACE_ID = '__new_workspace__';
 
 export const snapshot = writable<StatusSnapshot | null>(null);
 export const workspaces = writable<WorkspaceSummary[]>([]);
 export const extensionStatus = writable<ExtensionStatus | null>(null);
+export const appConfig = writable<AppConfigDto | null>(null);
+export const requirements = writable<RequirementCheckDto[]>([]);
 export const selectedWorkspaceId = writable<string>('');
 export const loading = writable<boolean>(true);
+export const requirementsLoading = writable<boolean>(false);
 export const syncingId = writable<string>('');
 export const errorMessage = writable<string>('');
+export const successMessage = writable<string>('');
 export const syncProgress = writable<SyncProgressState | null>(null);
 
 export const currentWorkspace = derived(
   [workspaces, selectedWorkspaceId],
-  ([$workspaces, $selectedWorkspaceId]) =>
-    $workspaces.find((workspace) => workspace.id === $selectedWorkspaceId) ??
-    $workspaces[0],
+  ([$workspaces, $selectedWorkspaceId]) => {
+    if ($selectedWorkspaceId === NEW_WORKSPACE_ID) return undefined;
+    if ($selectedWorkspaceId) {
+      return $workspaces.find((workspace) => workspace.id === $selectedWorkspaceId);
+    }
+    return $workspaces.find((workspace) => workspace.default) ?? $workspaces[0];
+  },
 );
 
 export async function refresh(): Promise<void> {
   errorMessage.set('');
-  const [workspaceList, status, ext] = await Promise.all([
+  const [workspaceList, status, ext, config] = await Promise.all([
     listWorkspaces(),
     readStatus(),
     readExtensionStatus().catch(() => null),
+    readAppConfig().catch(() => null),
   ]);
   workspaces.set(workspaceList);
   snapshot.set(status);
   extensionStatus.set(ext);
-  if (!get(selectedWorkspaceId) && workspaceList.length > 0) {
-    const defaultId =
-      workspaceList.find((workspace) => workspace.default)?.id ??
-      workspaceList[0].id;
-    selectedWorkspaceId.set(defaultId);
+  appConfig.set(config);
+  reconcileSelectedWorkspace(workspaceList);
+}
+
+export async function loadAppConfig(): Promise<void> {
+  appConfig.set(await readAppConfig());
+}
+
+export async function createDefaultConfig(): Promise<void> {
+  appConfig.set(await ensureConfig());
+  await refresh();
+}
+
+export async function saveConfig(input: AppConfigInput): Promise<void> {
+  errorMessage.set('');
+  appConfig.set(await saveAppConfig(input));
+  successMessage.set('Settings saved');
+  await refresh();
+}
+
+export async function saveWorkspace(input: WorkspaceInput): Promise<string> {
+  errorMessage.set('');
+  const saved = await saveWorkspaceCommand(input);
+  selectedWorkspaceId.set(saved.id);
+  successMessage.set('Workspace saved');
+  await refresh();
+  return saved.id;
+}
+
+export async function removeWorkspace(workspaceId: string): Promise<void> {
+  errorMessage.set('');
+  const next = await deleteWorkspace(workspaceId);
+  workspaces.set(next);
+  selectedWorkspaceId.set(next.find((workspace) => workspace.default)?.id ?? next[0]?.id ?? '');
+  successMessage.set('Workspace metadata removed');
+  await refresh();
+}
+
+export async function updateDefaultWorkspace(workspaceId: string | null): Promise<void> {
+  errorMessage.set('');
+  workspaces.set(await setDefaultWorkspace(workspaceId));
+  await refresh();
+}
+
+export async function loadRequirements(): Promise<void> {
+  requirementsLoading.set(true);
+  errorMessage.set('');
+  try {
+    requirements.set(await checkRequirements());
+  } catch (err) {
+    errorMessage.set(String(err));
+  } finally {
+    requirementsLoading.set(false);
   }
 }
 
@@ -90,6 +160,15 @@ export async function subscribePush(): Promise<() => void> {
     unsubscribeStatus();
     unsubscribeProgress();
   };
+}
+
+function reconcileSelectedWorkspace(workspaceList: WorkspaceSummary[]) {
+  const selected = get(selectedWorkspaceId);
+  if (selected === NEW_WORKSPACE_ID) return;
+  if (selected && workspaceList.some((workspace) => workspace.id === selected)) return;
+  selectedWorkspaceId.set(
+    workspaceList.find((workspace) => workspace.default)?.id ?? workspaceList[0]?.id ?? '',
+  );
 }
 
 function reduceSyncProgress(

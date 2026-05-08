@@ -1,7 +1,10 @@
 export type Badge = 'green' | 'blue' | 'orange' | 'red' | 'gray';
 
+export type SyncMode = 'fetch' | 'pull';
+
 export interface WorkspaceSummary {
   id: string;
+  name: string;
   root: string;
   provider: string;
   org_count: number;
@@ -9,10 +12,135 @@ export interface WorkspaceSummary {
   default: boolean;
 }
 
+export interface CloneOptionsDto {
+  depth: number;
+  branch: string;
+  recurse_submodules: boolean;
+}
+
+export interface FilterOptionsDto {
+  include_archived: boolean;
+  include_forks: boolean;
+  orgs: string[];
+  exclude_repos: string[];
+}
+
+export interface FinderConfigDto {
+  scan_roots: string[];
+  max_depth: number;
+  exclude_dirs: string[];
+  show_ambient: boolean;
+}
+
+export interface AppConfigDto {
+  config_path: string;
+  exists: boolean;
+  structure: string;
+  concurrency: number;
+  sync_mode: SyncMode;
+  default_workspace: string | null;
+  refresh_interval: number;
+  clone: CloneOptionsDto;
+  filters: FilterOptionsDto;
+  workspaces: string[];
+  finder: FinderConfigDto;
+}
+
+export type AppConfigInput = Omit<AppConfigDto, 'config_path' | 'exists'>;
+
+export interface WorkspaceProviderDto {
+  kind: string;
+  label: string;
+  api_url: string | null;
+  prefer_ssh: boolean;
+}
+
+export interface WorkspaceDetailDto {
+  id: string;
+  name: string;
+  root: string;
+  config_path: string;
+  provider: WorkspaceProviderDto;
+  username: string;
+  orgs: string[];
+  include_repos: string[];
+  exclude_repos: string[];
+  structure: string | null;
+  sync_mode: SyncMode | null;
+  clone_options: CloneOptionsDto | null;
+  filters: FilterOptionsDto;
+  concurrency: number | null;
+  refresh_interval: number | null;
+  last_synced: string | null;
+  default: boolean;
+}
+
+export interface WorkspaceInput {
+  id: string | null;
+  root: string;
+  provider: WorkspaceProviderDto;
+  username: string;
+  orgs: string[];
+  include_repos: string[];
+  exclude_repos: string[];
+  structure: string | null;
+  sync_mode: SyncMode | null;
+  clone_options: CloneOptionsDto | null;
+  filters: FilterOptionsDto;
+  concurrency: number | null;
+  refresh_interval: number | null;
+  default: boolean;
+}
+
+export interface RequirementCheckDto {
+  name: string;
+  passed: boolean;
+  message: string;
+  suggestion: string | null;
+  critical: boolean;
+}
+
+export interface ProviderOrgDto {
+  name: string;
+  repo_count: number;
+  selected: boolean;
+}
+
+export interface ProviderDiscoveryDto {
+  username: string | null;
+  orgs: ProviderOrgDto[];
+}
+
 export interface FinderWorkspaceInfo {
   name: string;
   root: string;
   orgs: string[];
+}
+
+export interface FinderBranchInfo {
+  name: string;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  synced: boolean;
+}
+
+export interface FinderRemoteInfo {
+  name: string;
+  url: string;
+}
+
+export interface FinderWorktreeInfo {
+  path: string;
+  branch?: string;
+  synced: boolean;
+}
+
+export interface OrgFolderInfo {
+  path: string;
+  org: string;
+  workspace: string;
+  owner_type: 'user' | 'organization' | 'unknown';
 }
 
 export interface FinderRepoStatus {
@@ -31,7 +159,10 @@ export interface FinderRepoStatus {
   stash_count: number;
   has_important_ignored_files: boolean;
   important_ignored_files?: string[];
+  branches: FinderBranchInfo[];
   all_branches_synced: boolean;
+  remotes: FinderRemoteInfo[];
+  worktrees: FinderWorktreeInfo[];
   all_worktrees_synced: boolean;
   read_error?: string;
 }
@@ -43,6 +174,7 @@ export interface FinderStatus {
   workspaces: FinderWorkspaceInfo[];
   custom_folders?: string[];
   repos: FinderRepoStatus[];
+  org_folders?: OrgFolderInfo[];
   monitored_roots?: string[];
 }
 
