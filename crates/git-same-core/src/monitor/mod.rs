@@ -11,6 +11,7 @@
 //! so they can wire whichever termination signal makes sense for them
 //! (`ctrl_c` + SIGTERM for the CLI, a `tokio::sync::Notify` for a host).
 
+pub mod incremental;
 pub mod owner_classifier;
 pub mod run;
 #[cfg(unix)]

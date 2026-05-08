@@ -49,7 +49,7 @@ cask "git-same" do
 
     # Clear stale FinderSync registration from pre-rename builds (id was
     # `com.zaai.git-same.GitSameBadge.FinderSync`; renamed to
-    # `com.zaai.git-same.Badges` in 3.1.0). Best-effort: ignored if the id
+    # `com.zaai.git-same.badges` in 3.1.0). Best-effort: ignored if the id
     # is not present in pluginkit's cache.
     system_command "/usr/bin/pluginkit",
                    args: ["-e", "ignore", "-i", "com.zaai.git-same.GitSameBadge.FinderSync"],

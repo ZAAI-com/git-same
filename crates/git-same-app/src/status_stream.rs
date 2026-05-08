@@ -1,14 +1,12 @@
 use crate::commands::read_status_snapshot;
+use git_same_core::ipc::IpcConfig;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
 
 pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
-    let snapshot = read_status_snapshot()?;
-    let status_path = std::path::PathBuf::from(&snapshot.status_path);
-    let watch_path = status_path
-        .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or(status_path);
+    let ipc = IpcConfig::default_path()?;
+    ipc.ensure_dir()?;
+    let watch_path = ipc.dir.clone();
 
     std::thread::Builder::new()
         .name("git-same-status-watcher".to_string())

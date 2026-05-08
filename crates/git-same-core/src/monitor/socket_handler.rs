@@ -8,7 +8,10 @@ use crate::config::Config;
 use crate::git::ShellGit;
 use crate::ipc::unix_socket::DaemonCommand;
 use crate::ipc::StatusFileWriter;
+use crate::monitor::incremental::rescan_and_merge;
+use crate::types::FinderStatus;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 use tracing::{debug, error};
@@ -21,6 +24,7 @@ pub async fn handle_socket_connection(
     config: &Config,
     pid: u32,
     status_path: &Path,
+    shared_status: Arc<Mutex<FinderStatus>>,
     owner_types: Option<OwnerTypeCache>,
     ambient_upgrades: Option<AmbientUpgradeCache>,
 ) {
@@ -49,24 +53,40 @@ pub async fn handle_socket_connection(
 
     let response = match cmd {
         DaemonCommand::Ping => "PONG\n".to_string(),
-        DaemonCommand::RefreshAll | DaemonCommand::Refresh(_) => {
-            if let DaemonCommand::Refresh(ref path) = cmd {
-                let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
-                debug!(path = %canonical.display(), "Refresh requested");
-                let upgraded = service.scan_repo(&canonical, None, None);
-                if let Some(cache) = &ambient_upgrades {
-                    cache.set(canonical, upgraded);
+        DaemonCommand::Refresh(ref path) => {
+            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            debug!(path = %canonical.display(), "Refresh requested");
+            let mut status = shared_status.lock().expect("status mutex poisoned");
+            let changed = rescan_and_merge(&service, &mut status, &canonical);
+            if changed {
+                let file_writer = StatusFileWriter::new(status_path.to_path_buf());
+                if let Err(e) = file_writer.write(&status) {
+                    error!(error = %e, "Failed to write status file after Refresh");
                 }
             }
-            match service.scan_all(pid) {
-                Ok(status) => {
-                    let file_writer = StatusFileWriter::new(status_path.to_path_buf());
-                    let _ = file_writer.write(&status);
-                }
-                Err(e) => error!(error = %e, "Refresh failed"),
+            if let (Some(cache), Some(entry)) = (
+                ambient_upgrades.as_ref(),
+                status.repos.iter().find(|r| r.path == canonical).cloned(),
+            ) {
+                cache.set(canonical, entry);
             }
             "OK\n".to_string()
         }
+        DaemonCommand::RefreshAll => match service.scan_all(pid) {
+            Ok(new_status) => {
+                let mut status = shared_status.lock().expect("status mutex poisoned");
+                *status = new_status;
+                let file_writer = StatusFileWriter::new(status_path.to_path_buf());
+                if let Err(e) = file_writer.write(&status) {
+                    error!(error = %e, "Failed to write status file after RefreshAll");
+                }
+                "OK\n".to_string()
+            }
+            Err(e) => {
+                error!(error = %e, "Refresh failed");
+                "ERROR\n".to_string()
+            }
+        },
         DaemonCommand::Status => {
             let file_writer = StatusFileWriter::new(status_path.to_path_buf());
             match file_writer.read() {

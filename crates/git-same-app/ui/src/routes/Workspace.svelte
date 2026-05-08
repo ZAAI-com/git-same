@@ -12,7 +12,7 @@
     workspaceStructure,
     workspaceStructureLoading,
   } from '../stores/status';
-  import { badgeLabel, formatCount, repoName } from '../lib/utils';
+  import { formatCount, repoName } from '../lib/utils';
   import type { FinderRepoStatus, WorkspaceStructureRepoDto } from '../lib/types';
 
   type PairEntry = {
@@ -34,12 +34,9 @@
   $: localRepos = workspaceRepos();
   $: remoteRepos = $workspaceStructure?.repos ?? [];
   $: pairedGroups = buildPairs(remoteRepos, localRepos);
-  $: missingCount = pairedGroups
-    .flatMap((group) => group.entries)
-    .filter((entry) => entry.remote && !entry.remote.local_exists).length;
-  $: localOnlyCount = pairedGroups
-    .flatMap((group) => group.entries)
-    .filter((entry) => !entry.remote).length;
+  $: allEntries = pairedGroups.flatMap((group) => group.entries);
+  $: missingCount = allEntries.filter((entry) => entry.remote && !entry.local).length;
+  $: localOnlyCount = allEntries.filter((entry) => !entry.remote).length;
 
   function workspaceRepos(): FinderRepoStatus[] {
     const workspace = $currentWorkspace;
@@ -172,10 +169,6 @@
           <h2>Repositories</h2>
           <p>{$workspaceStructure?.host ?? 'github.com'} · {$currentWorkspace.root}</p>
         </div>
-        <div class="head-icons">
-          <Github size={19} />
-          <FolderGit2 size={19} />
-        </div>
       </div>
 
       {#if $workspaceStructureLoading && remoteRepos.length === 0 && localRepos.length === 0}
@@ -187,78 +180,46 @@
         />
       {:else}
         <div class="table">
-          <span class="cell-header gh-side"></span>
-          <span class="cell-header gh-side label">
-            <Github size={15} />
-            <strong>GitHub</strong>
-          </span>
-          <span class="cell-header gh-side"></span>
-          <span class="cell-header gh-side"></span>
-          <span class="cell-header divider" aria-hidden="true"></span>
-          <span class="cell-header local-side"></span>
-          <span class="cell-header local-side label">
-            <FolderGit2 size={15} />
-            <strong>Local</strong>
-          </span>
-          <span class="cell-header local-side"></span>
-          <span class="cell-header local-side"></span>
+          <div class="col-header-row">
+            <span class="col-cell">
+              <Github size={15} />
+              <strong>GitHub</strong>
+            </span>
+            <span class="col-cell col-divider" aria-hidden="true"></span>
+            <span class="col-cell col-local">
+              <FolderGit2 size={15} />
+              <strong>Local</strong>
+            </span>
+          </div>
 
           {#each pairedGroups as group (group.owner)}
-            <div class="owner-row">
-              <span class="branch">├─</span>
-              <strong>{group.owner}</strong>
-            </div>
+            <div class="owner-row">{group.owner}</div>
 
             {#each group.entries as entry (entryKey(entry))}
-              {#if entry.remote}
-                <a
-                  class="cell branch"
-                  class:missing={!entry.remote.local_exists}
-                  href={entry.remote.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >│ ├─</a>
-                <a
-                  class="cell name"
-                  class:missing={!entry.remote.local_exists}
-                  href={entry.remote.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >{entry.remote.name}</a>
-                <a
-                  class="cell meta"
-                  class:missing={!entry.remote.local_exists}
-                  href={entry.remote.url}
-                  target="_blank"
-                  rel="noreferrer"
-                ><small>{entry.remote.local_exists ? 'mirrored' : 'missing'}</small></a>
-                <a
-                  class="cell icon"
-                  class:missing={!entry.remote.local_exists}
-                  href={entry.remote.url}
-                  target="_blank"
-                  rel="noreferrer"
-                ><ExternalLink size={13} /></a>
-              {:else}
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-              {/if}
+              <div
+                class="row"
+                class:missing={entry.remote && !entry.local}
+                class:local-only={!entry.remote}
+              >
+                {#if entry.remote}
+                  <a class="cell name gh-link" href={entry.remote.url} target="_blank" rel="noreferrer">
+                    <span class="name-text">{entry.remote.name}</span>
+                    <ExternalLink size={12} />
+                  </a>
+                {:else}
+                  <span class="cell name placeholder">Not on GitHub</span>
+                {/if}
 
-              <span class="cell divider" aria-hidden="true"></span>
+                <span class="cell divider" aria-hidden="true"></span>
 
-              {#if entry.local}
-                <span class="cell branch" class:local-only={!entry.remote}>│ ├─</span>
-                <span class="cell name" class:local-only={!entry.remote}>{repoName(entry.local.path)}</span>
-                <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
-                <span class="cell meta"><small>{badgeLabel(entry.local.badge)}</small></span>
-              {:else}
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-                <span class="cell empty"></span>
-              {/if}
+                {#if entry.local}
+                  <span class="cell name">{repoName(entry.local.path)}</span>
+                  <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
+                {:else}
+                  <span class="cell name placeholder">Not cloned locally</span>
+                  <span class="cell badge"></span>
+                {/if}
+              </div>
             {/each}
           {/each}
         </div>
@@ -330,8 +291,7 @@
   }
 
   .summary-grid span,
-  .panel-head p,
-  small {
+  .panel-head p {
     min-width: 0;
     color: var(--muted);
     overflow: hidden;
@@ -364,13 +324,6 @@
     min-width: 0;
   }
 
-  .head-icons {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    color: var(--muted);
-  }
-
   h2,
   p {
     margin: 0;
@@ -384,114 +337,132 @@
     margin-top: 3px;
   }
 
+  /* Single shared grid: every row uses subgrid so columns line up across rows. */
   .table {
     display: grid;
     grid-template-columns:
-      36px              /* GH branch    */
-      minmax(0, 1fr)    /* GH name      */
-      auto              /* GH meta      */
-      18px              /* GH ext-link  */
-      1px               /* divider      */
-      36px              /* local branch */
-      minmax(0, 1fr)    /* local name   */
-      auto              /* badge chip   */
-      auto;             /* badge label  */
-    align-items: center;
-    column-gap: 8px;
+      minmax(0, 1fr)    /* GH name */
+      1px               /* divider */
+      minmax(0, 1fr)    /* Local name */
+      110px;            /* Badge column (fixed for alignment) */
     max-height: min(720px, 70vh);
     overflow: auto;
-    padding: 0 12px 14px;
   }
 
-  .cell-header {
+  .col-header-row,
+  .row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: stretch;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .col-header-row {
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 2;
     background: var(--panel-alt);
-    border-bottom: 1px solid var(--line);
-    min-height: 34px;
+    height: 36px;
+  }
+
+  .col-cell {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--muted);
-  }
-
-  .cell-header.label strong {
-    color: var(--text);
+    padding: 0 14px;
     font-size: 13px;
+    color: var(--text);
   }
 
-  .cell-header.divider {
-    border-left: 1px solid var(--line);
-    align-self: stretch;
+  .col-cell.col-divider {
+    background: var(--line);
+    padding: 0;
+  }
+
+  .col-cell.col-local {
+    grid-column: 3 / -1;
   }
 
   .owner-row {
     grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 24px minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-    min-height: 32px;
-    padding: 8px 8px 0;
+    position: sticky;
+    top: 36px;
+    z-index: 1;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 10px 14px 8px;
     color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
-  .owner-row strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .row {
+    min-height: 40px;
+    background: var(--panel);
+  }
+
+  .row:hover {
+    background: var(--hover);
   }
 
   .cell {
-    min-height: 30px;
+    min-width: 0;
     display: flex;
     align-items: center;
-    min-width: 0;
   }
 
   .cell.name {
     overflow: hidden;
+    padding: 0 14px;
+    gap: 6px;
+    text-decoration: none;
+    color: var(--text);
+  }
+
+  .cell.name .name-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    display: block;
-    line-height: 30px;
+  }
+
+  a.cell.name {
+    color: var(--text);
+  }
+
+  a.cell.name:hover {
+    color: var(--accent);
   }
 
   .cell.divider {
+    background: var(--line);
+    padding: 0;
     align-self: stretch;
-    border-left: 1px solid var(--line);
   }
 
-  .cell.empty {
-    background: transparent;
+  .cell.badge {
+    padding: 0 14px 0 6px;
+    justify-content: flex-end;
   }
 
-  .cell.icon {
+  .cell.placeholder {
     color: var(--muted);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  a.cell {
-    color: var(--text);
-    text-decoration: none;
-  }
-
-  a.cell:hover {
-    background: var(--hover);
-  }
-
-  a.cell.missing {
+  .row.missing a.cell.name {
     color: var(--warning);
   }
 
-  .cell.local-only {
+  .row.local-only > .cell.name:nth-child(3) {
     color: var(--warning);
-  }
-
-  .branch {
-    color: var(--muted);
-    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
   }
 
   .table-empty {

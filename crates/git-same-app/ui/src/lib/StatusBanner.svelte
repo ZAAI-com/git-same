@@ -95,7 +95,7 @@
 {:else if showStale}
   <div class="banner warning">
     <AlertTriangle size={18} />
-    <span>Monitor stopped; Finder badges may not update</span>
+    <span>Monitor not running. Install or restart it to see repository status.</span>
     <button type="button" on:click={installMonitor}>Install Monitor</button>
   </div>
 {:else if showAllowExt}
