@@ -142,5 +142,5 @@ echo "========================================"
 echo "  Launching Tauri app (dev mode)"
 echo "========================================"
 echo ""
-cd "$PROJECT_DIR"
-exec "$TAURI_CLI" dev --manifest-path crates/git-same-app/Cargo.toml
+cd "$PROJECT_DIR/crates/git-same-app"
+exec "$TAURI_CLI" dev
