@@ -12,7 +12,8 @@
   "dependencies": {
     "@tauri-apps/api": "^2.9.0",
     "lucide-svelte": "^0.468.0",
-    "svelte": "^5.0.0"
+    "svelte": "^5.0.0",
+    "svelte-spa-router": "^4.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.0",
