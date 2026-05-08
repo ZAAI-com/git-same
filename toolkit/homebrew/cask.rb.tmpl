@@ -23,12 +23,12 @@ cask "git-same" do
 
   depends_on macos: ">= :ventura"
 
-  app "git-same.app"
+  app "Git-Same.app"
 
-  binary "#{appdir}/git-same.app/Contents/Helpers/git-same"
-  binary "#{appdir}/git-same.app/Contents/Helpers/git-same", target: "gitsame"
-  binary "#{appdir}/git-same.app/Contents/Helpers/git-same", target: "gitsa"
-  binary "#{appdir}/git-same.app/Contents/Helpers/git-same", target: "gisa"
+  binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same"
+  binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same", target: "gitsame"
+  binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same", target: "gitsa"
+  binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same", target: "gisa"
 
   postflight do
     legacy_plist_dst = "#{Dir.home}/Library/LaunchAgents/com.zaai.git-same.daemon.plist"
@@ -37,9 +37,9 @@ cask "git-same" do
       File.delete(legacy_plist_dst)
     end
 
-    plist_src = "#{appdir}/git-same.app/Contents/Resources/com.zaai.git-same.monitor.plist"
+    plist_src = "#{appdir}/Git-Same.app/Contents/Resources/com.zaai.git-same.monitor.plist"
     plist_dst = "#{Dir.home}/Library/LaunchAgents/com.zaai.git-same.monitor.plist"
-    monitor_binary = "#{appdir}/git-same.app/Contents/Helpers/git-same"
+    monitor_binary = "#{appdir}/Git-Same.app/Contents/Helpers/git-same"
 
     FileUtils.mkdir_p(File.dirname(plist_dst))
     rendered = File.read(plist_src).gsub("__GIT_SAME_MONITOR_BINARY__", monitor_binary)

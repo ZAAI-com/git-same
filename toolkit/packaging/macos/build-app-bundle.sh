@@ -41,7 +41,7 @@ esac
 
 TARGET="${ARCH}-apple-darwin"
 BUILD_ROOT="$OUTPUT_DIR/build-${ARCH}"
-APP="$OUTPUT_DIR/git-same.app"
+APP="$OUTPUT_DIR/Git-Same.app"
 DMG="$OUTPUT_DIR/git-same-${VERSION}-${ARCH}.dmg"
 SIGN_SCRIPT="$ROOT/toolkit/packaging/macos/sign-app-bundle.sh"
 
@@ -133,7 +133,7 @@ if command -v create-dmg >/dev/null 2>&1; then
         --volname "Git-Same ${VERSION}" \
         --window-size 540 380 \
         --icon-size 100 \
-        --icon "git-same.app" 140 190 \
+        --icon "Git-Same.app" 140 190 \
         --app-drop-link 400 190 \
         "$DMG" \
         "$APP"

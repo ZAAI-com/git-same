@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn parse_pluginkit_output_marks_enabled_extension() {
     let stdout = "+    com.zaai.git-same.Badges(3.1.0)    \
-                  /Applications/git-same.app/Contents/PlugIns/GitSameBadges.appex\n";
+                  /Applications/Git-Same.app/Contents/PlugIns/GitSameBadges.appex\n";
     let result = parse_pluginkit_output(stdout, FINDER_EXTENSION_ID);
     assert_eq!(
         result,
@@ -17,7 +17,7 @@ fn parse_pluginkit_output_marks_enabled_extension() {
 #[test]
 fn parse_pluginkit_output_marks_disabled_extension() {
     let stdout = "-    com.zaai.git-same.Badges(3.1.0)    \
-                  /Applications/git-same.app/Contents/PlugIns/GitSameBadges.appex\n";
+                  /Applications/Git-Same.app/Contents/PlugIns/GitSameBadges.appex\n";
     let result = parse_pluginkit_output(stdout, FINDER_EXTENSION_ID);
     assert_eq!(
         result,

@@ -13,7 +13,7 @@
        repository paths to compute badges. The shippable answer is
        Full Disk Access, granted by the user once via System Settings >
        Privacy & Security > Full Disk Access on first launch of
-       git-same.app. Per-workspace absolute-path entitlements would
+       Git-Same.app. Per-workspace absolute-path entitlements would
        require the user to re-sign the extension when adding a workspace,
        which is impractical without an Apple Developer ID.
 
