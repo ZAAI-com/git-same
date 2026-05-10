@@ -92,9 +92,14 @@ pub struct FinderConfig {
     #[serde(default = "default_finder_excludes")]
     pub exclude_dirs: Vec<String>,
 
-    /// Feature flag: when false, the monitor skips the ambient scan and only
-    /// workspace repos get badged (pre-change behaviour).
-    #[serde(default = "default_true")]
+    /// Feature flag: when true, the monitor adds `scan_roots` to the watched
+    /// directory set so ambient repos can be badged. Defaults to false because
+    /// the default `scan_roots = ["~"]` expands to the user's home directory,
+    /// and macOS silently refuses to deliver `requestBadgeIdentifier` calls to
+    /// FinderSync extensions whose `directoryURLs` contain the home folder —
+    /// which would suppress badges for the configured workspaces too. Opt in
+    /// only after narrowing `scan_roots` to specific subdirectories.
+    #[serde(default = "default_false")]
     pub show_ambient: bool,
 }
 
@@ -104,7 +109,7 @@ impl Default for FinderConfig {
             scan_roots: default_finder_scan_roots(),
             max_depth: default_finder_max_depth(),
             exclude_dirs: default_finder_excludes(),
-            show_ambient: true,
+            show_ambient: false,
         }
     }
 }
@@ -140,6 +145,10 @@ fn default_finder_excludes() -> Vec<String> {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
 }
 
 /// Sync mode for existing repositories.
@@ -361,11 +370,18 @@ include_forks = false
 # Show a neutral gray R-badge on every git repository found under
 # `scan_roots`, even outside a configured workspace. Right-clicking a gray
 # repo upgrades it to the normal color (green/blue/orange/red).
-show_ambient = true
+#
+# Disabled by default because the default `scan_roots = ["~"]` would put the
+# user's home folder into the FinderSync extension's watched URL set, and
+# macOS silently refuses to deliver badge requests to extensions that watch
+# the home directory — that suppresses badges everywhere, including the
+# configured workspaces. Narrow `scan_roots` to specific subdirectories
+# before enabling this.
+show_ambient = false
 
 # Roots to walk for ambient repos. "~" expands to your home directory.
-# If you change this, update the FinderSync extension entitlements
-# (macos/GitSameBadges/GitSameBadges.entitlements) and re-sign.
+# Only used when `show_ambient = true`. Don't leave this as `["~"]` if you
+# enable show_ambient — see the note above.
 scan_roots = ["~"]
 
 # Maximum directory depth for the ambient walk.

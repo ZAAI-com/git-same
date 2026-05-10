@@ -241,7 +241,7 @@ fn finder_config_defaults() {
     let cfg = FinderConfig::default();
     assert_eq!(cfg.scan_roots, vec!["~".to_string()]);
     assert_eq!(cfg.max_depth, 8);
-    assert!(cfg.show_ambient);
+    assert!(!cfg.show_ambient);
     assert!(cfg.exclude_dirs.iter().any(|s| s == "node_modules"));
     assert!(cfg.exclude_dirs.iter().any(|s| s == "target"));
 }
@@ -265,7 +265,7 @@ exclude_dirs = ["custom_skip"]
 #[test]
 fn finder_config_missing_section_uses_defaults() {
     let cfg = Config::parse("concurrency = 4").unwrap();
-    assert!(cfg.finder.show_ambient);
+    assert!(!cfg.finder.show_ambient);
     assert_eq!(cfg.finder.max_depth, 8);
 }
 
