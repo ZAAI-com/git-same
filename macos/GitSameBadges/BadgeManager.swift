@@ -11,71 +11,55 @@ enum BadgeManager {
         let controller = FIFinderSyncController.default()
 
         controller.setBadgeImage(
-            labeledBadge(text: "R", color: .systemGreen),
+            symbolBadge(symbol: "r.circle.fill", color: .systemGreen),
             label: "Synced",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.green
         )
         controller.setBadgeImage(
-            labeledBadge(text: "R", color: .systemBlue),
+            symbolBadge(symbol: "r.circle.fill", color: .systemBlue),
             label: "Has Local Config",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.blue
         )
         controller.setBadgeImage(
-            labeledBadge(text: "R", color: .systemOrange),
+            symbolBadge(symbol: "r.circle.fill", color: .systemOrange),
             label: "Partially Synced",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.orange
         )
         controller.setBadgeImage(
-            labeledBadge(text: "R", color: .systemRed),
+            symbolBadge(symbol: "r.circle.fill", color: .systemRed),
             label: "Uncommitted Changes",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.red
         )
         controller.setBadgeImage(
-            labeledBadge(text: "R", color: .systemGray),
+            symbolBadge(symbol: "r.circle.fill", color: .systemGray),
             label: "Git Repository",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.gray
         )
         controller.setBadgeImage(
-            labeledBadge(text: "O", color: .systemPurple),
+            symbolBadge(symbol: "o.circle.fill", color: .systemPurple),
             label: "Organization",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.org
         )
         controller.setBadgeImage(
-            labeledBadge(text: "U", color: .systemTeal),
+            symbolBadge(symbol: "u.circle.fill", color: .systemTeal),
             label: "User",
             forBadgeIdentifier: GitSameBadgesConstants.BadgeID.user
         )
     }
 
-    /// Rounded-rect badge with centered white text on a colored fill.
+    /// Colored SF Symbol badge.
     ///
-    /// Drawn via NSImage(size:flipped:drawingHandler:) so the image has
-    /// valid CGImage-backed pixel data in a sandboxed extension where
-    /// lockFocus produces zero-pixel layers.
-    private static func labeledBadge(text: String, color: NSColor) -> NSImage {
-        let size = NSSize(width: 64, height: 64)
-        return NSImage(size: size, flipped: false) { rect in
-            let inset: CGFloat = 4
-            let bodyRect = rect.insetBy(dx: inset, dy: inset)
-            let body = NSBezierPath(roundedRect: bodyRect, xRadius: 14, yRadius: 14)
-            color.setFill()
-            body.fill()
-            NSColor.white.withAlphaComponent(0.35).setStroke()
-            body.lineWidth = 2.0
-            body.stroke()
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 44, weight: .heavy),
-                .foregroundColor: NSColor.white,
-            ]
-            let attributed = NSAttributedString(string: text, attributes: attrs)
-            let textSize = attributed.size()
-            let origin = NSPoint(
-                x: rect.midX - textSize.width / 2,
-                y: rect.midY - textSize.height / 2
-            )
-            attributed.draw(at: origin)
-            return true
-        }
+    /// SF Symbols are system-rendered images that don't depend on any
+    /// per-process drawing context. They sidestep the macOS 26.4
+    /// FinderSync regression where both `lockFocus` and
+    /// `NSImage(size:flipped:drawingHandler:)` produce blank pixel data
+    /// inside the extension sandbox.
+    private static func symbolBadge(symbol: String, color: NSColor) -> NSImage {
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .heavy)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        return image ?? NSImage(size: NSSize(width: 16, height: 16))
     }
+
 }
