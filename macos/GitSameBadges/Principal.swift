@@ -44,20 +44,32 @@ class Principal: FIFinderSync {
             return
         }
 
-        var urls = Set<URL>()
+        var canonicalRoots: [String] = []
         // Prefer the monitor-provided monitored_roots (workspace roots ∪ ambient
         // scan roots). Fall back to the workspace+custom_folders union for
         // older monitors that predate that field.
         if let roots = status.monitoredRoots, !roots.isEmpty {
-            for root in roots {
-                urls.insert(URL(fileURLWithPath: root))
-            }
+            canonicalRoots = roots
         } else {
             for workspace in status.workspaces {
-                urls.insert(URL(fileURLWithPath: workspace.root))
+                canonicalRoots.append(workspace.root)
             }
             for folder in status.customFolders ?? [] {
-                urls.insert(URL(fileURLWithPath: folder))
+                canonicalRoots.append(folder)
+            }
+        }
+
+        // macOS lets users browse their home folder via a boot-volume alias
+        // (e.g. /Volumes/Manuel-SSD-4TB/Users/m/... -> /Users/m/...). Finder
+        // calls beginObservingDirectoryAtURL: with the alias-prefixed URL,
+        // so directoryURLs needs the alias-prefixed form too — otherwise
+        // requestBadgeIdentifier is never invoked for those windows.
+        let aliasPrefixes = bootVolumeAliasPrefixes()
+        var urls = Set<URL>()
+        for root in canonicalRoots {
+            urls.insert(URL(fileURLWithPath: root))
+            for prefix in aliasPrefixes {
+                urls.insert(URL(fileURLWithPath: prefix + root))
             }
         }
 
@@ -70,6 +82,33 @@ class Principal: FIFinderSync {
         // roots — any URL in status.json under them will get its real badge
         // before Finder's first paint request.
         prefillBadges()
+    }
+
+    /// Return `/Volumes/<name>` entries whose symlink target is `/`. macOS
+    /// creates one of these for the boot volume so Finder can show the boot
+    /// volume by name; folders browsed through that alias keep the
+    /// `/Volumes/<name>` prefix in their URL, so directoryURLs must include
+    /// every such alias-prefixed equivalent of each watched canonical root.
+    private func bootVolumeAliasPrefixes() -> [String] {
+        let fm = FileManager.default
+        let entries: [String]
+        do {
+            entries = try fm.contentsOfDirectory(atPath: "/Volumes")
+        } catch {
+            os_log("bootVolumeAliasPrefixes: cannot list /Volumes: %{public}@",
+                   log: gsbLog, type: .default, String(describing: error))
+            return []
+        }
+        var prefixes: [String] = []
+        for entry in entries {
+            let full = "/Volumes/" + entry
+            if let target = try? fm.destinationOfSymbolicLink(atPath: full), target == "/" {
+                prefixes.append(full)
+            }
+        }
+        os_log("bootVolumeAliasPrefixes: found %d prefix(es): %{public}@",
+               log: gsbLog, type: .default, prefixes.count, prefixes.joined(separator: ","))
+        return prefixes
     }
 
     // MARK: - Badge Identifiers
