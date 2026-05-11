@@ -10,6 +10,7 @@ use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::AppError;
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
+use git_same_core::macos::folder_icon;
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
 use git_same_core::setup::{authenticate_provider, discover_org_entries};
@@ -307,8 +308,13 @@ pub fn save_workspace(input: WorkspaceInput) -> Result<WorkspaceDetailDto, Strin
 
     if let Some(previous) = previous {
         if !same_path(&previous.root_path, &workspace.root_path) {
+            folder_icon::clear_or_log(&previous.root_path);
             WorkspaceManager::delete(&previous.root_path).map_err(error_string)?;
         }
+    }
+
+    if config.ui.custom_folder_icon {
+        folder_icon::set_or_log(&workspace.root_path, folder_icon::WORKSPACE_FOLDER_ICNS);
     }
 
     let collapsed = tilde_collapse_path(&workspace.root_path);
@@ -329,6 +335,7 @@ pub fn delete_workspace(workspace_id: String) -> Result<Vec<WorkspaceSummary>, S
         WorkspaceManager::resolve(Some(&workspace_id), &config).map_err(error_string)?;
     let was_default = workspace_is_default(&workspace, config.default_workspace.as_deref());
 
+    folder_icon::clear_or_log(&workspace.root_path);
     WorkspaceManager::delete(&workspace.root_path).map_err(error_string)?;
     if was_default {
         Config::save_default_workspace(None).map_err(error_string)?;

@@ -107,3 +107,37 @@ fn test_display_detailed_targets_config_only() {
     let output = Output::new(git_same_core::output::Verbosity::Quiet, false);
     display_detailed_targets(&ResetScope::ConfigOnly, &target, &output);
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_remove_workspace_dir_clears_folder_icon() {
+    use git_same_core::macos::folder_icon;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path().to_path_buf();
+
+    // Paint the workspace folder icon directly so the test doesn't depend on
+    // the full setup path.
+    folder_icon::set(&root, folder_icon::WORKSPACE_FOLDER_ICNS)
+        .expect("set icon on tempdir should succeed");
+    assert!(folder_icon::is_set(&root), "icon was not set");
+
+    // dot_dir intentionally does not exist: remove_dir_all will fail and
+    // remove_workspace_dir will return false without ever touching the
+    // global registry — but only after clear_or_log has run, which is what
+    // we're verifying.
+    let ws = WorkspaceDetail {
+        root_path: root.clone(),
+        orgs: Vec::new(),
+        last_synced: None,
+        dot_dir: root.join(".git-same-does-not-exist"),
+        cache_size: None,
+    };
+    let output = Output::new(git_same_core::output::Verbosity::Quiet, false);
+    let _ = remove_workspace_dir(&ws, &output);
+
+    assert!(
+        !folder_icon::is_set(&root),
+        "remove_workspace_dir did not clear the workspace folder icon"
+    );
+}

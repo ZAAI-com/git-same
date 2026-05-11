@@ -299,3 +299,25 @@ fn default_toml_includes_monitor_section() {
     let cfg = Config::parse(&toml).unwrap();
     assert_eq!(cfg.monitor.fullscan_interval_secs, 30);
 }
+
+#[test]
+fn ui_config_defaults_to_custom_folder_icon_on() {
+    let cfg = Config::default();
+    assert!(cfg.ui.custom_folder_icon);
+}
+
+#[test]
+fn ui_config_explicit_false_overrides_default() {
+    let content = r#"
+[ui]
+custom_folder_icon = false
+"#;
+    let cfg = Config::parse(content).unwrap();
+    assert!(!cfg.ui.custom_folder_icon);
+}
+
+#[test]
+fn ui_config_missing_section_uses_default() {
+    let cfg = Config::parse("concurrency = 4").unwrap();
+    assert!(cfg.ui.custom_folder_icon);
+}
