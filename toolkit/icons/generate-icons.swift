@@ -1,8 +1,9 @@
 #!/usr/bin/env swift
 // Generates Git-Same macOS app icon concept variants as 1024x1024 PNGs.
 //
-// Palette mirrors the TUI banner in crates/git-same-cli/src/banner.rs:
-//   blue  #3B82F6   cyan  #06B6D4   green #22C55E
+// Palette uses the macOS system colors that the Finder Badges register in
+// macos/GitSameBadges/BadgeManager.swift (.systemBlue, .systemGreen, etc.),
+// resolved to their sRGB light-mode values so PNGs stay deterministic.
 //
 // Usage: swift toolkit/icons/generate-icons.swift [--variant <name>] [--out <dir>] [--size <px>]
 //   <name> is one of: twin, sync, folder-pair, wordmark, tui-banner, all (default)
@@ -13,12 +14,18 @@ import Foundation
 
 // MARK: - Palette
 
+private func sRGB(_ c: NSColor) -> NSColor {
+    c.usingColorSpace(.sRGB) ?? c
+}
+
 struct Palette {
-    static let blue  = NSColor(srgbRed: 0x3B/255.0, green: 0x82/255.0, blue: 0xF6/255.0, alpha: 1)
-    static let cyan  = NSColor(srgbRed: 0x06/255.0, green: 0xB6/255.0, blue: 0xD4/255.0, alpha: 1)
-    static let green = NSColor(srgbRed: 0x22/255.0, green: 0xC5/255.0, blue: 0x5E/255.0, alpha: 1)
-    static let cream = NSColor(srgbRed: 0xF5/255.0, green: 0xF1/255.0, blue: 0xE8/255.0, alpha: 1)
-    static let ink   = NSColor(srgbRed: 0x0B/255.0, green: 0x1B/255.0, blue: 0x2A/255.0, alpha: 1)
+    static let blue   = sRGB(.systemBlue)    // Finder badge: Has Local Config / Org / User
+    static let green  = sRGB(.systemGreen)   // Finder badge: Synced
+    static let orange = sRGB(.systemOrange)  // Finder badge: Partially Synced
+    static let red    = sRGB(.systemRed)     // Finder badge: Uncommitted Changes
+    static let gray   = sRGB(.systemGray)    // Finder badge: Git Repository
+    static let cream  = NSColor(srgbRed: 0xF5/255.0, green: 0xF1/255.0, blue: 0xE8/255.0, alpha: 1)
+    static let ink    = NSColor(srgbRed: 0x0B/255.0, green: 0x1B/255.0, blue: 0x2A/255.0, alpha: 1)
 }
 
 let allVariants = ["twin", "sync", "folder-pair", "wordmark", "tui-banner"]
@@ -99,8 +106,8 @@ func drawGradientBackground(_ ctx: CGContext, size: CGFloat) {
     ctx.clip()
 
     let cs = CGColorSpaceCreateDeviceRGB()
-    let colors: [CGColor] = [Palette.blue.cgColor, Palette.cyan.cgColor, Palette.green.cgColor]
-    let stops: [CGFloat] = [0.0, 0.5, 1.0]
+    let colors: [CGColor] = [Palette.blue.cgColor, Palette.green.cgColor]
+    let stops: [CGFloat] = [0.0, 1.0]
     let grad = CGGradient(colorsSpace: cs, colors: colors as CFArray, locations: stops)!
     // Diagonal: top-left → bottom-right.
     ctx.drawLinearGradient(grad,
@@ -123,17 +130,20 @@ func textBounds(_ text: String, attrs: [NSAttributedString.Key: Any]) -> CGRect 
     return CTLineGetBoundsWithOptions(line, .useOpticalBounds)
 }
 
-// MARK: - Variant 1: twin
+// MARK: - Variant 1: twin (liquid glass)
 
 func drawTwin(_ ctx: CGContext, size: CGFloat) {
     drawGradientBackground(ctx, size: size)
 
-    // Two overlapping rounded-square "repo tiles".
-    let tileSide = size * 0.46
-    let r = tileSide * 0.20
+    // Two overlapping rounded-square "repo tiles", rendered as Liquid Glass:
+    // translucent panels with a top specular highlight, soft drop shadow,
+    // hairline rim stroke, and a subtle tint hinting at the badge color
+    // (green for the back/"synced" tile, blue for the front/"local config" tile).
+    let tileSide = size * 0.50
+    let r = tileSide * 0.26
     let cx = size / 2
     let cy = size / 2
-    let off = size * 0.08
+    let off = size * 0.075
 
     let backRect = CGRect(x: cx - tileSide/2 - off,
                           y: cy - tileSide/2 + off,
@@ -142,22 +152,105 @@ func drawTwin(_ ctx: CGContext, size: CGFloat) {
                            y: cy - tileSide/2 - off,
                            width: tileSide, height: tileSide)
 
-    // Back tile: cream with green tint, slight transparency to let the gradient show through.
+    drawGlassTile(ctx, rect: backRect, cornerRadius: r,
+                  tint: Palette.green, rowColor: Palette.green, size: size,
+                  excludeRect: frontRect, excludeCornerRadius: r)
+    drawGlassTile(ctx, rect: frontRect, cornerRadius: r,
+                  tint: Palette.blue, rowColor: Palette.blue, size: size,
+                  excludeRect: nil, excludeCornerRadius: 0)
+}
+
+/// Renders one Liquid Glass tile with three list rows inside.
+/// If `excludeRect` is provided, the tile's row content is clipped to the
+/// area outside that rect — used so the back tile's rows don't bleed
+/// through the front tile.
+func drawGlassTile(_ ctx: CGContext, rect: CGRect, cornerRadius r: CGFloat,
+                   tint: NSColor, rowColor: NSColor, size: CGFloat,
+                   excludeRect: CGRect?, excludeCornerRadius: CGFloat) {
+    let path = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+    let cs = CGColorSpaceCreateDeviceRGB()
+
+    // 1. Soft drop shadow under the panel.
     ctx.saveGState()
-    ctx.setFillColor(Palette.cream.withAlphaComponent(0.95).cgColor)
-    ctx.addPath(CGPath(roundedRect: backRect, cornerWidth: r, cornerHeight: r, transform: nil))
+    ctx.setShadow(offset: CGSize(width: 0, height: -size * 0.012),
+                  blur: size * 0.035,
+                  color: NSColor.black.withAlphaComponent(0.28).cgColor)
+    ctx.setFillColor(NSColor.black.withAlphaComponent(0.001).cgColor)
+    ctx.addPath(path)
     ctx.fillPath()
-    // Three list rows in green.
-    drawRepoRows(ctx, in: backRect, color: Palette.green)
     ctx.restoreGState()
 
-    // Front tile: cream, list rows in blue.
+    // 2. Glass body: translucent white with a hint of tint, clipped to the panel.
     ctx.saveGState()
-    ctx.setFillColor(Palette.cream.cgColor)
-    ctx.addPath(CGPath(roundedRect: frontRect, cornerWidth: r, cornerHeight: r, transform: nil))
-    ctx.fillPath()
-    // Subtle shadow under front tile.
-    drawRepoRows(ctx, in: frontRect, color: Palette.blue)
+    ctx.addPath(path)
+    ctx.clip()
+
+    // 2a. Base translucent fill.
+    ctx.setFillColor(NSColor.white.withAlphaComponent(0.32).cgColor)
+    ctx.fill(rect)
+
+    // 2b. Vertical glass gradient: brighter at top, slightly cooler at bottom.
+    let bodyGrad = CGGradient(colorsSpace: cs, colors: [
+        NSColor.white.withAlphaComponent(0.55).cgColor,
+        NSColor.white.withAlphaComponent(0.10).cgColor,
+    ] as CFArray, locations: [0.0, 1.0])!
+    ctx.drawLinearGradient(bodyGrad,
+                           start: CGPoint(x: rect.midX, y: rect.maxY),
+                           end:   CGPoint(x: rect.midX, y: rect.minY),
+                           options: [])
+
+    // 2c. Subtle tint band hugging the bottom edge, so the back tile reads
+    // green and the front tile reads blue without going opaque.
+    let tintGrad = CGGradient(colorsSpace: cs, colors: [
+        tint.withAlphaComponent(0.0).cgColor,
+        tint.withAlphaComponent(0.22).cgColor,
+    ] as CFArray, locations: [0.0, 1.0])!
+    ctx.drawLinearGradient(tintGrad,
+                           start: CGPoint(x: rect.midX, y: rect.maxY),
+                           end:   CGPoint(x: rect.midX, y: rect.minY),
+                           options: [])
+
+    // 2d. Top specular highlight: thin bright band along the upper edge.
+    let specHeight = rect.height * 0.18
+    let specRect = CGRect(x: rect.minX, y: rect.maxY - specHeight,
+                          width: rect.width, height: specHeight)
+    let specGrad = CGGradient(colorsSpace: cs, colors: [
+        NSColor.white.withAlphaComponent(0.65).cgColor,
+        NSColor.white.withAlphaComponent(0.0).cgColor,
+    ] as CFArray, locations: [0.0, 1.0])!
+    ctx.drawLinearGradient(specGrad,
+                           start: CGPoint(x: specRect.midX, y: specRect.maxY),
+                           end:   CGPoint(x: specRect.midX, y: specRect.minY),
+                           options: [])
+
+    // 2e. Rows on top — solid for contrast against the glass.
+    // If an exclude rect is provided, clip rows to (tileRect MINUS excludeRect)
+    // using even-odd fill so we don't paint rows beneath the front tile.
+    if let ex = excludeRect {
+        ctx.saveGState()
+        let outer = CGPath(rect: rect, transform: nil)
+        let inner = CGPath(roundedRect: ex,
+                           cornerWidth: excludeCornerRadius,
+                           cornerHeight: excludeCornerRadius,
+                           transform: nil)
+        let combined = CGMutablePath()
+        combined.addPath(outer)
+        combined.addPath(inner)
+        ctx.addPath(combined)
+        ctx.clip(using: .evenOdd)
+        drawRepoRows(ctx, in: rect, color: rowColor)
+        ctx.restoreGState()
+    } else {
+        drawRepoRows(ctx, in: rect, color: rowColor)
+    }
+    ctx.restoreGState()
+
+    // 3. Hairline rim stroke for definition.
+    ctx.saveGState()
+    ctx.addPath(path)
+    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.55).cgColor)
+    ctx.setLineWidth(size * 0.004)
+    ctx.strokePath()
     ctx.restoreGState()
 }
 
