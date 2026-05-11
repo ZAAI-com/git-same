@@ -5,7 +5,7 @@
 ██║   ██║██║   ██║╚════╝╚════██║██╔══██║██║╚██╔╝██║██╔══╝
 ╚██████╔╝██║   ██║      ███████║██║  ██║██║ ╚═╝ ██║███████╗
  ╚═════╝ ╚═╝   ╚═╝      ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝`}</pre>
-  <p class="subhead">Mirror GitHub structure /orgs/repos/ to local file system.</p>
+  <p class="subhead">Mirror GitHub /orgs/repos/ to your file system.</p>
 </div>
 
 <style>
