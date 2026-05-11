@@ -119,6 +119,20 @@ pub fn save_workspace(state: &SetupState) -> Result<()> {
     ws.orgs = state.selected_orgs();
 
     WorkspaceManager::save(&ws)?;
+
+    // Paint the Git-Same workspace folder icon onto the root so Finder marks
+    // it the way Synology Drive marks its synced folders. Failure is logged
+    // but non-fatal — the workspace is already persisted at this point and
+    // we don't want a Cocoa-level glitch to abort setup. Opt-out via
+    // `[ui] custom_folder_icon = false` in the global config.
+    let ui = Config::load().map(|c| c.ui).unwrap_or_default();
+    if ui.custom_folder_icon {
+        crate::macos::folder_icon::set_or_log(
+            &root,
+            crate::macos::folder_icon::WORKSPACE_FOLDER_ICNS,
+        );
+    }
+
     Ok(())
 }
 

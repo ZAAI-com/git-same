@@ -23,6 +23,7 @@ pub mod git;
 )]
 pub mod infra;
 pub mod ipc;
+pub mod macos;
 pub mod monitor;
 pub mod operations;
 pub mod output;

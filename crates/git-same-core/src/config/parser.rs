@@ -147,6 +147,35 @@ fn default_false() -> bool {
     false
 }
 
+fn default_true() -> bool {
+    true
+}
+
+/// UI / Finder-presentation configuration. Currently controls the macOS
+/// "paint the Git-Same logo on workspace root folders" feature, which uses
+/// `NSWorkspace.setIcon` to write an `Icon\r` resource into each workspace
+/// root so Finder shows the icon in sidebar, column, list, icon, and Get Info
+/// views (similar to how Synology Drive paints its "D" onto synced folders).
+///
+/// On non-macOS targets the flag is parsed but has no effect — the underlying
+/// API only exists on macOS.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    /// Paint the Git-Same workspace folder icon onto each workspace root on
+    /// setup and reapply it on every monitor loop. Stripped on workspace
+    /// removal (`gisa reset`). Default: true.
+    #[serde(default = "default_true")]
+    pub custom_folder_icon: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            custom_folder_icon: true,
+        }
+    }
+}
+
 /// Sync mode for existing repositories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
@@ -214,6 +243,10 @@ pub struct Config {
     /// Monitor process configuration (scan cadence, etc.).
     #[serde(default)]
     pub monitor: MonitorConfig,
+
+    /// UI / Finder-presentation configuration (custom folder icon, etc.).
+    #[serde(default)]
+    pub ui: UiConfig,
 }
 
 fn default_structure() -> String {
@@ -241,6 +274,7 @@ impl Default for Config {
             workspaces: Vec::new(),
             finder: FinderConfig::default(),
             monitor: MonitorConfig::default(),
+            ui: UiConfig::default(),
         }
     }
 }
@@ -394,6 +428,13 @@ exclude_dirs = [
 # Seconds between full rescans by the background monitor. The CLI flag
 # `gisa monitor --interval N` overrides this when set explicitly.
 fullscan_interval_secs = 30
+
+[ui]
+# Paint the Git-Same logo onto each workspace root folder so Finder shows it
+# in the sidebar, column, list, icon, and Get Info views (similar to how
+# Synology Drive marks its synced folders). Stripped automatically on
+# `gisa reset`. macOS only — the flag is parsed but ignored on Linux/Windows.
+custom_folder_icon = true
 "#
     }
 

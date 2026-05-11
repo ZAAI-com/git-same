@@ -256,6 +256,14 @@ fn execute_reset(scope: &ResetScope, target: &ResetTarget, output: &Output) -> R
 
 fn remove_workspace_dir(ws: &WorkspaceDetail, output: &Output) -> bool {
     let path_display = git_same_core::config::workspace::tilde_collapse_path(&ws.root_path);
+
+    // Strip the Git-Same custom folder icon before removing the workspace
+    // config. Reset only removes `.git-same/`, never the user's data
+    // directory, so without this the workspace root would keep showing the
+    // Git-Same logo in Finder forever — pointing at a workspace that no
+    // longer exists. Failures are logged but non-fatal.
+    git_same_core::macos::folder_icon::clear_or_log(&ws.root_path);
+
     match std::fs::remove_dir_all(&ws.dot_dir) {
         Ok(()) => {
             // Also unregister from global config

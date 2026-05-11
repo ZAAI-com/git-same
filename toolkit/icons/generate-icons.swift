@@ -6,7 +6,7 @@
 // resolved to their sRGB light-mode values so PNGs stay deterministic.
 //
 // Usage: swift toolkit/icons/generate-icons.swift [--variant <name>] [--out <dir>] [--size <px>]
-//   <name> is one of: twin, sync, folder-pair, wordmark, tui-banner, all (default)
+//   <name> is one of: twin, sync, folder-pair, folder-icon, wordmark, tui-banner, all (default)
 
 import AppKit
 import CoreGraphics
@@ -28,7 +28,7 @@ struct Palette {
     static let ink    = NSColor(srgbRed: 0x0B/255.0, green: 0x1B/255.0, blue: 0x2A/255.0, alpha: 1)
 }
 
-let allVariants = ["twin", "sync", "folder-pair", "wordmark", "tui-banner"]
+let allVariants = ["twin", "sync", "folder-pair", "folder-icon", "wordmark", "tui-banner"]
 
 // MARK: - Args
 
@@ -436,6 +436,117 @@ func drawFolder(_ ctx: CGContext, rect: CGRect, body: NSColor, tab: NSColor) {
     ctx.restoreGState()
 }
 
+// MARK: - Variant 3b: folder-icon (workspace folder, Synology-style)
+//
+// Painted onto the workspace root directory via NSWorkspace.setIcon so Finder
+// shows it in sidebar / column / list / icon views and the Get Info preview.
+// Unlike the app-icon variants, this renders on a TRANSPARENT canvas: Finder
+// expects a folder-shaped silhouette, not a squircle tile.
+//
+// Composition:
+//   - A single macOS-blue folder shape filling most of the canvas.
+//   - The twin-tiles glyph (two overlapping rounded squares, the Git-Same mark)
+//     composited onto the front face of the folder, scaled to read at 32px.
+
+func drawWorkspaceFolderIcon(_ ctx: CGContext, size: CGFloat) {
+    // 1. Folder silhouette. Centered, with breathing room top/bottom so the
+    //    tab doesn't kiss the canvas edge.
+    let folderW = size * 0.86
+    let folderH = size * 0.66
+    let folderRect = CGRect(x: (size - folderW) / 2,
+                            y: (size - folderH) / 2 - size * 0.02,
+                            width: folderW, height: folderH)
+
+    // Subtle drop shadow so the folder reads as an object on the desktop.
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -size * 0.012),
+                  blur: size * 0.030,
+                  color: NSColor.black.withAlphaComponent(0.30).cgColor)
+    ctx.setFillColor(NSColor.black.withAlphaComponent(0.001).cgColor)
+    ctx.fill(folderRect)
+    ctx.restoreGState()
+
+    // The tab + body, in macOS folder blue.
+    let folderBlue = NSColor(srgbRed: 0x4A/255.0, green: 0x90/255.0, blue: 0xD9/255.0, alpha: 1)
+    let folderBlueDark = folderBlue.blended(withFraction: 0.20, of: .black) ?? folderBlue
+    drawFolder(ctx, rect: folderRect, body: folderBlue, tab: folderBlueDark)
+
+    // 2. Twin-tiles glyph on the folder face. Smaller and centered horizontally,
+    //    biased toward the bottom of the folder body so it reads as "on the
+    //    front face" rather than crowding the tab.
+    let bodyRect = CGRect(x: folderRect.minX, y: folderRect.minY,
+                          width: folderRect.width,
+                          height: folderRect.height * 0.88)
+    let glyphScale: CGFloat = 0.62
+    let glyphSide = bodyRect.height * glyphScale
+    let glyphCX = bodyRect.midX
+    let glyphCY = bodyRect.midY - bodyRect.height * 0.04
+    let off = glyphSide * 0.15
+    let tileSide = glyphSide * 0.78
+    let r = tileSide * 0.26
+
+    let backRect = CGRect(x: glyphCX - tileSide/2 - off,
+                          y: glyphCY - tileSide/2 + off,
+                          width: tileSide, height: tileSide)
+    let frontRect = CGRect(x: glyphCX - tileSide/2 + off,
+                           y: glyphCY - tileSide/2 - off,
+                           width: tileSide, height: tileSide)
+
+    // For folder-icon use we want the tiles to read clearly against the blue
+    // folder body, so we use opaque cream + green/blue tints rather than the
+    // translucent Liquid Glass treatment used by the app icon.
+    drawSolidTile(ctx, rect: backRect, cornerRadius: r,
+                  body: Palette.green, accent: Palette.green.blended(withFraction: 0.35, of: .black) ?? Palette.green,
+                  excludeRect: frontRect, excludeCornerRadius: r)
+    drawSolidTile(ctx, rect: frontRect, cornerRadius: r,
+                  body: Palette.cream, accent: Palette.blue,
+                  excludeRect: nil, excludeCornerRadius: 0)
+}
+
+/// Opaque variant of `drawGlassTile` used by the folder-icon variant. Reads
+/// better against the saturated blue folder body than the translucent app-icon
+/// glass.
+func drawSolidTile(_ ctx: CGContext, rect: CGRect, cornerRadius r: CGFloat,
+                   body: NSColor, accent: NSColor,
+                   excludeRect: CGRect?, excludeCornerRadius: CGFloat) {
+    let path = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+
+    // Body fill.
+    ctx.saveGState()
+    ctx.addPath(path)
+    ctx.clip()
+    ctx.setFillColor(body.cgColor)
+    ctx.fill(rect)
+
+    // Repo rows, clipped away from the front tile when relevant.
+    if let ex = excludeRect {
+        ctx.saveGState()
+        let outer = CGPath(rect: rect, transform: nil)
+        let inner = CGPath(roundedRect: ex,
+                           cornerWidth: excludeCornerRadius,
+                           cornerHeight: excludeCornerRadius,
+                           transform: nil)
+        let combined = CGMutablePath()
+        combined.addPath(outer)
+        combined.addPath(inner)
+        ctx.addPath(combined)
+        ctx.clip(using: .evenOdd)
+        drawRepoRows(ctx, in: rect, color: accent)
+        ctx.restoreGState()
+    } else {
+        drawRepoRows(ctx, in: rect, color: accent)
+    }
+    ctx.restoreGState()
+
+    // Hairline rim so adjacent tiles separate cleanly.
+    ctx.saveGState()
+    ctx.addPath(path)
+    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.40).cgColor)
+    ctx.setLineWidth(max(1, rect.width * 0.014))
+    ctx.strokePath()
+    ctx.restoreGState()
+}
+
 // MARK: - Variant 4: wordmark
 
 func drawWordmark(_ ctx: CGContext, size: CGFloat) {
@@ -537,6 +648,7 @@ func renderVariant(_ name: String, size: Int) -> CGContext? {
     case "twin":         drawTwin(ctx, size: s)
     case "sync":         drawSync(ctx, size: s)
     case "folder-pair":  drawFolderPair(ctx, size: s)
+    case "folder-icon":  drawWorkspaceFolderIcon(ctx, size: s)
     case "wordmark":     drawWordmark(ctx, size: s)
     case "tui-banner":   drawTuiBanner(ctx, size: s)
     default:

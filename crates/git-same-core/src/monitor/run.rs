@@ -95,6 +95,7 @@ where
     ));
 
     let watched_roots = collect_watched_roots(config, &initial_status);
+    reapply_workspace_folder_icons(config, &initial_status);
     let shared_status = Arc::new(Mutex::new(initial_status));
 
     #[cfg(unix)]
@@ -128,6 +129,7 @@ where
                     debug!("Safety-net full scan");
                     match service.scan_all(pid) {
                         Ok(new_status) => {
+                            reapply_workspace_folder_icons(config, &new_status);
                             let mut status = shared_status.lock().expect("status mutex poisoned");
                             *status = new_status;
                             if let Err(e) = status_writer.write(&status) {
@@ -187,6 +189,7 @@ where
                 _ = tokio::time::sleep(interval) => {
                     debug!("Safety-net full scan");
                     if let Ok(new_status) = service.scan_all(pid) {
+                        reapply_workspace_folder_icons(config, &new_status);
                         let mut status = shared_status.lock().expect("status mutex poisoned");
                         *status = new_status;
                         let _ = status_writer.write(&status);
@@ -234,6 +237,26 @@ fn flush_pending(
         } else {
             debug!(repos = status.repos.len(), "Incremental status written");
         }
+    }
+}
+
+/// Idempotently repaint the Git-Same folder icon on every workspace root in
+/// `status`. Skips roots whose `Icon\r` file is already present (the normal
+/// case) so the hot path is one stat per workspace. Recovers gracefully if
+/// the user manually deleted the icon. Opt-out via
+/// `[ui] custom_folder_icon = false`.
+fn reapply_workspace_folder_icons(config: &Config, status: &FinderStatus) {
+    if !config.ui.custom_folder_icon {
+        return;
+    }
+    for ws in &status.workspaces {
+        if crate::macos::folder_icon::is_set(&ws.root) {
+            continue;
+        }
+        crate::macos::folder_icon::set_or_log(
+            &ws.root,
+            crate::macos::folder_icon::WORKSPACE_FOLDER_ICNS,
+        );
     }
 }
 
