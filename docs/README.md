@@ -48,7 +48,7 @@ brew install --cask zaai-com/tap/git-same
 brew install zaai-com/tap/git-same-cli
 ```
 
-> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The previous `brew install zaai-com/tap/git-same` formula path is deprecated on macOS and prints a notice that points at the cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
+> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
 
 <details>
 <summary>Other installation methods</summary>
