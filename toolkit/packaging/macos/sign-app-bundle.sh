@@ -101,8 +101,14 @@ security set-key-partition-list \
 
 sign_app() {
     echo "==> Signing app bundle inside-out"
+    # The helper runs the monitor LaunchAgent and reads/writes the
+    # app-group container at ~/Library/Group Containers/<APP_GROUP_ID>/.
+    # Without application-groups here macOS treats every group-container
+    # access as cross-app and shows a TCC AppData prompt attributed to
+    # "Git-Same.app".
     /usr/bin/codesign --force --options runtime --timestamp \
         --sign "$IDENTITY" \
+        --entitlements "$ROOT/crates/git-same-app/entitlements.plist" \
         "$APP_ABS/Contents/Helpers/git-same"
 
     if [ -d "$APP_ABS/Contents/PlugIns/GitSameBadges.appex" ]; then
@@ -124,6 +130,31 @@ sign_app() {
 
     /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_ABS"
     /usr/sbin/spctl --assess --type execute --verbose "$APP_ABS"
+
+    verify_helper_entitlements
+}
+
+verify_helper_entitlements() {
+    local helper="$APP_ABS/Contents/Helpers/git-same"
+    local expected_group
+    expected_group="$(/usr/libexec/PlistBuddy -c \
+        "Print :com.apple.security.application-groups:0" \
+        "$ROOT/crates/git-same-app/entitlements.plist")"
+    local actual
+    actual="$(/usr/bin/codesign -d --entitlements - "$helper" 2>&1)"
+    if ! printf '%s' "$actual" | grep -q "$expected_group"; then
+        echo "ERROR: helper binary is missing the application-groups entitlement." >&2
+        echo "  binary: $helper" >&2
+        echo "  expected group: $expected_group" >&2
+        echo "  codesign output:" >&2
+        printf '%s\n' "$actual" | sed 's/^/    /' >&2
+        echo "" >&2
+        echo "Without this entitlement the monitor LaunchAgent triggers" >&2
+        echo "a recurring \"would like to access data from other apps\" TCC" >&2
+        echo "prompt whenever it touches the group container." >&2
+        exit 1
+    fi
+    echo "OK: helper signed with application-groups=$expected_group"
 }
 
 notarize_app() {
