@@ -1,6 +1,6 @@
 <script lang="ts">
   import { RefreshCw, RotateCcw } from 'lucide-svelte';
-  import { location } from 'svelte-spa-router';
+  import { router } from 'svelte-spa-router';
   import {
     currentWorkspace,
     loadRequirements,
@@ -14,7 +14,7 @@
   } from '../stores/status';
   import { relativeTime } from './utils';
 
-  $: route = $location || '/dashboard';
+  $: route = router.location || '/dashboard';
   $: title = routeTitle(route);
   $: subtitle = routeSubtitle(route);
   $: showSync =

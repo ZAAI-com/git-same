@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { CircleDot, FolderOpen, Save, Search, Settings, Trash2 } from 'lucide-svelte';
-  import { location, push } from 'svelte-spa-router';
+  import { push, router } from 'svelte-spa-router';
   import EmptyState from '../lib/EmptyState.svelte';
   import {
     NEW_WORKSPACE_ID,
@@ -52,7 +52,7 @@
   let lastSynced: string | null = null;
   let configPath = '';
 
-  $: route = $location || '/workspace/screen';
+  $: route = router.location || '/workspace/screen';
   $: selectedId = $selectedWorkspaceId;
   $: if (selectedId !== loadedId) {
     loadedId = selectedId;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { RefreshCw } from 'lucide-svelte';
-  import { location } from 'svelte-spa-router';
+  import { router } from 'svelte-spa-router';
   import {
     currentWorkspace,
     loading,
@@ -10,7 +10,7 @@
     startSyncCurrent,
   } from '../stores/status';
 
-  $: isSettings = $location === '/settings';
+  $: isSettings = router.location === '/settings';
   $: title = isSettings ? 'Settings' : $currentWorkspace?.id ?? 'Dashboard';
   $: subtitle =
     $currentWorkspace?.root ??

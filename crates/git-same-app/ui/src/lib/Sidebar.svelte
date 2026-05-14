@@ -8,7 +8,7 @@
     Settings,
     Wrench,
   } from 'lucide-svelte';
-  import { location, push } from 'svelte-spa-router';
+  import { push, router } from 'svelte-spa-router';
   import BrandLogo from './BrandLogo.svelte';
   import NavItem from './NavItem.svelte';
   import {
@@ -17,7 +17,7 @@
     workspaces,
   } from '../stores/status';
 
-  $: path = $location || '/dashboard';
+  $: path = router.location || '/dashboard';
   $: activeTop = path === '/' ? '/dashboard' : path;
 
   function newWorkspace() {

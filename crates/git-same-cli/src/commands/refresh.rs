@@ -16,10 +16,21 @@ pub async fn run(args: &RefreshArgs, _config: &Config, output: &Output) -> Resul
 
 #[cfg(unix)]
 async fn run_impl(args: &RefreshArgs, output: &Output) -> Result<()> {
-    use git_same_core::ipc::{IpcConfig, UnixSocketClient};
+    use git_same_core::ipc::IpcConfig;
 
     let cfg = IpcConfig::default_path()?;
-    let client = UnixSocketClient::new(cfg.socket_path());
+    run_with_socket_path(args, output, cfg.socket_path()).await
+}
+
+#[cfg(unix)]
+async fn run_with_socket_path(
+    args: &RefreshArgs,
+    output: &Output,
+    socket_path: std::path::PathBuf,
+) -> Result<()> {
+    use git_same_core::ipc::UnixSocketClient;
+
+    let client = UnixSocketClient::new(socket_path);
 
     let response = match args.path.as_deref() {
         Some(p) => client.refresh(p).await,

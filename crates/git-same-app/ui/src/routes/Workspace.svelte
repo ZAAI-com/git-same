@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { CircleDot, ExternalLink, FolderGit2, Github, Settings } from 'lucide-svelte';
-  import { location, push } from 'svelte-spa-router';
+  import { CircleDot, ExternalLink, FolderGit2, GitBranch, Settings } from 'lucide-svelte';
+  import { push, router } from 'svelte-spa-router';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import {
@@ -24,7 +24,7 @@
 
   let loadedWorkspaceId = '';
 
-  $: route = $location || '/workspace';
+  $: route = router.location || '/workspace';
   $: selectedId = $selectedWorkspaceId;
   $: if (selectedId && selectedId !== NEW_WORKSPACE_ID && selectedId !== loadedWorkspaceId) {
     loadedWorkspaceId = selectedId;
@@ -182,7 +182,7 @@
         <div class="table">
           <div class="col-header-row">
             <span class="col-cell">
-              <Github size={15} />
+              <GitBranch size={15} />
               <strong>GitHub</strong>
             </span>
             <span class="col-cell col-divider" aria-hidden="true"></span>
