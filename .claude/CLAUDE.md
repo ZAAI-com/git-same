@@ -9,11 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build                        # Debug build
 cargo build --release              # Optimized release build (LTO, stripped)
-cargo test                         # Run all tests
+cargo test --all-features -- --test-threads=1 # Run CI-equivalent tests
 cargo test <test_name>             # Run a single test by name
 cargo test --test integration_test # Run only integration tests
-cargo fmt -- --check               # Check formatting
-cargo clippy -- -D warnings        # Lint (zero warnings enforced)
+cargo fmt --all -- --check         # Check formatting
+cargo clippy --all-targets --all-features -- -D warnings # Lint (zero warnings enforced)
 ```
 
 Logging is controlled via `GISA_LOG` env var (e.g., `GISA_LOG=debug cargo run -- sync`).
@@ -22,7 +22,7 @@ Logging is controlled via `GISA_LOG` env var (e.g., `GISA_LOG=debug cargo run --
 
 Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and mirrors them locally with parallel cloning and syncing.
 
-**Binary aliases:** `git-same`, `gitsame`, `gitsa`, `gisa` — all point to `src/main.rs`.
+**Binary aliases:** Cargo defines the primary `git-same` binary at `src/main.rs`. Installers create `gitsame`, `gitsa`, and `gisa` symlinks from `toolkit/packaging/binary-aliases.txt`.
 
 **Dual mode:** Running with a subcommand (`gisa sync`) uses the CLI path. Running without a subcommand (`gisa`) launches the interactive TUI.
 
@@ -98,12 +98,12 @@ All workflows are `workflow_dispatch` (manual trigger) in `.github/workflows/`:
 
 | Workflow | Purpose | Trigger |
 |----------|---------|---------|
-| `S1-Test-CI.yml` | fmt, clippy, test, build dry-run, coverage, audit | Manual dispatch |
-| `S2-Release-GitHub.yml` | Full CI + cross-compile 6 targets + GitHub Release | Manual dispatch (select tag) |
-| `S3-Publish-Homebrew.yml` | Update Homebrew tap formula | Manual dispatch (select tag) |
-| `S4-Publish-Crates.yml` | `cargo publish` to crates.io | Manual dispatch (select tag) |
+| `S1-Test-CI.yml` | fmt, clippy, tests, release build dry-run, coverage, alias drift, workflow secret-safety, audit | Manual dispatch |
+| `S2-Release-GitHub.yml` | Gated GitHub release assets for targets in `toolkit/packaging/targets.txt` (currently 4 targets) | Manual dispatch (select tag) |
+| `S3-Publish-Homebrew.yml` | Publish Homebrew cask + formula-cli | Manual dispatch (select tag) |
+| `S4-Publish-Crates.yml` | Publish crates.io package | Manual dispatch (select tag) |
 
-S2 runs all S1 jobs (test, coverage, audit) as gates before building release artifacts.
+S2 gates release asset builds on tests, coverage, alias drift, audit, and workflow secret-safety checks.
 
 ## Specs & Docs
 

@@ -61,7 +61,7 @@ cargo install git-same
 
 #### GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.1-aarch64-apple-darwin.tar.gz`).
+Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.2-aarch64-apple-darwin.tar.gz`).
 
 </details>
 
@@ -231,15 +231,11 @@ Running `git-same` without a subcommand launches the interactive terminal UI.
 
 | Screen | Purpose | Key bindings |
 |--------|---------|-------------|
-| **Dashboard** | Overview with stats, quick actions | `s`: Sync, `t`: Status, `w`: Workspaces, `?`: Settings |
-| **Workspace Selector** | Pick active workspace | `[←] [↑] [↓] [→]`: Move, `Enter`: Select, `d`: Set default, `n`: New |
-| **Init Check** | System requirements check | `Enter`: Check, `c`: Create config, `s`: Setup |
-| **Setup Wizard** | Interactive workspace configuration | Step-by-step prompts |
-| **Command Picker** | Choose operation to run | `Enter`: Run |
-| **Progress** | Live sync progress with per-repo updates | `Esc`: Back when complete |
-| **Repo Status** | Table of local repos with git status | `[←] [↑] [↓] [→]`: Move, `/`: Filter, `D`: Uncommitted, `B`: Behind, `r`: Refresh |
-| **Org Browser** | Browse discovered repos by organization | `[←] [↑] [↓] [→]`: Move |
-| **Settings** | View workspace settings | `Esc`: Back |
+| **Dashboard** | Overview with status tabs, search, and sync actions | `s`: Start sync, `p`: Show sync progress, `t`: Refresh status, `w`: Workspaces, `e`/`i`: Settings, `/`: Search repositories, `[←]`/`[→]`: Switch tabs, `[↑]`/`[↓]`: Move within tab, `Enter`: Open selected repo folder |
+| **Workspace Selector** | Pick, inspect, and create workspaces | `[←]`/`[→]` or `Tab`: Switch pane, `[↑]`/`[↓]`: Move or scroll, `Enter`: Select workspace or create new, `d`: Set default, `n`: New workspace, `c`: Expand/collapse config, `f`: Open folder |
+| **Setup Wizard** | Interactive workspace configuration | Step-by-step prompts for requirements, provider, authentication, orgs, path, and confirmation |
+| **Sync Progress** | Live sync progress and post-sync results | `p`/`Esc`: Hide or go back, `[←]`/`[→]`: Switch result filters when finished, `[↑]`/`[↓]`: Move or scroll, `a`: All, `u`: Updated, `f`: Failed, `x`: Skipped, `c`: Changelog, `h`: History, `Enter`: Expand selected repo commit detail |
+| **Settings** | View requirements and adjust run options | `Tab`/`[↑]`/`[↓]`: Move, `c`: Open config folder, `d`: Toggle dry run, `m`: Toggle fetch/pull mode, `Esc`: Back |
 
 ## Examples
 

@@ -36,7 +36,7 @@ locally for pre-publish smoke tests.
 After the GitHub release exists for the new version:
 
 ```sh
-VERSION=3.0.1
+VERSION=3.0.2
 URL_PREFIX="https://github.com/zaai-com/git-same/releases/download/${VERSION}"
 
 # Compute SHAs for the four release tarballs
