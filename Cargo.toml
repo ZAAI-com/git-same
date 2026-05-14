@@ -1,6 +1,6 @@
 [package]
 name = "git-same"
-version = "3.0.1"
+version = "3.0.2"
 edition = "2021"
 authors = ["Git-Same Contributors"]
 description = "Mirror GitHub structure /orgs/repos/ to local file system."
@@ -82,7 +82,7 @@ crossterm = { version = "0.29", optional = true }
 
 # Release tooling (optional, behind "release-tools" feature)
 clap_complete = { version = "4", optional = true }
-clap_mangen = { version = "0.2", optional = true }
+clap_mangen = { version = "0.3", optional = true }
 
 [dev-dependencies]
 # Testing

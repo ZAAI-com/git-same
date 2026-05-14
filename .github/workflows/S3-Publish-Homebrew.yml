@@ -11,7 +11,6 @@ on:
 env:
   TAP_REPO: zaai-com/homebrew-tap
   FORMULA_NAME: git-same-cli
-  FORMULA_SHIM_NAME: git-same
   CASK_NAME: git-same
 
 permissions:
@@ -43,7 +42,6 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
-          echo "deprecation_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Download release assets
         env:
@@ -71,38 +69,18 @@ jobs:
           echo "macos_x86_64=$(shasum -a 256 "$MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "macos_aarch64=$(shasum -a 256 "$MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - name: Compute source archive SHA256
-        id: src_sha
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          URL="https://github.com/zaai-com/git-same/archive/refs/tags/${TAG}.tar.gz"
-          mkdir -p src-archive
-          curl -fsSL "$URL" -o "src-archive/source.tar.gz"
-          SHA=$(shasum -a 256 src-archive/source.tar.gz | cut -d' ' -f1)
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
       - name: Render formula-cli
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           REPO_URL="https://github.com/zaai-com/git-same/releases/download/${TAG}"
           bash toolkit/homebrew/render-formula.sh \
             "${{ steps.version.outputs.version }}" \
-            --kind cli \
             --url "${REPO_URL}" \
             --sha-macos-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
             --sha-macos-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
             --sha-linux-arm   "${{ steps.sha.outputs.linux_aarch64 }}" \
             --sha-linux-intel "${{ steps.sha.outputs.linux_x86_64 }}" \
             --out formula-cli.rb
-
-      - name: Render formula deprecation shim
-        run: |
-          bash toolkit/homebrew/render-formula.sh \
-            "${{ steps.version.outputs.version }}" \
-            --kind shim \
-            --deprecation-date "${{ steps.version.outputs.deprecation_date }}" \
-            --src-sha "${{ steps.src_sha.outputs.sha }}" \
-            --out formula-shim.rb
 
       - name: Render cask
         run: |
@@ -112,12 +90,11 @@ jobs:
             --sha-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
             --out cask.rb
 
-      - name: Verify rendered cask + formulae against a temp tap
+      - name: Verify rendered cask + formula against a temp tap
         run: |
           bash toolkit/homebrew/verify-tap.sh \
             --cask cask.rb \
-            --formula-cli formula-cli.rb \
-            --formula-shim formula-shim.rb
+            --formula-cli formula-cli.rb
 
       - name: Checkout tap repository
         uses: actions/checkout@v6
@@ -131,7 +108,6 @@ jobs:
         run: |
           mkdir -p tap/Formula tap/Casks
           cp formula-cli.rb  "tap/Formula/${FORMULA_NAME}.rb"
-          cp formula-shim.rb "tap/Formula/${FORMULA_SHIM_NAME}.rb"
           cp cask.rb         "tap/Casks/${CASK_NAME}.rb"
 
       - name: Commit and push to tap
@@ -141,11 +117,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add \
             "Formula/${FORMULA_NAME}.rb" \
-            "Formula/${FORMULA_SHIM_NAME}.rb" \
             "Casks/${CASK_NAME}.rb"
           if git diff --cached --quiet; then
             echo "Cask + formula unchanged, skipping commit"
           else
-            git commit -m "Update git-same to ${{ steps.version.outputs.version }} (cask + formula-cli + shim)"
+            git commit -m "Update git-same to ${{ steps.version.outputs.version }} (cask + formula-cli)"
             git push origin HEAD
           fi

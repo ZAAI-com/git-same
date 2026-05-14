@@ -1,23 +1,15 @@
 #!/usr/bin/env bash
-# Render a git-same Homebrew Formula from one of the checked-in templates.
+# Render the git-same-cli Homebrew Formula from the checked-in template.
 #
-# Two kinds:
-#   --kind cli   Renders formula-cli.rb.tmpl  (cross-platform, signed macOS
-#                tarballs + Linux tarballs)
-#   --kind shim  Renders formula-shim.rb.tmpl (deprecation shim that points
-#                at the cli formula)
+# Cross-platform: signed macOS tarballs + Linux tarballs.
 #
-# Usage (cli):
-#   render-formula.sh VERSION --kind cli --url URL_PREFIX \
+# Usage:
+#   render-formula.sh VERSION --url URL_PREFIX \
 #                     --sha-macos-arm   <hex> --sha-macos-intel <hex> \
 #                     --sha-linux-arm   <hex> --sha-linux-intel <hex> \
 #                     [--out PATH]
 #
-# Usage (shim):
-#   render-formula.sh VERSION --kind shim --deprecation-date YYYY-MM-DD \
-#                     --src-sha <hex> [--out PATH]
-#
-# Reads:    toolkit/homebrew/formula-cli.rb.tmpl  or  formula-shim.rb.tmpl
+# Reads:    toolkit/homebrew/formula-cli.rb.tmpl
 # Writes:   stdout, or --out PATH
 #
 # Used both locally (for `brew style` + `brew install` testing against a draft
@@ -28,31 +20,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 VERSION=""
-KIND=""
 URL=""
 SHA_MAC_ARM=""
 SHA_MAC_INTEL=""
 SHA_LIN_ARM=""
 SHA_LIN_INTEL=""
-DEPRECATION_DATE=""
-SRC_SHA=""
 OUT=""
 
 usage() {
     cat <<EOF >&2
 Usage:
-  $0 VERSION --kind cli --url URL_PREFIX \\
+  $0 VERSION --url URL_PREFIX \\
        --sha-macos-arm <hex> --sha-macos-intel <hex> \\
        --sha-linux-arm <hex> --sha-linux-intel <hex> [--out PATH]
 
-  $0 VERSION --kind shim --deprecation-date YYYY-MM-DD \\
-       --src-sha <hex> [--out PATH]
-
   VERSION              Strict semver, no leading zeros, no v prefix (e.g. 3.0.1)
-  --url                URL prefix for cli kind (no trailing slash)
+  --url                URL prefix (no trailing slash)
   --sha-*              SHA256 of the tarball (64 hex chars)
-  --deprecation-date   ISO date when the shim begins emitting a warning
-  --src-sha            SHA256 of the GitHub source archive tarball
 EOF
 }
 
@@ -67,14 +51,11 @@ require_flag_value() {
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --kind)              require_flag_value "$@"; KIND="$2"; shift 2 ;;
         --url)               require_flag_value "$@"; URL="$2"; shift 2 ;;
         --sha-macos-arm)     require_flag_value "$@"; SHA_MAC_ARM="$2"; shift 2 ;;
         --sha-macos-intel)   require_flag_value "$@"; SHA_MAC_INTEL="$2"; shift 2 ;;
         --sha-linux-arm)     require_flag_value "$@"; SHA_LIN_ARM="$2"; shift 2 ;;
         --sha-linux-intel)   require_flag_value "$@"; SHA_LIN_INTEL="$2"; shift 2 ;;
-        --deprecation-date)  require_flag_value "$@"; DEPRECATION_DATE="$2"; shift 2 ;;
-        --src-sha)           require_flag_value "$@"; SRC_SHA="$2"; shift 2 ;;
         --out)               require_flag_value "$@"; OUT="$2"; shift 2 ;;
         -h|--help)           usage; exit 0 ;;
         --*)                 echo "ERROR: unknown flag $1" >&2; usage; exit 2 ;;
@@ -103,57 +84,28 @@ require_sha() {
     fi
 }
 
-case "$KIND" in
-    cli)
-        TEMPLATE="$SCRIPT_DIR/formula-cli.rb.tmpl"
-        if [ -z "$URL" ]; then
-            echo "ERROR: --url is required for --kind cli" >&2; exit 2
-        fi
-        require_sha --sha-macos-arm   "$SHA_MAC_ARM"
-        require_sha --sha-macos-intel "$SHA_MAC_INTEL"
-        require_sha --sha-linux-arm   "$SHA_LIN_ARM"
-        require_sha --sha-linux-intel "$SHA_LIN_INTEL"
-        ;;
-    shim)
-        TEMPLATE="$SCRIPT_DIR/formula-shim.rb.tmpl"
-        if [ -z "$DEPRECATION_DATE" ]; then
-            echo "ERROR: --deprecation-date is required for --kind shim" >&2; exit 2
-        fi
-        if ! [[ "$DEPRECATION_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-            echo "ERROR: --deprecation-date must be ISO date YYYY-MM-DD" >&2; exit 2
-        fi
-        require_sha --src-sha "$SRC_SHA"
-        ;;
-    "")
-        echo "ERROR: --kind is required (cli|shim)" >&2; usage; exit 2 ;;
-    *)
-        echo "ERROR: --kind must be cli or shim, got '$KIND'" >&2; exit 2 ;;
-esac
+TEMPLATE="$SCRIPT_DIR/formula-cli.rb.tmpl"
+if [ -z "$URL" ]; then
+    echo "ERROR: --url is required" >&2; exit 2
+fi
+require_sha --sha-macos-arm   "$SHA_MAC_ARM"
+require_sha --sha-macos-intel "$SHA_MAC_INTEL"
+require_sha --sha-linux-arm   "$SHA_LIN_ARM"
+require_sha --sha-linux-intel "$SHA_LIN_INTEL"
 
 if [ ! -r "$TEMPLATE" ]; then
     echo "ERROR: template not readable: $TEMPLATE" >&2
     exit 1
 fi
 
-case "$KIND" in
-    cli)
-        RENDERED="$(sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|URL_PLACEHOLDER|${URL}|g" \
-            -e "s|SHA_LINUX_X86_64_PLACEHOLDER|${SHA_LIN_INTEL}|g" \
-            -e "s|SHA_LINUX_AARCH64_PLACEHOLDER|${SHA_LIN_ARM}|g" \
-            -e "s|SHA_MACOS_X86_64_PLACEHOLDER|${SHA_MAC_INTEL}|g" \
-            -e "s|SHA_MACOS_AARCH64_PLACEHOLDER|${SHA_MAC_ARM}|g" \
-            "$TEMPLATE")"
-        ;;
-    shim)
-        RENDERED="$(sed \
-            -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
-            -e "s|DEPRECATION_DATE_PLACEHOLDER|${DEPRECATION_DATE}|g" \
-            -e "s|SOURCE_TARBALL_SHA_PLACEHOLDER|${SRC_SHA}|g" \
-            "$TEMPLATE")"
-        ;;
-esac
+RENDERED="$(sed \
+    -e "s|VERSION_PLACEHOLDER|${VERSION}|g" \
+    -e "s|URL_PLACEHOLDER|${URL}|g" \
+    -e "s|SHA_LINUX_X86_64_PLACEHOLDER|${SHA_LIN_INTEL}|g" \
+    -e "s|SHA_LINUX_AARCH64_PLACEHOLDER|${SHA_LIN_ARM}|g" \
+    -e "s|SHA_MACOS_X86_64_PLACEHOLDER|${SHA_MAC_INTEL}|g" \
+    -e "s|SHA_MACOS_AARCH64_PLACEHOLDER|${SHA_MAC_ARM}|g" \
+    "$TEMPLATE")"
 
 if [ -n "$OUT" ]; then
     printf '%s\n' "$RENDERED" > "$OUT"
