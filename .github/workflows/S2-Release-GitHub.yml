@@ -32,6 +32,9 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          prefix-key: v1-rust-no-bin
 
       - name: Check formatting
         run: cargo +${{ matrix.rust }} fmt --all -- --check
@@ -57,6 +60,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          prefix-key: v1-rust-no-bin
 
       - name: Install cargo-tarpaulin
         uses: taiki-e/install-action@v2
@@ -241,6 +247,7 @@ jobs:
     needs: [prepare-matrix]
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.prepare-matrix.outputs.matrix) }}
 
@@ -255,6 +262,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          prefix-key: v1-rust-no-bin
 
       - name: Build
         run: cargo +stable build --release --target ${{ matrix.target }}
