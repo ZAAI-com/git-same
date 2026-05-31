@@ -124,7 +124,10 @@ if [ "$SKIP_SIGNING" != "1" ]; then
     if [ "$SKIP_NOTARIZATION" = "1" ]; then
         SIGN_ARGS+=(--skip-notarization)
     fi
-    bash "$SIGN_SCRIPT" "$APP" "${SIGN_ARGS[@]}"
+    # `${arr[@]+"${arr[@]}"}` expands to nothing when the array is empty
+    # instead of tripping `set -u` on macOS's stock bash 3.2 (where a bare
+    # `"${arr[@]}"` on an empty array errors with "unbound variable").
+    bash "$SIGN_SCRIPT" "$APP" ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}
 fi
 
 echo "==> Creating DMG"
@@ -150,7 +153,7 @@ if [ "$SKIP_SIGNING" != "1" ]; then
     if [ "$SKIP_NOTARIZATION" = "1" ]; then
         SIGN_ARGS+=(--skip-notarization)
     fi
-    bash "$SIGN_SCRIPT" "$APP" "${SIGN_ARGS[@]}"
+    bash "$SIGN_SCRIPT" "$APP" ${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}
 fi
 
 shasum -a 256 "$DMG" | awk '{print $1}' > "$DMG.sha256"
