@@ -13,7 +13,11 @@
     workspaceStructureLoading,
   } from '../stores/status';
   import { formatCount, repoName } from '../lib/utils';
-  import type { FinderRepoStatus, WorkspaceStructureRepoDto } from '../lib/types';
+  import type {
+    FinderRepoStatus,
+    WorkspaceStructureDto,
+    WorkspaceStructureRepoDto,
+  } from '../lib/types';
 
   type PairEntry = {
     remote?: WorkspaceStructureRepoDto;
@@ -37,6 +41,9 @@
   $: allEntries = pairedGroups.flatMap((group) => group.entries);
   $: missingCount = allEntries.filter((entry) => entry.remote && !entry.local).length;
   $: localOnlyCount = allEntries.filter((entry) => !entry.remote).length;
+  // Reactive so the subtitle re-renders when the structure loads (a bare
+  // `{sourceLabel()}` call would only run once at init and never update).
+  $: sourceText = sourceLabel($workspaceStructure);
 
   function workspaceRepos(): FinderRepoStatus[] {
     const workspace = $currentWorkspace;
@@ -105,11 +112,26 @@
     return entry.remote?.full_name ?? entry.local?.path ?? entry.name;
   }
 
-  function sourceLabel(): string {
-    if (!$workspaceStructure) return 'No structure loaded';
-    if ($workspaceStructure.source === 'cache') return 'GitHub structure from cache';
-    if ($workspaceStructure.source === 'remote') return 'GitHub structure from remote';
+  function sourceLabel(structure: WorkspaceStructureDto | null): string {
+    if (!structure) return 'No structure loaded';
+    if (structure.source === 'remote') return 'GitHub structure · live';
+    if (structure.source === 'cache') {
+      const age = cacheAgeLabel(structure.cache_age_secs);
+      return age ? `GitHub structure · cached ${age}` : 'GitHub structure · cached';
+    }
+    // source === 'unavailable': repos may still be served from cache.
+    if (structure.repos.length > 0) return 'GitHub structure · cached (offline)';
     return 'GitHub structure unavailable';
+  }
+
+  function cacheAgeLabel(secs: number | null): string {
+    if (secs == null || secs < 0) return '';
+    if (secs < 60) return 'just now';
+    const minutes = Math.floor(secs / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
   }
 </script>
 
@@ -143,7 +165,7 @@
     <section class="summary-grid">
       <article>
         <strong>{formatCount(remoteRepos.length, 'GitHub repo')}</strong>
-        <span>{sourceLabel()}</span>
+        <span>{sourceText}</span>
       </article>
       <article>
         <strong>{formatCount(localRepos.length, 'local repo')}</strong>
@@ -204,10 +226,10 @@
                 {#if entry.remote}
                   <a class="cell name gh-link" href={entry.remote.url} target="_blank" rel="noreferrer">
                     <span class="name-text">{entry.remote.name}</span>
-                    <ExternalLink size={12} />
+                    <ExternalLink class="gh-ext" size={12} />
                   </a>
                 {:else}
-                  <span class="cell name placeholder">Not on GitHub</span>
+                  <span class="cell name placeholder" title="Not on GitHub" aria-label="Not on GitHub">·</span>
                 {/if}
 
                 <span class="cell divider" aria-hidden="true"></span>
@@ -216,7 +238,7 @@
                   <span class="cell name">{repoName(entry.local.path)}</span>
                   <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
                 {:else}
-                  <span class="cell name placeholder">Not cloned locally</span>
+                  <span class="cell name placeholder" title="Not cloned locally" aria-label="Not cloned locally">·</span>
                   <span class="cell badge"></span>
                 {/if}
               </div>
@@ -391,7 +413,7 @@
     z-index: 1;
     background: var(--panel);
     border-bottom: 1px solid var(--line);
-    padding: 10px 14px 8px;
+    padding: 7px 14px 6px;
     color: var(--accent);
     font-weight: 700;
     font-size: 12px;
@@ -400,7 +422,7 @@
   }
 
   .row {
-    min-height: 40px;
+    min-height: 32px;
     background: var(--panel);
   }
 
@@ -451,10 +473,20 @@
 
   .cell.placeholder {
     color: var(--muted);
-    font-style: italic;
+    opacity: 0.55;
+    justify-content: center;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  /* External-link glyph stays hidden until the row is hovered or focused. */
+  .gh-link :global(.gh-ext) {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .row:hover .gh-link :global(.gh-ext),
+  .gh-link:focus-visible :global(.gh-ext) {
+    opacity: 0.7;
   }
 
   .row.missing a.cell.name {
