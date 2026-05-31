@@ -213,6 +213,7 @@ export interface FinderStatus {
   repos: FinderRepoStatus[];
   org_folders?: OrgFolderInfo[];
   monitored_roots?: string[];
+  boot_volume_aliases?: string[];
 }
 
 export interface StatusSnapshot {

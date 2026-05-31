@@ -120,6 +120,12 @@ struct FinderStatus: Codable {
     /// this as `FIFinderSyncController.directoryURLs` so Finder knows which
     /// folders to ask about.
     let monitoredRoots: [String]?
+    /// `/Volumes/<name>` boot-volume-alias prefixes computed by the monitor.
+    /// The extension uses these as pure-string prefixes to map alias-presented
+    /// Finder paths back to canonical keys, so it never calls
+    /// `resolvingSymlinksInPath()` and never touches the disk outside its
+    /// app-group container.
+    let bootVolumeAliases: [String]?
 
     enum CodingKeys: String, CodingKey {
         case version, timestamp
@@ -129,5 +135,6 @@ struct FinderStatus: Codable {
         case repos
         case orgFolders = "org_folders"
         case monitoredRoots = "monitored_roots"
+        case bootVolumeAliases = "boot_volume_aliases"
     }
 }

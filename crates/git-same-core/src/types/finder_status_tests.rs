@@ -144,6 +144,30 @@ fn test_finder_status_serialization() {
 }
 
 #[test]
+fn test_boot_volume_aliases_serialization() {
+    // Empty: the key is omitted entirely (skip_serializing_if).
+    let mut status = FinderStatus::new(1, "t".to_string());
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(
+        !json.contains("boot_volume_aliases"),
+        "empty aliases must be omitted, got: {json}"
+    );
+
+    // Populated: the key appears and round-trips.
+    status.boot_volume_aliases = vec!["/Volumes/Macintosh-HD".to_string()];
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(json.contains("\"boot_volume_aliases\":[\"/Volumes/Macintosh-HD\"]"));
+    let parsed: FinderStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.boot_volume_aliases, status.boot_volume_aliases);
+
+    // Missing key in input deserializes to an empty vec (serde default), so
+    // status files written by older monitors stay compatible.
+    let legacy = r#"{"version":1,"timestamp":"t","daemon_pid":1,"workspaces":[],"repos":[]}"#;
+    let parsed: FinderStatus = serde_json::from_str(legacy).unwrap();
+    assert!(parsed.boot_volume_aliases.is_empty());
+}
+
+#[test]
 fn test_finder_repo_status_serialization() {
     let repo = FinderRepoStatus {
         path: PathBuf::from("/repos/org/repo"),

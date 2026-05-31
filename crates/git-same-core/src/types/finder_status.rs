@@ -145,6 +145,15 @@ pub struct FinderStatus {
     /// so Finder knows which folders to ask about.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub monitored_roots: Vec<PathBuf>,
+    /// `/Volumes/<name>` prefixes whose symlink target is `/` (boot-volume
+    /// aliases). Finder presents home-folder paths through these aliases
+    /// (e.g. `/Volumes/Macintosh-HD/Users/m/...`). The sandboxed FinderSync
+    /// extension uses them as pure-string prefixes to map alias-presented
+    /// paths back to the canonical keys in `repos`/`org_folders`, so it never
+    /// has to call `resolvingSymlinksInPath()` and reach outside its sandbox
+    /// container.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boot_volume_aliases: Vec<String>,
 }
 
 impl FinderStatus {
@@ -162,6 +171,7 @@ impl FinderStatus {
             repos: Vec::new(),
             org_folders: Vec::new(),
             monitored_roots: Vec::new(),
+            boot_volume_aliases: Vec::new(),
         }
     }
 }

@@ -227,3 +227,25 @@ fn ambient_upgrade_cache_preserves_semantic_color() {
     assert_eq!(emitted.badge, Badge::Green);
     assert_eq!(emitted.commit_count, 42);
 }
+
+#[test]
+fn test_detect_boot_volume_aliases_invariants() {
+    // Environment-independent: on CI there may be no boot-volume alias, on a
+    // Mac there is usually exactly one. Either way the reader must never panic
+    // and every entry must be a non-duplicate `/Volumes/<name>` prefix whose
+    // symlink really resolves to `/`.
+    let aliases = detect_boot_volume_aliases();
+    let mut seen = std::collections::HashSet::new();
+    for alias in &aliases {
+        assert!(
+            alias.starts_with("/Volumes/"),
+            "alias must be under /Volumes: {alias}"
+        );
+        assert!(seen.insert(alias.clone()), "duplicate alias: {alias}");
+        assert_eq!(
+            std::fs::read_link(alias).ok(),
+            Some(std::path::PathBuf::from("/")),
+            "alias must be a symlink to /: {alias}"
+        );
+    }
+}

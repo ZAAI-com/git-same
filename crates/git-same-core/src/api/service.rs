@@ -177,6 +177,12 @@ impl<'a> RepoScanService<'a> {
     /// Monitored roots = workspace roots ∪ `finder.scan_roots`. The extension
     /// uses this union as its `FIFinderSyncController.directoryURLs`.
     fn populate_ambient(&self, status: &mut FinderStatus) {
+        // Publish boot-volume aliases so the sandboxed extension can map
+        // alias-presented Finder paths to canonical keys with pure string
+        // ops (no filesystem access). Always set, independent of ambient
+        // mode, since workspace roots can also be browsed through the alias.
+        status.boot_volume_aliases = detect_boot_volume_aliases();
+
         // Always publish workspace roots so the extension can register them.
         for ws in &status.workspaces {
             if !status.monitored_roots.contains(&ws.root) {
@@ -467,6 +473,35 @@ impl<'a> RepoScanService<'a> {
         let has_any = !important.is_empty();
         (has_any, important)
     }
+}
+
+/// Detect boot-volume aliases: `/Volumes/<name>` entries that are symlinks
+/// pointing at the root volume `/`. macOS auto-creates one of these so Finder
+/// can show the boot volume by name; folders browsed through it keep the
+/// `/Volumes/<name>` prefix in their URL. The monitor (non-sandboxed) reads
+/// `/Volumes` and publishes the prefixes so the sandboxed extension can do
+/// alias→canonical mapping with pure string ops instead of touching the disk.
+///
+/// Returns an empty vec on any I/O error (the common no-alias case).
+fn detect_boot_volume_aliases() -> Vec<String> {
+    let entries = match std::fs::read_dir("/Volumes") {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+    let mut aliases = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Only symlinks whose target is exactly the root volume "/".
+        match std::fs::read_link(&path) {
+            Ok(target) if target == Path::new("/") => {
+                if let Some(s) = path.to_str() {
+                    aliases.push(s.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    aliases
 }
 
 #[cfg(test)]

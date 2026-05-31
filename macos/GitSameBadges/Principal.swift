@@ -63,8 +63,11 @@ class Principal: FIFinderSync {
         // (e.g. /Volumes/Manuel-SSD-4TB/Users/m/... -> /Users/m/...). Finder
         // calls beginObservingDirectoryAtURL: with the alias-prefixed URL,
         // so directoryURLs needs the alias-prefixed form too — otherwise
-        // requestBadgeIdentifier is never invoked for those windows.
-        let aliasPrefixes = bootVolumeAliasPrefixes()
+        // requestBadgeIdentifier is never invoked for those windows. The
+        // monitor (non-sandboxed) computes these prefixes and ships them in
+        // status.json, so this sandboxed extension never enumerates /Volumes
+        // itself and never touches the disk outside its container.
+        let aliasPrefixes = status.bootVolumeAliases ?? []
         var urls = Set<URL>()
         for root in canonicalRoots {
             urls.insert(URL(fileURLWithPath: root))
@@ -84,38 +87,30 @@ class Principal: FIFinderSync {
         prefillBadges()
     }
 
-    /// Return `/Volumes/<name>` entries whose symlink target is `/`. macOS
-    /// creates one of these for the boot volume so Finder can show the boot
-    /// volume by name; folders browsed through that alias keep the
-    /// `/Volumes/<name>` prefix in their URL, so directoryURLs must include
-    /// every such alias-prefixed equivalent of each watched canonical root.
-    private func bootVolumeAliasPrefixes() -> [String] {
-        let fm = FileManager.default
-        let entries: [String]
-        do {
-            entries = try fm.contentsOfDirectory(atPath: "/Volumes")
-        } catch {
-            os_log("bootVolumeAliasPrefixes: cannot list /Volumes: %{public}@",
-                   log: gsbLog, type: .default, String(describing: error))
-            return []
-        }
-        var prefixes: [String] = []
-        for entry in entries {
-            let full = "/Volumes/" + entry
-            if let target = try? fm.destinationOfSymbolicLink(atPath: full), target == "/" {
-                prefixes.append(full)
+    /// Map an alias-presented path back to its canonical form using pure
+    /// string operations — no filesystem access, so this sandboxed extension
+    /// never reaches outside its container (which is what triggered the
+    /// "access data from other apps" TCC prompt). For each boot-volume-alias
+    /// prefix `/Volumes/<name>` (whose target is `/`), a path like
+    /// `/Volumes/<name>/Users/m/x` becomes `/Users/m/x`. Paths that carry no
+    /// known alias prefix are returned unchanged.
+    private func canonicalFromAlias(_ path: String) -> String {
+        for prefix in statusReader.currentStatus?.bootVolumeAliases ?? [] {
+            if path == prefix {
+                return "/"
+            }
+            if path.hasPrefix(prefix + "/") {
+                return String(path.dropFirst(prefix.count))
             }
         }
-        os_log("bootVolumeAliasPrefixes: found %d prefix(es): %{public}@",
-               log: gsbLog, type: .default, prefixes.count, prefixes.joined(separator: ","))
-        return prefixes
+        return path
     }
 
     // MARK: - Badge Identifiers
 
     override func requestBadgeIdentifier(for url: URL) {
         let path = url.path
-        let resolved = url.resolvingSymlinksInPath().path
+        let resolved = canonicalFromAlias(path)
         let controller = FIFinderSyncController.default()
 
         if let orgFolder = orgFolderLookup(path: path, resolved: resolved) {
@@ -137,8 +132,8 @@ class Principal: FIFinderSync {
         requestRefresh(path: resolved)
     }
 
-    /// Look up a repo status under both the raw URL path and the symlink-
-    /// resolved path. Needed because Finder may present folders reached
+    /// Look up a repo status under both the raw URL path and the
+    /// alias-normalized path. Needed because Finder may present folders reached
     /// through volume aliases (e.g. /Volumes/Manuel-SSD-4TB -> /) with the
     /// alias prefix, while the monitor writes canonical paths to status.json.
     private func repoLookup(path: String, resolved: String) -> FinderRepoStatus? {
@@ -223,7 +218,7 @@ class Principal: FIFinderSync {
         }
 
         let path = targetURL.path
-        let resolved = targetURL.resolvingSymlinksInPath().path
+        let resolved = canonicalFromAlias(path)
         let status = statusReader.currentStatus
         let timestamp = status?.timestamp
 
