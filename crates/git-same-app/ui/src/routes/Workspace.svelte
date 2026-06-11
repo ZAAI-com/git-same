@@ -1,5 +1,15 @@
 <script lang="ts">
-  import { CircleDot, ExternalLink, FolderGit2, GitBranch, Settings } from 'lucide-svelte';
+  import {
+    ArrowLeft,
+    ArrowRight,
+    CircleDot,
+    ExternalLink,
+    FolderGit2,
+    GitBranch,
+    Link,
+    Search,
+    Settings,
+  } from 'lucide-svelte';
   import { push, router } from 'svelte-spa-router';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
@@ -44,6 +54,10 @@
   // Reactive so the subtitle re-renders when the structure loads (a bare
   // `{sourceLabel()}` call would only run once at init and never update).
   $: sourceText = sourceLabel($workspaceStructure);
+
+  let filter = '';
+  $: visibleGroups = applyFilter(pairedGroups, filter);
+  $: matchedCount = allEntries.length - missingCount - localOnlyCount;
 
   function workspaceRepos(): FinderRepoStatus[] {
     const workspace = $currentWorkspace;
@@ -110,6 +124,30 @@
 
   function entryKey(entry: PairEntry): string {
     return entry.remote?.full_name ?? entry.local?.path ?? entry.name;
+  }
+
+  function entryStatus(entry: PairEntry): 'matched' | 'missing' | 'local-only' {
+    if (!entry.remote) return 'local-only';
+    if (!entry.local) return 'missing';
+    return 'matched';
+  }
+
+  function applyFilter(groups: OwnerGroup[], term: string): OwnerGroup[] {
+    const needle = term.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups
+      .map((group) => ({
+        owner: group.owner,
+        entries: group.entries.filter((entry) => entryMatches(entry, needle)),
+      }))
+      .filter((group) => group.entries.length > 0);
+  }
+
+  function entryMatches(entry: PairEntry, needle: string): boolean {
+    if (entry.name.toLowerCase().includes(needle)) return true;
+    if (entry.remote?.full_name.toLowerCase().includes(needle)) return true;
+    if (entry.local && repoName(entry.local.path).toLowerCase().includes(needle)) return true;
+    return false;
   }
 
   function sourceLabel(structure: WorkspaceStructureDto | null): string {
@@ -189,8 +227,14 @@
       <div class="panel-head">
         <div class="panel-head-text">
           <h2>Repositories</h2>
-          <p>{$workspaceStructure?.host ?? 'github.com'} · {$currentWorkspace.root}</p>
+          <p>
+            {$workspaceStructure?.host ?? 'github.com'} · {matchedCount} paired · {$currentWorkspace.root}
+          </p>
         </div>
+        <label class="search" aria-label="Filter repositories">
+          <Search size={15} />
+          <input type="text" placeholder="Filter repos…" bind:value={filter} />
+        </label>
       </div>
 
       {#if $workspaceStructureLoading && remoteRepos.length === 0 && localRepos.length === 0}
@@ -207,43 +251,60 @@
               <GitBranch size={15} />
               <strong>GitHub</strong>
             </span>
-            <span class="col-cell col-divider" aria-hidden="true"></span>
+            <span class="col-cell col-status" aria-hidden="true"></span>
             <span class="col-cell col-local">
               <FolderGit2 size={15} />
               <strong>Local</strong>
             </span>
           </div>
 
-          {#each pairedGroups as group (group.owner)}
-            <div class="owner-row">{group.owner}</div>
-
-            {#each group.entries as entry (entryKey(entry))}
-              <div
-                class="row"
-                class:missing={entry.remote && !entry.local}
-                class:local-only={!entry.remote}
-              >
-                {#if entry.remote}
-                  <a class="cell name gh-link" href={entry.remote.url} target="_blank" rel="noreferrer">
-                    <span class="name-text">{entry.remote.name}</span>
-                    <ExternalLink class="gh-ext" size={12} />
-                  </a>
-                {:else}
-                  <span class="cell name placeholder" title="Not on GitHub" aria-label="Not on GitHub">·</span>
-                {/if}
-
-                <span class="cell divider" aria-hidden="true"></span>
-
-                {#if entry.local}
-                  <span class="cell name">{repoName(entry.local.path)}</span>
-                  <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
-                {:else}
-                  <span class="cell name placeholder" title="Not cloned locally" aria-label="Not cloned locally">·</span>
-                  <span class="cell badge"></span>
-                {/if}
+          {#if visibleGroups.length === 0}
+            <div class="table-note">No repositories match “{filter}”.</div>
+          {:else}
+            {#each visibleGroups as group (group.owner)}
+              <div class="owner-row">
+                <span>{group.owner}</span>
+                <small>{formatCount(group.entries.length, 'repo')}</small>
               </div>
+
+              {#each group.entries as entry, i (entryKey(entry))}
+                {@const status = entryStatus(entry)}
+                <div
+                  class="row"
+                  class:alt={i % 2 === 1}
+                  class:missing={status === 'missing'}
+                  class:local-only={status === 'local-only'}
+                >
+                  {#if entry.remote}
+                    <a class="cell name gh-link" href={entry.remote.url} target="_blank" rel="noreferrer">
+                      <span class="name-text">{entry.remote.name}</span>
+                      <ExternalLink class="gh-ext" size={12} />
+                    </a>
+                  {:else}
+                    <span class="cell name ghost">not on GitHub</span>
+                  {/if}
+
+                  <span class="cell status" aria-hidden="true">
+                    {#if status === 'matched'}
+                      <Link size={12} />
+                    {:else if status === 'missing'}
+                      <ArrowRight size={14} />
+                    {:else}
+                      <ArrowLeft size={14} />
+                    {/if}
+                  </span>
+
+                  {#if entry.local}
+                    <span class="cell name">{repoName(entry.local.path)}</span>
+                    <span class="cell badge"><BadgeChip badge={entry.local.badge} /></span>
+                  {:else}
+                    <span class="cell name ghost">missing locally</span>
+                    <span class="cell badge"></span>
+                  {/if}
+                </div>
+              {/each}
             {/each}
-          {/each}
+          {/if}
         </div>
       {/if}
     </section>
@@ -343,7 +404,35 @@
   }
 
   .panel-head-text {
+    flex: 1 1 auto;
     min-width: 0;
+  }
+
+  .search {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel);
+    color: var(--muted);
+  }
+
+  .search input {
+    width: 170px;
+    max-width: 40vw;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+  }
+
+  .search input::placeholder {
+    color: var(--muted);
   }
 
   h2,
@@ -364,9 +453,9 @@
     display: grid;
     grid-template-columns:
       minmax(0, 1fr)    /* GH name */
-      1px               /* divider */
+      44px              /* status gutter (seam between the two panels) */
       minmax(0, 1fr)    /* Local name */
-      110px;            /* Badge column (fixed for alignment) */
+      104px;            /* Badge column (fixed for alignment) */
     max-height: min(720px, 70vh);
     overflow: auto;
   }
@@ -397,9 +486,10 @@
     color: var(--text);
   }
 
-  .col-cell.col-divider {
-    background: var(--line);
+  .col-cell.col-status {
     padding: 0;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
   }
 
   .col-cell.col-local {
@@ -411,9 +501,14 @@
     position: sticky;
     top: 36px;
     z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
     background: var(--panel);
     border-bottom: 1px solid var(--line);
-    padding: 7px 14px 6px;
+    border-left: 3px solid var(--accent);
+    padding: 7px 14px 6px 11px;
     color: var(--accent);
     font-weight: 700;
     font-size: 12px;
@@ -421,9 +516,20 @@
     text-transform: uppercase;
   }
 
+  .owner-row small {
+    color: var(--muted);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
   .row {
     min-height: 32px;
     background: var(--panel);
+  }
+
+  .row.alt {
+    background: var(--panel-alt);
   }
 
   .row:hover {
@@ -460,10 +566,17 @@
     color: var(--accent);
   }
 
-  .cell.divider {
-    background: var(--line);
-    padding: 0;
+  .cell.status {
+    justify-content: center;
     align-self: stretch;
+    color: var(--muted);
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+
+  .row.missing .cell.status,
+  .row.local-only .cell.status {
+    color: var(--warning);
   }
 
   .cell.badge {
@@ -471,11 +584,13 @@
     justify-content: flex-end;
   }
 
-  .cell.placeholder {
+  .cell.ghost {
     color: var(--muted);
-    opacity: 0.55;
-    justify-content: center;
+    opacity: 0.6;
+    font-style: italic;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* External-link glyph stays hidden until the row is hovered or focused. */
@@ -500,6 +615,13 @@
   .table-empty {
     padding: 20px;
     color: var(--muted);
+  }
+
+  .table-note {
+    grid-column: 1 / -1;
+    padding: 18px 14px;
+    color: var(--muted);
+    text-align: center;
   }
 
   @media (max-width: 980px) {
