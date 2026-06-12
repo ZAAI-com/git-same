@@ -150,7 +150,7 @@ jobs:
         run: cargo +stable tarpaulin --all-features --workspace --timeout 120 --out xml --engine llvm
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           fail_ci_if_error: false
