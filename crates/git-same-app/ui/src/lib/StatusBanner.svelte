@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-svelte';
+  import { AlertTriangle, CheckCircle2, Info, X } from '@lucide/svelte';
   import {
     errorMessage,
     extensionStatus,

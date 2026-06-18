@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, CheckCircle2, FolderGit2, RefreshCw } from 'lucide-svelte';
+  import { AlertTriangle, CheckCircle2, FolderGit2, RefreshCw } from '@lucide/svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import {

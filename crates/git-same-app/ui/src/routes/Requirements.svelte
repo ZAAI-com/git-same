@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AlertTriangle, CheckCircle2, ExternalLink, FilePlus2, Play, RotateCcw } from 'lucide-svelte';
+  import { AlertTriangle, CheckCircle2, ExternalLink, FilePlus2, Play, RotateCcw } from '@lucide/svelte';
   import {
     createDefaultConfig,
     installMonitor,

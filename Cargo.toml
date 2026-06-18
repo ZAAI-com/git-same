@@ -38,7 +38,7 @@ clap_mangen = "0.3"
 tokio-test = "0.4"
 mockito = "1"
 tempfile = "3"
-notify = "6"
+notify = "8"
 
 [profile.release]
 strip = true

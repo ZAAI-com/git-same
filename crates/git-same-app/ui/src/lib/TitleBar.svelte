@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RefreshCw, RotateCcw } from 'lucide-svelte';
+  import { RefreshCw, RotateCcw } from '@lucide/svelte';
   import { router } from 'svelte-spa-router';
   import {
     currentWorkspace,

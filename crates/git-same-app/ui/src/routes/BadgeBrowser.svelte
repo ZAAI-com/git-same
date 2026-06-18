@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Search, X } from 'lucide-svelte';
+  import { Search, X } from '@lucide/svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import { snapshot, workspaces } from '../stores/status';

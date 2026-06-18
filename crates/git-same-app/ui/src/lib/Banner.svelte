@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { AlertTriangle, Info } from 'lucide-svelte';
+  import { AlertTriangle, Info } from '@lucide/svelte';
   import {
     errorMessage,
     extensionStatus,

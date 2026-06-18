@@ -6,7 +6,7 @@
     FolderSearch,
     Info,
     Play,
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import { extensionStatus, installMonitor, restartMonitor, snapshot, workspaces } from '../stores/status';

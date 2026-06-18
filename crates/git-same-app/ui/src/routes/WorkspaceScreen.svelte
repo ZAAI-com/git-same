@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { CircleDot, FolderOpen, Save, Search, Settings, Trash2 } from 'lucide-svelte';
+  import { CircleDot, FolderOpen, Save, Search, Settings, Trash2 } from '@lucide/svelte';
   import { push, router } from 'svelte-spa-router';
   import EmptyState from '../lib/EmptyState.svelte';
   import {

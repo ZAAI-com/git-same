@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RotateCcw, Save } from 'lucide-svelte';
+  import { RotateCcw, Save } from '@lucide/svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import {
     appConfig,

@@ -7,7 +7,7 @@
     Plus,
     Settings,
     Wrench,
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
   import { push, router } from 'svelte-spa-router';
   import BrandLogo from './BrandLogo.svelte';
   import NavItem from './NavItem.svelte';

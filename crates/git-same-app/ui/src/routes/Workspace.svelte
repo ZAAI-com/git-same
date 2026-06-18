@@ -9,7 +9,7 @@
     Link,
     Search,
     Settings,
-  } from 'lucide-svelte';
+  } from '@lucide/svelte';
   import { push, router } from 'svelte-spa-router';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';

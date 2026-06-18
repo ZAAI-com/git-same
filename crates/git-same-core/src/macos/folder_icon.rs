@@ -91,7 +91,7 @@ pub fn clear_or_log(path: &Path) {
 #[cfg(target_os = "macos")]
 mod imp {
     use super::{AppError, Path, Result};
-    use objc2::ClassType;
+    use objc2::AnyThread;
     use objc2_app_kit::{NSImage, NSWorkspace, NSWorkspaceIconCreationOptions};
     use objc2_foundation::{NSData, NSString};
 
@@ -136,16 +136,14 @@ mod imp {
                 None => None,
             };
 
-            let workspace = unsafe { NSWorkspace::sharedWorkspace() };
+            let workspace = NSWorkspace::sharedWorkspace();
             // setIcon:forFile:options: returns BOOL. We honor `false` as a
             // soft failure so callers see a clear error.
-            let ok = unsafe {
-                workspace.setIcon_forFile_options(
-                    image.as_deref(),
-                    &ns_path,
-                    NSWorkspaceIconCreationOptions(0),
-                )
-            };
+            let ok = workspace.setIcon_forFile_options(
+                image.as_deref(),
+                &ns_path,
+                NSWorkspaceIconCreationOptions(0),
+            );
             if !ok {
                 return Err(AppError::config(format!(
                     "NSWorkspace.setIcon returned false for {}",
