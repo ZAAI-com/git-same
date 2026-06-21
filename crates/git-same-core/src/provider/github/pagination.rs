@@ -154,6 +154,17 @@ pub async fn fetch_all_pages<T: DeserializeOwned>(
                             if retry_count < MAX_RETRIES && fits_budget {
                                 retry_count += 1;
                                 tokio::time::sleep(wait_with_buffer).await;
+                                // The sleep can overrun its budget (scheduler
+                                // delay, system suspend); bail immediately
+                                // rather than issue a request already past the
+                                // deadline.
+                                if Instant::now() >= deadline {
+                                    return Err(ProviderError::Network(format!(
+                                        "Pagination exceeded {}s budget for '{}'",
+                                        PAGINATION_DEADLINE.as_secs(),
+                                        initial_url
+                                    )));
+                                }
                                 continue; // Retry the request
                             }
                         }

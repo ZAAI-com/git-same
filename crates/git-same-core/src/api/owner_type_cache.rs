@@ -32,14 +32,22 @@ impl OwnerTypeCache {
     }
 
     /// Returns the cached owner type, or `None` if not yet classified.
+    ///
+    /// Recovers from a poisoned mutex (a prior panic while holding the lock)
+    /// rather than giving up: the cache holds best-effort classifications, so
+    /// the stored data is still safe to read.
     pub fn get(&self, name: &str) -> Option<OwnerType> {
-        self.inner.lock().ok()?.get(name).copied()
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(name)
+            .copied()
     }
 
     /// Inserts or updates a cache entry and persists to disk.
     pub fn set(&self, name: &str, owner_type: OwnerType) -> Result<()> {
         {
-            let mut guard = self.inner.lock().unwrap();
+            let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             guard.insert(name.to_string(), owner_type);
         }
         self.persist()
@@ -47,7 +55,7 @@ impl OwnerTypeCache {
 
     /// Names with no entry in the cache (targets for classification).
     pub fn missing<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         names
             .into_iter()
             .filter(|n| !guard.contains_key(*n))
@@ -59,7 +67,8 @@ impl OwnerTypeCache {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let snapshot: HashMap<String, OwnerType> = self.inner.lock().unwrap().clone();
+        let snapshot: HashMap<String, OwnerType> =
+            self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let tmp = self.path.with_extension("json.tmp");
         let data = serde_json::to_vec_pretty(&snapshot)
             .map_err(|e| std::io::Error::other(format!("serialize cache: {e}")))?;

@@ -43,6 +43,16 @@ fn test_parse_command_refresh_with_spaces_in_path() {
     );
 }
 
+#[test]
+fn test_parse_command_refresh_preserves_leading_space_in_path() {
+    // The path argument is no longer inner-trimmed, so whitespace that is
+    // part of the path (after the single "REFRESH " delimiter) is preserved.
+    assert_eq!(
+        DaemonCommand::parse("REFRESH  /leading-space"),
+        DaemonCommand::Refresh(PathBuf::from(" /leading-space"))
+    );
+}
+
 #[tokio::test]
 async fn test_socket_listener_bind_and_cleanup() {
     let temp = tempfile::tempdir().unwrap();

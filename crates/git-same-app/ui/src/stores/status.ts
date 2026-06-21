@@ -62,8 +62,14 @@ export const currentWorkspace = derived(
 export async function refresh(): Promise<void> {
   errorMessage.set('');
   const [workspaceList, status, ext, config] = await Promise.all([
-    listWorkspaces(),
-    readStatus(),
+    listWorkspaces().catch((err) => {
+      errorMessage.set(String(err));
+      return [] as WorkspaceSummary[];
+    }),
+    readStatus().catch((err) => {
+      errorMessage.set(String(err));
+      return null;
+    }),
     readExtensionStatus().catch(() => null),
     readAppConfig().catch(() => null),
   ]);

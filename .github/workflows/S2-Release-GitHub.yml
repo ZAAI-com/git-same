@@ -388,7 +388,7 @@ jobs:
           find artifacts -type f -exec cp {} release-assets/ \;
 
       - name: Create/update release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2.6.2
         with:
           files: release-assets/*
         env:

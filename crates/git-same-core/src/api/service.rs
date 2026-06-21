@@ -227,18 +227,18 @@ impl<'a> RepoScanService<'a> {
             }
 
             // Upgraded ambient repos stay upgraded until the monitor exits
-            // or the repo disappears.
-            let entry = self
-                .ambient_upgrades
-                .as_ref()
-                .and_then(|cache| {
-                    if !path.join(".git").exists() {
-                        cache.remove(&path);
-                        return None;
-                    }
-                    cache.get(&path)
-                })
-                .unwrap_or_else(|| self.scan_ambient_repo(&path));
+            // or the repo disappears. Evict stale entries for vanished repos
+            // in an explicit branch so the cache lookup itself has no hidden
+            // side effect.
+            let cached = match &self.ambient_upgrades {
+                Some(cache) if !path.join(".git").exists() => {
+                    cache.remove(&path);
+                    None
+                }
+                Some(cache) => cache.get(&path),
+                None => None,
+            };
+            let entry = cached.unwrap_or_else(|| self.scan_ambient_repo(&path));
 
             status.repos.push(entry);
         }

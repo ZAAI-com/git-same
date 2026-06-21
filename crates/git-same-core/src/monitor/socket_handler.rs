@@ -87,15 +87,7 @@ pub async fn handle_socket_connection(
                 "ERROR\n".to_string()
             }
         },
-        DaemonCommand::Status => {
-            let file_writer = StatusFileWriter::new(status_path.to_path_buf());
-            match file_writer.read() {
-                Ok(status) => {
-                    serde_json::to_string_pretty(&status).unwrap_or_else(|_| "ERROR\n".to_string())
-                }
-                Err(_) => "ERROR\n".to_string(),
-            }
-        }
+        DaemonCommand::Status => status_response(status_path),
         DaemonCommand::Unknown(cmd) => {
             format!("UNKNOWN: {}\n", cmd)
         }
@@ -104,3 +96,21 @@ pub async fn handle_socket_connection(
     let _ = writer.write_all(response.as_bytes()).await;
     let _ = writer.flush().await;
 }
+
+/// Build the response for a `STATUS` command: the current status file as
+/// pretty JSON terminated by a newline so it matches the line-framed protocol
+/// (`PONG\n`, `OK\n`, `ERROR\n`). Returns `ERROR\n` if the file can't be read
+/// or serialized.
+fn status_response(status_path: &Path) -> String {
+    let file_writer = StatusFileWriter::new(status_path.to_path_buf());
+    match file_writer.read() {
+        Ok(status) => serde_json::to_string_pretty(&status)
+            .map(|s| format!("{s}\n"))
+            .unwrap_or_else(|_| "ERROR\n".to_string()),
+        Err(_) => "ERROR\n".to_string(),
+    }
+}
+
+#[cfg(test)]
+#[path = "socket_handler_tests.rs"]
+mod tests;

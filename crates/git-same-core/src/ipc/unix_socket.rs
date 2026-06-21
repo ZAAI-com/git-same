@@ -43,7 +43,7 @@ impl DaemonCommand {
     pub fn parse(line: &str) -> Self {
         let trimmed = line.trim();
         if let Some(path) = trimmed.strip_prefix("REFRESH ") {
-            DaemonCommand::Refresh(PathBuf::from(path.trim()))
+            DaemonCommand::Refresh(PathBuf::from(path))
         } else if trimmed == "REFRESH_ALL" {
             DaemonCommand::RefreshAll
         } else if trimmed == "STATUS" {

@@ -109,6 +109,7 @@ fn show_status(ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
 }
 
 /// Stop a running monitor process.
+#[cfg(unix)]
 fn stop_monitor(ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
     let status_path = ipc_config.status_file_path();
     if !status_path.exists() {
@@ -138,7 +139,16 @@ fn stop_monitor(ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
     Ok(())
 }
 
+/// Non-Unix fallback: the monitor relies on Unix sockets and POSIX signals,
+/// so there is no running process to stop on these platforms.
+#[cfg(not(unix))]
+fn stop_monitor(_ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
+    println!("Monitor stop is not supported on this platform");
+    Ok(())
+}
+
 /// Check if a process with the given PID is alive via `kill -0`.
+#[cfg(unix)]
 fn is_process_alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
@@ -147,6 +157,13 @@ fn is_process_alive(pid: u32) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Non-Unix fallback: without POSIX signals we can't probe liveness, so assume
+/// the recorded PID is alive rather than report a false negative.
+#[cfg(not(unix))]
+fn is_process_alive(_pid: u32) -> bool {
+    true
 }
 
 #[cfg(test)]
