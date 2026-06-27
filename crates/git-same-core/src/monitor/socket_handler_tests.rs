@@ -11,7 +11,10 @@ fn status_response_ends_with_newline() {
         .unwrap();
 
     let resp = status_response(&path);
-    assert!(resp.ends_with('\n'), "Status response must end with newline");
+    assert!(
+        resp.ends_with('\n'),
+        "Status response must end with newline"
+    );
     assert_ne!(resp, "ERROR\n");
 }
 
