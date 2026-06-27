@@ -71,7 +71,9 @@ pub fn spawn_owner_classifier(config: Config, cache: OwnerTypeCache) {
                     }
                     Err(e) => {
                         debug!(name = %name, error = %e, "Owner classification failed, leaving unknown");
-                        let _ = cache.set(name, OwnerType::Unknown);
+                        if let Err(persist_err) = cache.set(name, OwnerType::Unknown) {
+                            warn!(name = %name, error = %persist_err, "Failed to persist owner type");
+                        }
                     }
                 }
             }
