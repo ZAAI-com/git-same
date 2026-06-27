@@ -77,6 +77,18 @@ impl IpcConfig {
         })
     }
 
+    /// Returns the host-facing, non-container IPC dir (`~/.config/git-same/finder/`).
+    ///
+    /// On macOS the monitor mirrors a real `status.json` here so the
+    /// non-sandboxed Tauri host can read live status without reaching into the
+    /// app-group container, which would trigger the "access data from other
+    /// apps" TCC prompt. This is the same directory as `legacy_default_path()`;
+    /// the distinct name documents *why* the host uses it (it is the host's own
+    /// home, not a legacy fallback).
+    pub fn host_status_path() -> Result<Self, AppError> {
+        Self::legacy_default_path()
+    }
+
     /// Path to the status JSON file.
     pub fn status_file_path(&self) -> PathBuf {
         self.dir.join("status.json")

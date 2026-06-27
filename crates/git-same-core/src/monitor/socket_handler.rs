@@ -10,7 +10,6 @@ use crate::ipc::unix_socket::DaemonCommand;
 use crate::ipc::StatusFileWriter;
 use crate::monitor::incremental::rescan_and_merge;
 use crate::types::FinderStatus;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -23,7 +22,7 @@ pub async fn handle_socket_connection(
     mut stream: UnixStream,
     config: &Config,
     pid: u32,
-    status_path: &Path,
+    status_writer: StatusFileWriter,
     shared_status: Arc<Mutex<FinderStatus>>,
     owner_types: Option<OwnerTypeCache>,
     ambient_upgrades: Option<AmbientUpgradeCache>,
@@ -59,8 +58,7 @@ pub async fn handle_socket_connection(
             let mut status = shared_status.lock().expect("status mutex poisoned");
             let changed = rescan_and_merge(&service, &mut status, &canonical);
             if changed {
-                let file_writer = StatusFileWriter::new(status_path.to_path_buf());
-                if let Err(e) = file_writer.write(&status) {
+                if let Err(e) = status_writer.write(&status) {
                     error!(error = %e, "Failed to write status file after Refresh");
                 }
             }
@@ -76,8 +74,7 @@ pub async fn handle_socket_connection(
             Ok(new_status) => {
                 let mut status = shared_status.lock().expect("status mutex poisoned");
                 *status = new_status;
-                let file_writer = StatusFileWriter::new(status_path.to_path_buf());
-                if let Err(e) = file_writer.write(&status) {
+                if let Err(e) = status_writer.write(&status) {
                     error!(error = %e, "Failed to write status file after RefreshAll");
                 }
                 "OK\n".to_string()
@@ -87,7 +84,7 @@ pub async fn handle_socket_connection(
                 "ERROR\n".to_string()
             }
         },
-        DaemonCommand::Status => status_response(status_path),
+        DaemonCommand::Status => status_response(&status_writer),
         DaemonCommand::Unknown(cmd) => {
             format!("UNKNOWN: {}\n", cmd)
         }
@@ -101,9 +98,8 @@ pub async fn handle_socket_connection(
 /// pretty JSON terminated by a newline so it matches the line-framed protocol
 /// (`PONG\n`, `OK\n`, `ERROR\n`). Returns `ERROR\n` if the file can't be read
 /// or serialized.
-fn status_response(status_path: &Path) -> String {
-    let file_writer = StatusFileWriter::new(status_path.to_path_buf());
-    match file_writer.read() {
+fn status_response(writer: &StatusFileWriter) -> String {
+    match writer.read() {
         Ok(status) => serde_json::to_string_pretty(&status)
             .map(|s| format!("{s}\n"))
             .unwrap_or_else(|_| "ERROR\n".to_string()),

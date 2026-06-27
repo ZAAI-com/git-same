@@ -1,6 +1,8 @@
 mod commands;
 mod status_stream;
 
+use tauri::Manager;
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -25,7 +27,14 @@ fn main() {
             commands::open_url,
         ])
         .setup(|app| {
-            if let Err(error) = status_stream::spawn_watcher(app.handle().clone()) {
+            // Resolve the host-facing IPC config once and share it with every
+            // command handler via state, so handlers read the mirrored
+            // status.json from the host's own home rather than reaching into the
+            // app-group container (which triggers the "access data from other
+            // apps" TCC prompt).
+            let host_ipc = git_same_core::ipc::IpcConfig::host_status_path()?;
+            app.manage(commands::HostIpc(host_ipc.clone()));
+            if let Err(error) = status_stream::spawn_watcher(app.handle().clone(), host_ipc) {
                 eprintln!("failed to start status watcher: {error}");
             }
             Ok(())

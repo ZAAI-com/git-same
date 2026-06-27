@@ -104,6 +104,65 @@ fn test_no_temp_file_remains_after_write() {
     assert!(!temp_path.exists());
 }
 
+#[test]
+fn test_write_produces_primary_and_every_mirror() {
+    let temp = tempfile::tempdir().unwrap();
+    let primary = temp.path().join("container/status.json");
+    let mirror = temp.path().join("host/status.json");
+    let writer = StatusFileWriter::new_with_mirrors(primary.clone(), vec![mirror.clone()]);
+
+    let status = sample_status();
+    writer.write(&status).unwrap();
+
+    // Both files exist as real files with identical content.
+    assert!(primary.exists());
+    assert!(mirror.exists());
+    assert_eq!(
+        std::fs::read_to_string(&primary).unwrap(),
+        std::fs::read_to_string(&mirror).unwrap()
+    );
+
+    // The writer reads back from the primary.
+    assert_eq!(writer.read().unwrap(), status);
+
+    // A reader pointed at the mirror sees the same status.
+    let mirror_reader = StatusFileWriter::new(mirror);
+    assert_eq!(mirror_reader.read().unwrap(), status);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_mirror_write_replaces_existing_symlink_with_real_file() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let container = temp.path().join("container");
+    let host = temp.path().join("host");
+    std::fs::create_dir_all(&container).unwrap();
+    std::fs::create_dir_all(&host).unwrap();
+
+    let primary = container.join("status.json");
+    let mirror = host.join("status.json");
+
+    // Simulate the pre-upgrade layout: the host mirror path is a symlink into
+    // the container.
+    symlink(&primary, &mirror).unwrap();
+    assert!(std::fs::symlink_metadata(&mirror)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let writer = StatusFileWriter::new_with_mirrors(primary, vec![mirror.clone()]);
+    writer.write(&sample_status()).unwrap();
+
+    // The first mirror write replaces the symlink with a real file.
+    let meta = std::fs::symlink_metadata(&mirror).unwrap();
+    assert!(
+        meta.file_type().is_file(),
+        "mirror must be a real file, not a symlink, after write"
+    );
+}
+
 #[cfg(target_os = "macos")]
 mod symlink_helper {
     use super::*;
@@ -186,6 +245,26 @@ mod symlink_helper {
             })
             .count();
         assert_eq!(aside_count, 1, "expected one aside file");
+    }
+
+    #[test]
+    fn ensure_legacy_symlinks_symlinks_only_the_socket() {
+        let (_root, legacy, group) = dirs();
+
+        ensure_legacy_symlinks_in(&legacy, &group).unwrap();
+
+        // finder.sock is symlinked into the group container.
+        let sock = legacy.join("finder.sock");
+        let sock_meta = fs::symlink_metadata(&sock).unwrap();
+        assert!(sock_meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(&sock).unwrap(), group.join("finder.sock"));
+
+        // status.json is deliberately NOT symlinked; the monitor mirrors a real
+        // file there instead.
+        assert!(
+            fs::symlink_metadata(legacy.join("status.json")).is_err(),
+            "status.json must not be symlinked"
+        );
     }
 
     #[test]

@@ -1,10 +1,14 @@
-use crate::commands::read_status_snapshot;
+use crate::commands::read_status_snapshot_with;
 use git_same_core::ipc::IpcConfig;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::{AppHandle, Emitter};
 
-pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
-    let ipc = IpcConfig::default_path()?;
+/// Watches the host-facing IPC directory for `status.json` changes and emits a
+/// `status-updated` event with a fresh snapshot. `ipc` is the resolved
+/// host-facing config (`~/.config/git-same/finder/`, where the monitor mirrors
+/// a real `status.json`), so neither the watch nor the reads cross into the
+/// app-group container.
+pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
     ipc.ensure_dir()?;
     let watch_path = ipc.dir.clone();
 
@@ -32,7 +36,7 @@ pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
                 if event.is_err() {
                     continue;
                 }
-                if let Ok(snapshot) = read_status_snapshot() {
+                if let Ok(snapshot) = read_status_snapshot_with(&ipc) {
                     let _ = app.emit("status-updated", snapshot);
                 }
             }

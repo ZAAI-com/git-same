@@ -207,6 +207,45 @@ fn read_status_snapshot_returns_last_known_status_when_monitor_pid_is_stale() {
     assert!(status.repos.is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn read_status_snapshot_removes_a_status_symlink_and_reports_absent() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("status-symlink");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+
+    // Simulate the pre-upgrade layout: status.json is a symlink into another
+    // location (the app-group container). Following it would re-trigger the
+    // cross-app TCC prompt.
+    let external_target = temp.path().join("container-status.json");
+    let mut external = FinderStatus::new(4242, chrono::Utc::now().to_rfc3339());
+    external.repos = Vec::new();
+    StatusFileWriter::new(external_target.clone())
+        .write(&external)
+        .unwrap();
+    let status_path = ipc.status_file_path();
+    symlink(&external_target, &status_path).unwrap();
+    assert!(std::fs::symlink_metadata(&status_path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
+
+    // The guard unlinks the symlink and reports status absent rather than
+    // dereferencing it into the container.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(
+        std::fs::symlink_metadata(&status_path).is_err(),
+        "status.json symlink must be removed"
+    );
+}
+
 #[test]
 fn ensure_config_creates_default_config() {
     let temp = TestDir::new("ensure-config");
