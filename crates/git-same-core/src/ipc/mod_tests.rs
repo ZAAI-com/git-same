@@ -99,3 +99,19 @@ fn test_legacy_default_path_ends_in_finder() {
         );
     }
 }
+
+#[test]
+fn test_host_status_path_matches_legacy_default_path() {
+    // The host reads from the non-container host path; it must resolve to the
+    // same directory as legacy_default_path (a distinct name for clarity).
+    let host = IpcConfig::host_status_path();
+    let legacy = IpcConfig::legacy_default_path();
+    match (host, legacy) {
+        (Ok(host), Ok(legacy)) => {
+            assert_eq!(host.dir, legacy.dir);
+            assert!(host.dir.ends_with("git-same/finder"));
+        }
+        (Err(_), Err(_)) => {}
+        _ => panic!("host_status_path and legacy_default_path disagreed on success"),
+    }
+}

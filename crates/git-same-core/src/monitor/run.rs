@@ -138,7 +138,11 @@ where
     output.info("Starting git-same monitor...");
 
     let live = LiveConfig::new(config.clone(), context.config_path.clone());
-    let status_writer = StatusFileWriter::new(ipc_config.status_file_path());
+    let primary_status_path = ipc_config.status_file_path();
+    let status_writer = StatusFileWriter::new_with_mirrors(
+        primary_status_path.clone(),
+        status_mirror_paths(&primary_status_path),
+    );
     let git = ShellGit::new();
 
     let owner_types = OwnerTypeCache::load(OwnerTypeCache::default_path(&ipc_config.dir));
@@ -272,7 +276,7 @@ where
                         live: live.clone(),
                         reload_tx: reload_tx.clone(),
                         pid,
-                        status_path: status_writer.path().to_path_buf(),
+                        status_writer: status_writer.clone(),
                         shared_status: shared_status.clone(),
                         owner_types: owner_types.clone(),
                         ambient_upgrades: ambient_upgrades.clone(),
@@ -317,6 +321,30 @@ where
     Ok(())
 }
 
+/// Mirror paths for the status writer. On macOS the primary `status.json`
+/// lives in the app-group container; mirror a real copy into the host-facing
+/// `~/.config/git-same/finder/` so the non-sandboxed Tauri host can read live
+/// status without reaching into the container (which would trigger the "access
+/// data from other apps" TCC prompt). On other platforms the primary path is
+/// already the host path, so there are no mirrors.
+fn status_mirror_paths(primary: &Path) -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(host) = IpcConfig::host_status_path() {
+            let mirror = host.status_file_path();
+            if mirror.as_path() != primary {
+                return vec![mirror];
+            }
+        }
+        Vec::new()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = primary;
+        Vec::new()
+    }
+}
+
 /// Everything a socket task needs, cloned out of the loop.
 // Only the `#[cfg(unix)]` `serve_connection` reads these fields; off Unix the
 // struct is still built but never consumed, so every field reads as dead.
@@ -325,7 +353,7 @@ struct ConnectionState {
     live: LiveConfig,
     reload_tx: tokio::sync::mpsc::UnboundedSender<()>,
     pid: u32,
-    status_path: PathBuf,
+    status_writer: StatusFileWriter,
     shared_status: Arc<Mutex<FinderStatus>>,
     owner_types: OwnerTypeCache,
     ambient_upgrades: AmbientUpgradeCache,
@@ -367,7 +395,7 @@ fn serve_connection(connection: Connection, state: ConnectionState) {
             &state.live,
             &state.reload_tx,
             state.pid,
-            &state.status_path,
+            state.status_writer,
             state.shared_status,
             Some(state.owner_types),
             Some(state.ambient_upgrades),

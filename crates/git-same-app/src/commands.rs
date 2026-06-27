@@ -38,6 +38,14 @@ const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.badges";
 #[path = "commands_tests.rs"]
 mod tests;
 
+/// Resolved host-facing IPC config, shared across Tauri command handlers via
+/// `tauri::State`. Resolved once in `main.rs` `setup()` so handlers read live
+/// status from `~/.config/git-same/finder/` (where the monitor mirrors a real
+/// `status.json`) instead of reaching into the app-group container, which would
+/// trigger the "access data from other apps" TCC prompt on the non-sandboxed
+/// host.
+pub struct HostIpc(pub IpcConfig);
+
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceSummary {
     pub id: String,
@@ -394,13 +402,18 @@ pub fn set_default_workspace(
 }
 
 #[tauri::command]
-pub async fn check_requirements() -> Result<Vec<RequirementCheckDto>, String> {
+pub async fn check_requirements(
+    ipc: tauri::State<'_, HostIpc>,
+) -> Result<Vec<RequirementCheckDto>, String> {
+    // Clone the resolved host IPC config out of the state guard before any
+    // `.await` so no borrow of the guard is held across an await point.
+    let host_ipc = ipc.inner().0.clone();
     let mut checks: Vec<RequirementCheckDto> = git_same_core::checks::check_requirements()
         .await
         .into_iter()
         .map(requirement_check_dto)
         .collect();
-    checks.extend(app_requirement_checks());
+    checks.extend(app_requirement_checks(&host_ipc));
     Ok(checks)
 }
 
@@ -602,15 +615,19 @@ pub async fn read_workspace_structure(
 }
 
 #[tauri::command]
-pub async fn read_status() -> Result<StatusSnapshot, String> {
-    read_status_snapshot().map_err(error_string)
+pub async fn read_status(ipc: tauri::State<'_, HostIpc>) -> Result<StatusSnapshot, String> {
+    read_status_snapshot_with(&ipc.0).map_err(error_string)
 }
 
 #[tauri::command]
 pub async fn start_sync(
     app: tauri::AppHandle,
     workspace_id: String,
+    ipc: tauri::State<'_, HostIpc>,
 ) -> Result<StatusSnapshot, String> {
+    // Clone the resolved host IPC config out of the state guard before any
+    // `.await` so no borrow of the guard is held across an await point.
+    let host_ipc = ipc.inner().0.clone();
     let config = Config::load().map_err(error_string)?;
     let mut workspace =
         WorkspaceManager::resolve(Some(&workspace_id), &config).map_err(error_string)?;
@@ -652,8 +669,7 @@ pub async fn start_sync(
 
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
-    let ipc = IpcConfig::default_path().map_err(error_string)?;
-    read_status_snapshot_with(&ipc).map_err(error_string)
+    read_status_snapshot_with(&host_ipc).map_err(error_string)
 }
 
 fn sync_progress_reporter(app: tauri::AppHandle, workspace_id: String) -> ProgressReporter {
@@ -926,7 +942,7 @@ fn sync_mode_label(sync_mode: SyncMode) -> String {
     .to_string()
 }
 
-fn app_requirement_checks() -> Vec<RequirementCheckDto> {
+fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
     let config_path = match Config::default_path() {
         Ok(path) => path,
         Err(error) => {
@@ -952,7 +968,7 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
         critical: true,
     }];
 
-    let snapshot = read_status_snapshot().ok();
+    let snapshot = read_status_snapshot_with(ipc).ok();
     let monitor_agent = monitor_launch_agent_status_inner().ok();
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
@@ -1214,15 +1230,12 @@ fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {
     }
 }
 
-pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
-    let ipc = IpcConfig::default_path()?;
-    read_status_snapshot_with(&ipc)
-}
-
 /// `stale` describes badge-data freshness only. Whether a monitor process
 /// is running is a separate question answered by the monitor status.
-fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
+pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
+    ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
+    remove_legacy_status_symlink(&status_path);
     let writer = StatusFileWriter::new(status_path.clone());
     let modified = fs::metadata(&status_path)
         .ok()
@@ -1242,6 +1255,22 @@ fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError
         stale,
         status: writer.read().ok(),
     })
+}
+
+/// Removes a `status.json` left behind as a symlink by an earlier layout.
+///
+/// Older versions symlinked `~/.config/git-same/finder/status.json` into the
+/// app-group container. Following that link (via `metadata`/`exists`, which
+/// dereference symlinks) would re-trigger the "access data from other apps" TCC
+/// prompt on the non-sandboxed host. `symlink_metadata` does not follow the
+/// link, so detecting and unlinking it never touches the container; the
+/// monitor's next mirror write recreates a real file here.
+fn remove_legacy_status_symlink(status_path: &Path) {
+    if let Ok(meta) = fs::symlink_metadata(status_path) {
+        if meta.file_type().is_symlink() {
+            let _ = fs::remove_file(status_path);
+        }
+    }
 }
 
 fn workspace_summary(

@@ -8,7 +8,7 @@
 //!
 //! Temp files of atomic writes, the lock file, and caches are ignored.
 
-use crate::commands::{read_status_snapshot, refresh_monitor_status};
+use crate::commands::{read_status_snapshot_with, refresh_monitor_status};
 use git_same_core::ipc::IpcConfig;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsString;
@@ -141,8 +141,10 @@ impl Debouncer {
     }
 }
 
-pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
-    let ipc = IpcConfig::default_path()?;
+/// `ipc` is the resolved host-facing config (`~/.config/git-same/finder/`,
+/// where the monitor mirrors a real `status.json`), so neither the watch nor
+/// the reads cross into the app-group container.
+pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
     ipc.ensure_dir()?;
 
     std::thread::Builder::new()
@@ -188,7 +190,7 @@ pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
                             continue;
                         };
                         if fired == Relevance::DataAndMonitor {
-                            if let Ok(snapshot) = read_status_snapshot() {
+                            if let Ok(snapshot) = read_status_snapshot_with(&ipc) {
                                 let _ = app.emit("status-updated", snapshot);
                             }
                         }
