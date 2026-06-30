@@ -150,6 +150,13 @@ fn stop_monitor(_ipc_config: &IpcConfig, _output: &Output) -> Result<()> {
 /// Check if a process with the given PID is alive via `kill -0`.
 #[cfg(unix)]
 fn is_process_alive(pid: u32) -> bool {
+    // A live process has a positive PID that fits in pid_t (i32). Reject 0 and
+    // anything above i32::MAX up front: u32::MAX would reach `kill` as -1 and be
+    // treated as a process-group/broadcast target, which returns success on
+    // Linux and would falsely report the process alive.
+    if pid == 0 || pid > i32::MAX as u32 {
+        return false;
+    }
     std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stdout(std::process::Stdio::null())
@@ -160,10 +167,12 @@ fn is_process_alive(pid: u32) -> bool {
 }
 
 /// Non-Unix fallback: without POSIX signals we can't probe liveness, so assume
-/// the recorded PID is alive rather than report a false negative.
+/// the recorded PID is alive rather than report a false negative. PIDs that
+/// cannot be valid (0 or above i32::MAX, e.g. the u32::MAX staleness sentinel)
+/// are still reported as dead.
 #[cfg(not(unix))]
-fn is_process_alive(_pid: u32) -> bool {
-    true
+fn is_process_alive(pid: u32) -> bool {
+    pid != 0 && pid <= i32::MAX as u32
 }
 
 #[cfg(test)]

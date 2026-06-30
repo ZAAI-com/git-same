@@ -1369,7 +1369,11 @@ fn system_time_to_rfc3339(time: SystemTime) -> String {
 }
 
 fn is_process_alive(pid: u32) -> bool {
-    if pid == 0 {
+    // A live process has a positive PID that fits in pid_t (i32). Reject 0 and
+    // anything above i32::MAX: u32::MAX would reach `kill` as -1 and be treated
+    // as a process-group/broadcast target, returning success on Linux and
+    // falsely reporting the monitor alive.
+    if pid == 0 || pid > i32::MAX as u32 {
         return false;
     }
 
