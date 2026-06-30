@@ -30,6 +30,9 @@ use std::time::{Duration, SystemTime};
 use tauri::Emitter;
 
 const DAEMON_STALE_AFTER_SECS: u64 = 90;
+// Referenced only inside the macOS-gated extension_status branch, but kept
+// available on every platform for the colocated parser tests.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.badges";
 const MONITOR_LAUNCH_AGENT_LABEL: &str = "com.zaai.git-same.monitor";
 const MONITOR_LAUNCH_AGENT_FILE: &str = "com.zaai.git-same.monitor.plist";
@@ -768,6 +771,7 @@ fn monitor_agent_message(state: &str) -> String {
 // nothing if no match. Each line begins with `+` (enabled) or `-` (disabled),
 // followed by the plugin id and bundle path. We treat any line containing
 // our id as "installed" and the leading `+` as "enabled".
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn parse_pluginkit_output(stdout: &str, target_id: &str) -> ExtensionStatus {
     for line in stdout.lines() {
         if line.contains(target_id) {
