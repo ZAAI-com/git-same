@@ -75,7 +75,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
                         Style::default().fg(icon_color).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        format!("{:<18}", &check.name),
+                        format!("{:<18}", check.name),
                         Style::default().fg(Color::White),
                     ),
                     Span::styled(" — ", Style::default().fg(Color::DarkGray)),
