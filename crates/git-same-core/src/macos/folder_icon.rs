@@ -9,7 +9,7 @@
 //! On non-macOS targets every entry point is a no-op so callers don't need
 //! their own cfg-gating.
 
-use crate::errors::{AppError, Result};
+use crate::errors::Result;
 use std::path::Path;
 
 /// The ICNS payload bundled into the binary. Painted onto every workspace
@@ -90,7 +90,8 @@ pub fn clear_or_log(path: &Path) {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use super::{AppError, Path, Result};
+    use super::{Path, Result};
+    use crate::errors::AppError;
     use objc2::AnyThread;
     use objc2_app_kit::{NSImage, NSWorkspace, NSWorkspaceIconCreationOptions};
     use objc2_foundation::{NSData, NSString};
