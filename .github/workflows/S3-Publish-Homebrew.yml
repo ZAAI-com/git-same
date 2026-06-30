@@ -21,7 +21,7 @@ jobs:
     name: Publish Cask + Formula to Tap
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -103,7 +103,7 @@ jobs:
             --formula-cli formula-cli.rb
 
       - name: Checkout tap repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.TAP_REPO }}
           token: ${{ secrets.HOMEBREW_TAP_REPO_COMMIT_TOKEN }}
