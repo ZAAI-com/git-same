@@ -24,6 +24,7 @@ OUT_PATH="$OUT_DIR/git-same.1"
 echo "==> manpage -> $OUT_PATH"
 cargo run \
     --release \
+    -p git-same \
     --features release-tools \
     --bin gen-manpage \
     > "$OUT_PATH"

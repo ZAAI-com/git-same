@@ -31,25 +31,46 @@ fi
 PRIMARY_BIN="${BINARIES[0]}"
 GS_COMMAND="$CARGO_BIN_DIR/$PRIMARY_BIN"
 
-# Install primary binary
-echo "Installing with: cargo install --path . --force"
-cargo install --path . --force
+# Build the CLI in the workspace target/ so deps are cached and shared
+# with `tauri dev` below. Debug by default; opt into release via
+# GIT_SAME_PROFILE=release for parity with shipped binaries.
+PROFILE="${GIT_SAME_PROFILE:-debug}"
+case "$PROFILE" in
+    debug)
+        echo "Building (debug): cargo build -p git-same"
+        cargo build -p git-same
+        BUILT_BIN="$PROJECT_DIR/target/debug/git-same"
+        ;;
+    release)
+        echo "Building (release): cargo build -p git-same --release"
+        cargo build -p git-same --release
+        BUILT_BIN="$PROJECT_DIR/target/release/git-same"
+        ;;
+    *)
+        echo "ERROR: GIT_SAME_PROFILE must be 'debug' or 'release' (got '$PROFILE')."
+        exit 1
+        ;;
+esac
 echo ""
 
-if [ ! -x "$CARGO_BIN_DIR/$PRIMARY_BIN" ]; then
-    echo "ERROR: $PRIMARY_BIN installation failed."
+if [ ! -x "$BUILT_BIN" ]; then
+    echo "ERROR: build did not produce $BUILT_BIN"
     exit 1
 fi
 
-# Create alias symlinks from manifest (skip primary)
-for alias in "${BINARIES[@]:1}"; do
-    # Replace stale standalone alias binaries with a symlink to the primary binary.
-    if [ -e "$CARGO_BIN_DIR/$alias" ] && [ ! -L "$CARGO_BIN_DIR/$alias" ]; then
-        rm -f "$CARGO_BIN_DIR/$alias"
+mkdir -p "$CARGO_BIN_DIR"
+
+# Symlink the primary name + every alias at the freshly built binary.
+# Replace any prior non-symlink (e.g. a copy left by an old `cargo install`)
+# so the new symlink takes precedence on PATH.
+for name in "${BINARIES[@]}"; do
+    target_path="$CARGO_BIN_DIR/$name"
+    if [ -e "$target_path" ] && [ ! -L "$target_path" ]; then
+        rm -f "$target_path"
     fi
-    ln -sf "$CARGO_BIN_DIR/$PRIMARY_BIN" "$CARGO_BIN_DIR/$alias"
-    echo "  Symlinked: $alias -> $PRIMARY_BIN"
+    ln -sf "$BUILT_BIN" "$target_path"
 done
+echo "  Linked $PRIMARY_BIN + ${#BINARIES[@]} name(s) -> $BUILT_BIN"
 echo ""
 
 # Warn if gisa is also installed elsewhere (e.g. Homebrew)
@@ -73,6 +94,10 @@ echo ""
 echo "  $GS_COMMAND init                              # Create config file"
 echo "  $GS_COMMAND setup                             # Interactive workspace wizard"
 echo ""
+echo "Interactive TUI:"
+echo ""
+echo "  $GS_COMMAND                                   # Launch TUI (no subcommand)"
+echo ""
 echo "Sync repos (discover + clone new + fetch existing):"
 echo ""
 echo "  $GS_COMMAND sync --dry-run                    # Preview what would happen"
@@ -80,18 +105,39 @@ echo "  $GS_COMMAND sync                              # Run sync (fetch mode)"
 echo "  $GS_COMMAND sync --pull                       # Sync with pull instead of fetch"
 echo "  $GS_COMMAND sync --workspace github           # Sync specific workspace"
 echo "  $GS_COMMAND sync --concurrency 8              # Control parallelism"
+echo "  $GS_COMMAND sync --refresh                    # Ignore cache, re-discover repos"
+echo "  $GS_COMMAND sync --no-skip-uncommitted        # Don't skip dirty repos"
 echo ""
 echo "Status:"
 echo ""
 echo "  $GS_COMMAND status                            # Show all repo status"
 echo "  $GS_COMMAND status --uncommitted              # Only repos with changes"
+echo "  $GS_COMMAND status --behind                   # Only repos behind upstream"
 echo "  $GS_COMMAND status --detailed                 # Full detail per repo"
+echo "  $GS_COMMAND status --org my-org               # Filter to one org (repeatable)"
 echo ""
 echo "Workspace management:"
 echo ""
 echo "  $GS_COMMAND workspace list                    # List configured workspaces"
-echo "  $GS_COMMAND workspace default my-ws           # Set default workspace"
 echo "  $GS_COMMAND workspace default                 # Show current default"
+echo "  $GS_COMMAND workspace default my-ws           # Set default workspace"
+echo "  $GS_COMMAND workspace default --clear         # Clear the default"
+echo ""
+echo "Scan for unregistered workspaces:"
+echo ""
+echo "  $GS_COMMAND scan                              # Scan current directory"
+echo "  $GS_COMMAND scan ~/projects                   # Scan a specific directory"
+echo "  $GS_COMMAND scan --depth 3                    # Limit search depth"
+echo "  $GS_COMMAND scan ~/projects --register        # Auto-register found workspaces"
+echo ""
+echo "Finder extension monitor (macOS):"
+echo ""
+echo "  $GS_COMMAND monitor                           # Start the monitor"
+echo "  $GS_COMMAND monitor --interval 60             # Poll every 60 seconds"
+echo "  $GS_COMMAND monitor --status                  # Check if the monitor is running"
+echo "  $GS_COMMAND monitor --stop                    # Stop a running monitor"
+echo "  $GS_COMMAND refresh                           # Force immediate status.json rewrite"
+echo "  $GS_COMMAND refresh --path ~/work/org         # Refresh a single folder"
 echo ""
 echo "Reset / cleanup:"
 echo ""
@@ -103,3 +149,36 @@ echo ""
 echo "  $GS_COMMAND -v sync --dry-run"
 echo "  $GS_COMMAND --json status"
 echo ""
+
+# Launch the Tauri desktop app in dev mode
+TAURI_CLI="$PROJECT_DIR/crates/git-same-app/ui/node_modules/.bin/tauri"
+if [ ! -x "$TAURI_CLI" ]; then
+    echo "ERROR: Tauri CLI not found at $TAURI_CLI"
+    echo "Run ./toolkit/conductor/setup.sh first to install frontend dependencies."
+    exit 1
+fi
+
+APP_PORT="${GIT_SAME_APP_PORT:-${CONDUCTOR_PORT:-${PORT:-1420}}}"
+if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt 65535 ]; then
+    echo "ERROR: Invalid app port '$APP_PORT'. Set GIT_SAME_APP_PORT to a value from 1-65535."
+    exit 1
+fi
+export GIT_SAME_APP_PORT="$APP_PORT"
+
+TAURI_DEV_CONFIG="$(mktemp -t git-same-tauri-dev.XXXXXX.json)"
+trap 'rm -f "$TAURI_DEV_CONFIG"' EXIT
+cat > "$TAURI_DEV_CONFIG" <<EOF
+{
+  "build": {
+    "devUrl": "http://127.0.0.1:$APP_PORT"
+  }
+}
+EOF
+
+echo "========================================"
+echo "  Launching Tauri app (dev mode)"
+echo "========================================"
+echo "  Dev URL: http://127.0.0.1:$APP_PORT"
+echo ""
+cd "$PROJECT_DIR/crates/git-same-app"
+"$TAURI_CLI" dev --config "$TAURI_DEV_CONFIG"

@@ -43,10 +43,10 @@ jobs:
         run: cargo +${{ matrix.rust }} fmt --all -- --check
 
       - name: Clippy
-        run: cargo +${{ matrix.rust }} clippy --all-targets --all-features -- -D warnings
+        run: cargo +${{ matrix.rust }} clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo +${{ matrix.rust }} test --all-features -- --test-threads=1
+        run: cargo +${{ matrix.rust }} test --workspace --all-features -- --test-threads=1
 
   build:
     name: Build (${{ matrix.target }})
@@ -81,7 +81,43 @@ jobs:
           prefix-key: v1-rust-no-bin
 
       - name: Build release
-        run: cargo +stable build --release --target ${{ matrix.target }}
+        run: cargo +stable build --release -p git-same --target ${{ matrix.target }}
+
+  tauri-debug-build:
+    name: Tauri App Debug Build
+    needs: [test]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: corepack enable pnpm
+
+      - name: Verify entitlements parity
+        run: bash toolkit/packaging/macos/check-entitlements-parity.sh
+
+      - name: Install frontend dependencies
+        run: pnpm --dir crates/git-same-app/ui install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir crates/git-same-app/ui build
+
+      - name: Build Tauri app binary
+        run: |
+          cd crates/git-same-app
+          ui/node_modules/.bin/tauri build --debug --no-bundle
 
   coverage:
     name: Code Coverage
@@ -114,7 +150,7 @@ jobs:
         run: cargo +stable tarpaulin --all-features --workspace --timeout 120 --out xml --engine llvm
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           fail_ci_if_error: false
@@ -161,7 +197,7 @@ jobs:
             }
             in_bin && /^[[:space:]]*required-features[[:space:]]*=/ { has_req=1 }
             END { flush(); print default_count, default_name }
-          ' Cargo.toml)"
+          ' crates/git-same-cli/Cargo.toml)"
           if [ "${DEFAULT_COUNT:-0}" -ne 1 ]; then
             echo "ERROR: Cargo.toml has ${DEFAULT_COUNT:-0} default [[bin]] entries, expected 1"; exit 1
           fi

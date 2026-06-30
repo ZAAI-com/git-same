@@ -1,0 +1,37 @@
+# Icons
+
+Tools for generating and promoting the Git-Same macOS app icon.
+
+The palette mirrors the TUI banner (`crates/git-same-cli/src/banner.rs`):
+blue `#3B82F6`, cyan `#06B6D4`, green `#22C55E`.
+
+## Generate concept variants
+
+```
+swift toolkit/icons/generate-icons.swift --variant all
+```
+
+Writes five 1024×1024 PNGs into `crates/git-same-app/icons/variants/`:
+
+| Variant       | Concept                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `twin`        | Two overlapping list-tiles (the "same" / mirrored repos idea)    |
+| `sync`        | Circular sync arrows around a small repo node                    |
+| `folder-pair` | Front folder + back folder with a remote → local arrow           |
+| `wordmark`    | `gs` monogram with `=` mirror cue                                |
+| `tui-banner`  | `g=s` typographic mark with TUI-banner double-rule framing       |
+
+Single-variant render:
+
+```
+swift toolkit/icons/generate-icons.swift --variant twin --out /tmp
+```
+
+## Promote a chosen variant
+
+```
+bash toolkit/icons/promote.sh <variant>
+```
+
+Regenerates `1024x1024.png`, all sizes referenced by `tauri.conf.json`,
+`icon.icns` (via `iconutil`), and `icon.ico` (via `sips`).

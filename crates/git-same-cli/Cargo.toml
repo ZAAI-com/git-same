@@ -1,0 +1,63 @@
+[package]
+name = "git-same"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["git", "github", "cli", "clone", "sync"]
+categories = ["command-line-utilities"]
+description = "Mirror GitHub structure /orgs/repos/ to local file system."
+
+# Naming notes:
+#   - Directory on disk: crates/git-same-cli/ (kept distinct from the engine
+#     crate's directory name for filesystem clarity)
+#   - Package on crates.io: git-same  (cargo install git-same; pre-3.2 install
+#     path preserved with no shim)
+#   - Library name (auto-derived from package): git_same
+#   - Binary produced: git-same (filesystem aliases: gisa, gitsa, gitsame)
+#   - Homebrew formula name: git-same-cli (independent of this; lives in
+#     zaai-com/homebrew-tap)
+
+[[bin]]
+name = "git-same"
+path = "src/main.rs"
+
+[[bin]]
+name = "gen-completions"
+path = "src/bin/gen_completions.rs"
+required-features = ["release-tools"]
+
+[[bin]]
+name = "gen-manpage"
+path = "src/bin/gen_manpage.rs"
+required-features = ["release-tools"]
+
+[features]
+default = ["tui"]
+tui = ["dep:ratatui", "dep:crossterm"]
+release-tools = ["dep:clap_complete", "dep:clap_mangen"]
+
+[dependencies]
+git-same-core = { path = "../git-same-core", version = "=3.1.0" }
+clap = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+shellexpand = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ratatui = { workspace = true, optional = true }
+crossterm = { workspace = true, optional = true }
+clap_complete = { workspace = true, optional = true }
+clap_mangen = { workspace = true, optional = true }
+
+[dev-dependencies]
+git-same-core = { path = "../git-same-core", features = ["test-utils"] }
+tempfile = { workspace = true }

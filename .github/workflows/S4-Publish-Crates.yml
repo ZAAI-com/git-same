@@ -23,7 +23,28 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Publish
-        run: cargo +stable publish
+      - name: Publish git-same-core
+        run: cargo +stable publish -p git-same-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io to index git-same-core
+        run: |
+          set -euo pipefail
+          VERSION=$(awk -F'"' '/^version *=/ {print $2; exit}' Cargo.toml)
+          echo "Waiting for git-same-core ${VERSION} to be indexed on crates.io..."
+          for i in $(seq 1 30); do
+            if cargo search git-same-core --limit 1 \
+                | grep -q "git-same-core[[:space:]]*=[[:space:]]*\"${VERSION}\""; then
+              echo "Indexed."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for crates.io to index git-same-core ${VERSION}" >&2
+          exit 1
+
+      - name: Publish git-same
+        run: cargo +stable publish -p git-same
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

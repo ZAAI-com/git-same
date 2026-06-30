@@ -54,6 +54,8 @@ jobs:
             --pattern "git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
             --pattern "git-same-${VERSION}-x86_64-apple-darwin.tar.gz" \
             --pattern "git-same-${VERSION}-aarch64-apple-darwin.tar.gz" \
+            --pattern "git-same-${VERSION}-x86_64.dmg" \
+            --pattern "git-same-${VERSION}-aarch64.dmg" \
             --dir assets
 
       - name: Compute SHA256 hashes
@@ -64,10 +66,14 @@ jobs:
           LINUX_ARM="assets/git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
           MAC_X86="assets/git-same-${VERSION}-x86_64-apple-darwin.tar.gz"
           MAC_ARM="assets/git-same-${VERSION}-aarch64-apple-darwin.tar.gz"
+          CASK_MAC_X86="assets/git-same-${VERSION}-x86_64.dmg"
+          CASK_MAC_ARM="assets/git-same-${VERSION}-aarch64.dmg"
           echo "linux_x86_64=$(shasum -a 256 "$LINUX_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "linux_aarch64=$(shasum -a 256 "$LINUX_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "macos_x86_64=$(shasum -a 256 "$MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "macos_aarch64=$(shasum -a 256 "$MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "cask_macos_x86_64=$(shasum -a 256 "$CASK_MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "cask_macos_aarch64=$(shasum -a 256 "$CASK_MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Render formula-cli
         run: |
@@ -86,8 +92,8 @@ jobs:
         run: |
           bash toolkit/homebrew/render-cask.sh \
             "${{ steps.version.outputs.version }}" \
-            --sha-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
-            --sha-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
+            --sha-arm   "${{ steps.sha.outputs.cask_macos_aarch64 }}" \
+            --sha-intel "${{ steps.sha.outputs.cask_macos_x86_64 }}" \
             --out cask.rb
 
       - name: Verify rendered cask + formula against a temp tap
