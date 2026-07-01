@@ -1,6 +1,6 @@
 # Git-Same
 
-Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, TUI dashboard.
+Mirror your GitHub org structure to the local filesystem: parallel clone, incremental sync, CLI, TUI dashboard, and a macOS Tauri app with Finder badges and workspace folder icons.
 
 | ![TUI Dashboard (dark mode)](screenshots/tui-dashboard-dark.png) |
 |:---:|
@@ -32,7 +32,7 @@ Mirror your GitHub org structure to the local filesystem: parallel clone, increm
 +--------------------------------------+------------+------------------------------------+
 ```
 
-One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes.
+One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes. On macOS, the cask also installs `Git-Same.app`, FinderSync badges, and a monitor LaunchAgent so workspace status is visible in Finder.
 
 ## Installation
 
@@ -48,7 +48,7 @@ brew install --cask zaai-com/tap/git-same
 brew install zaai-com/tap/git-same-cli
 ```
 
-> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The cask ships the Tauri GUI app and Finder badges alongside the CLI, and `brew upgrade --cask git-same` keeps them current with no second migration.
+> The macOS cask ships the Tauri GUI app, Finder badges, monitor LaunchAgent, and CLI aliases. `brew upgrade --cask git-same` keeps the app and command-line tools current together.
 
 <details>
 <summary>Other installation methods</summary>
@@ -61,7 +61,7 @@ cargo install git-same
 
 #### GitHub Releases
 
-Download pre-built binaries from [GitHub Releases](https://github.com/zaai-com/git-same/releases) for Linux (x86_64, ARM64) and macOS (x86_64, Apple Silicon). macOS assets are signed and notarized tarballs named `git-same-<version>-<target-triple>.tar.gz` (e.g. `git-same-3.0.2-aarch64-apple-darwin.tar.gz`).
+Download pre-built assets from [GitHub Releases](https://github.com/zaai-com/git-same/releases). Linux and headless macOS CLI builds are `.tar.gz` archives named `git-same-<version>-<target-triple>.tar.gz` (for example, `git-same-3.1.0-aarch64-apple-darwin.tar.gz`). macOS GUI builds are signed and notarized DMGs named `git-same-<version>-<arch>.dmg`.
 
 </details>
 
@@ -94,6 +94,8 @@ git-same status        # 4. Check repo status across orgs
 | `git-same status` | Show git status across all local repos |
 | `git-same workspace` | List workspaces, set default |
 | `git-same reset` | Remove all config, workspaces, and cache |
+| `git-same monitor` | Run or inspect the background status monitor |
+| `git-same refresh` | Ask the running monitor to rescan immediately |
 | `git-same scan` | Discover repos without cloning or syncing |
 
 ### `git-same init`
@@ -186,6 +188,42 @@ Remove all config, workspaces, and cache:
 git-same reset [-f | --force]
 ```
 
+### `git-same monitor`
+
+Run the status monitor used by the macOS Finder extension and app:
+
+```bash
+git-same monitor [OPTIONS]
+
+Options:
+      --foreground       Legacy flag; the monitor runs in the foreground today
+      --interval <SECS>  Polling interval, overriding config.toml
+      --status           Show monitor status
+      --stop             Stop a running monitor
+```
+
+The Homebrew cask installs a LaunchAgent that runs the monitor for you. Non-cask installs can run `git-same monitor` directly when Finder badge or app status updates are needed. The older `daemon` subcommand remains as a compatibility alias.
+
+### `git-same refresh`
+
+Ask the running monitor to rewrite Finder/app status immediately:
+
+```bash
+git-same refresh [--path <DIR>]
+```
+
+Use this after manually changing workspace folders, deleting repos, or debugging Finder badges. Without `--path`, every monitored workspace is refreshed.
+
+### `git-same scan`
+
+Scan a directory tree for existing workspace markers:
+
+```bash
+git-same scan [PATH] [--depth <N>] [--register]
+```
+
+Use `--register` to add discovered workspaces to your config automatically.
+
 ## Aliases
 
 Git-Same installs multiple binary names so you can use whichever you prefer:
@@ -201,6 +239,20 @@ Git-Same installs multiple binary names so you can use whichever you prefer:
 > **Install method differences:** Homebrew cask (`brew install --cask zaai-com/tap/git-same`) and the headless formula (`brew install zaai-com/tap/git-same-cli`) both install all aliases automatically. `cargo install git-same` installs only the primary binary.
 
 All examples in this README use `git-same`, but any alias works interchangeably.
+
+## macOS App and Finder Badges
+
+The cask installs `Git-Same.app`, the CLI aliases, a FinderSync badge extension, and a monitor LaunchAgent. The app reads the same config as the CLI and shows workspace status from the monitor. Finder badges use the monitor's status file, and workspace root folders get a custom Git-Same folder icon unless `[ui] custom_folder_icon = false` is set.
+
+Useful checks:
+
+```bash
+gisa monitor --status   # Check whether the monitor is running
+gisa refresh            # Force an immediate status refresh
+gisa monitor --stop     # Stop a running monitor
+```
+
+If Finder reserves badge space but no Git-Same badges render, check System Settings -> Login Items & Extensions. Google Drive's FinderSync extension can prevent peer badge images from appearing; disabling Google Drive's Finder extension has been the confirmed workaround in affected environments.
 
 ## Requirements
 

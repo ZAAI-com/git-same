@@ -16,18 +16,22 @@ cargo test --workspace <test_name>                     # Run a single test by na
 cargo test -p git-same --test integration_test         # Run only integration tests
 cargo fmt --all -- --check                             # Check formatting
 cargo clippy --workspace --all-targets --all-features -- -D warnings   # Lint
+pnpm --dir crates/git-same-app/ui install              # Install Tauri UI dependencies
+cargo tauri dev --manifest-path crates/git-same-app/Cargo.toml          # Run macOS app in development
+pnpm --dir crates/git-same-app/ui check                # Type-check the Svelte/Vite UI
 ```
 
 Logging is controlled via `GISA_LOG` env var (e.g., `GISA_LOG=debug cargo run -p git-same -- sync`).
 
 ## Architecture
 
-Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and mirrors them locally with parallel cloning and syncing.
+Git-Same is a Rust CLI + TUI + macOS Tauri app that discovers GitHub org/repo structures and mirrors them locally with parallel cloning and syncing.
 
-**Workspace layout:** the project is a Cargo workspace with two member crates:
+**Workspace layout:** the project is a Cargo workspace with three member crates:
 
 - `git-same-core` (`crates/git-same-core/`): the engine library. No UI dependencies (no clap, ratatui, crossterm). Holds discovery, clone/sync, IPC, status scanning, and shared types.
 - `git-same` (lives at `crates/git-same-cli/` on disk; the directory name and package name intentionally diverge so `cargo install git-same` keeps working as it has since pre-3.x): the CLI binary + TUI. Depends on `git-same-core`. Owns clap parsing, the TUI screens, the setup wizard, and command handlers. The produced binary is named `git-same` (per `[[bin]]` name) so installer aliases (`gisa`, `gitsa`, `gitsame`) and `target/release/git-same` are unchanged from the pre-split layout.
+- `git-same-app` (`crates/git-same-app/`): the Tauri 2 desktop app. The Rust side owns app commands, LaunchAgent helpers, workspace CRUD, sync orchestration, and the status stream. The UI lives in `crates/git-same-app/ui/` and uses Svelte + TypeScript + Vite.
 
 **Binary aliases:** `git-same`, `gitsame`, `gitsa`, `gisa`: all resolve to the binary built from `crates/git-same-cli/src/main.rs`.
 
@@ -82,6 +86,13 @@ Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 - **`event.rs`**: `AppEvent` (terminal input, backend messages, ticks) and `BackendMessage` enum
 - **`screens/`**: Stateless render functions per screen (dashboard, workspace, settings, etc.)
 - **`widgets/`**: Shared widgets (status bar, spinner)
+
+### macOS app module (`crates/git-same-app/`)
+
+- **`src/commands.rs`**: Tauri command handlers for app config, workspace CRUD, requirement checks, LaunchAgent install/restart/status, workspace structure reads, sync runs, and macOS URL opening.
+- **`src/status_stream.rs`**: Watches the monitor's `status.json` and emits `status-updated` events to the Svelte UI.
+- **`ui/src/routes/`**: App screens for dashboard, workspaces, settings, requirements, Finder badges, and badge browser.
+- **`ui/src/stores/status.ts`**: Frontend status store that performs the initial refresh and subscribes to push updates.
 
 ### Key patterns
 
@@ -142,7 +153,7 @@ All workflows are `workflow_dispatch` (manual trigger) in `.github/workflows/`:
 |----------|---------|---------|
 | `S1-Test-CI.yml` | fmt, clippy, test, build dry-run, coverage, audit | Manual dispatch |
 | `S2-Release-GitHub.yml` | Full CI + cross-compile 4 targets (per `toolkit/packaging/targets.txt`) + build/notarize the macOS app DMGs (aarch64, x86_64) + GitHub Release (all assets attached atomically) | Manual dispatch (select tag) |
-| `S3-Publish-Homebrew.yml` | Download release tarballs and render `git-same-cli` formula + `git-same` cask templates into `zaai-com/homebrew-tap` | Manual dispatch (select tag) |
+| `S3-Publish-Homebrew.yml` | Download CLI tarballs + app DMGs and render `git-same-cli` formula + `git-same` cask templates into `zaai-com/homebrew-tap` | Manual dispatch (select tag) |
 | `S4-Publish-Crates.yml` | Two-stage publish to crates.io: `git-same-core` → poll until indexed → `git-same` | Manual dispatch (select tag) |
 
 S2 runs all S1 jobs (test, coverage, audit) as gates before building release artifacts.
