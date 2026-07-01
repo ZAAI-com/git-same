@@ -26,14 +26,14 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 **Workspace layout:** the project is a Cargo workspace with two member crates:
 
-- `git-same-core` (`crates/git-same-core/`) — the engine library. No UI dependencies (no clap, ratatui, crossterm). Holds discovery, clone/sync, IPC, status scanning, and shared types.
-- `git-same` (lives at `crates/git-same-cli/` on disk; the directory name and package name intentionally diverge so `cargo install git-same` keeps working as it has since pre-3.x) — the CLI binary + TUI. Depends on `git-same-core`. Owns clap parsing, the TUI screens, the setup wizard, and command handlers. The produced binary is named `git-same` (per `[[bin]]` name) so installer aliases (`gisa`, `gitsa`, `gitsame`) and `target/release/git-same` are unchanged from the pre-split layout.
+- `git-same-core` (`crates/git-same-core/`): the engine library. No UI dependencies (no clap, ratatui, crossterm). Holds discovery, clone/sync, IPC, status scanning, and shared types.
+- `git-same` (lives at `crates/git-same-cli/` on disk; the directory name and package name intentionally diverge so `cargo install git-same` keeps working as it has since pre-3.x): the CLI binary + TUI. Depends on `git-same-core`. Owns clap parsing, the TUI screens, the setup wizard, and command handlers. The produced binary is named `git-same` (per `[[bin]]` name) so installer aliases (`gisa`, `gitsa`, `gitsame`) and `target/release/git-same` are unchanged from the pre-split layout.
 
-**Binary aliases:** `git-same`, `gitsame`, `gitsa`, `gisa` — all resolve to the binary built from `crates/git-same-cli/src/main.rs`.
+**Binary aliases:** `git-same`, `gitsame`, `gitsa`, `gisa`: all resolve to the binary built from `crates/git-same-cli/src/main.rs`.
 
 **Dual mode:** Running with a subcommand (`gisa sync`) uses the CLI path. Running without a subcommand (`gisa`) launches the interactive TUI.
 
-**macOS host strategy:** Two macOS host apps coexist. The Tauri host (`crates/git-same-app/`, Svelte + TypeScript + Vite) is the primary GUI shipped via the cask. The SwiftUI host (`macos/GitSameSwiftApp/`) is intentionally kept as a fallback per the Phase C plan's "perfect macOS feel" escape hatch (`.context/plans/phase-c-tauri-app.md` §2). **Do not delete `macos/GitSameSwiftApp/` without explicit approval** — this overrides the migration plan's earlier "delete in Phase C" instruction.
+**macOS host strategy:** The Tauri host (`crates/git-same-app/`, Svelte + TypeScript + Vite) is the sole macOS GUI. It is built and notarized in S2 and ships via the cask. The earlier SwiftUI host (`macos/GitSameSwiftApp/`) was removed in Phase C (commit `7fd2ae0`) once the Tauri scaffold took over; do not resurrect it without explicit approval. The only remaining macOS Swift target is the FinderSync badge extension at `macos/GitSameBadges/`.
 
 **CLI flow:** CLI parsing (`crates/git-same-cli/src/cli.rs`) → `main.rs` routes to command handler → handler orchestrates engine modules from `git-same-core`.
 
@@ -43,49 +43,49 @@ Git-Same is a Rust CLI + TUI tool that discovers GitHub org/repo structures and 
 
 ### Engine modules (`crates/git-same-core/src/`)
 
-- **`auth/`** — `gh_cli.rs` obtains GitHub API tokens via `gh auth token`. `ssh.rs` exposes low-level SSH probing primitives (`SshProbeResult`, `parse_ssh_probe_output`) used by clone-time diagnostics
-- **`workflows/`** — Cross-cutting orchestration: `sync_workspace` (discover + clone + fetch/pull) and `status_scan` (walk local repos, collect git status)
+- **`auth/`**: `gh_cli.rs` obtains GitHub API tokens via `gh auth token`. `ssh.rs` exposes low-level SSH probing primitives (`SshProbeResult`, `parse_ssh_probe_output`) used by clone-time diagnostics
+- **`workflows/`**: Cross-cutting orchestration: `sync_workspace` (discover + clone + fetch/pull) and `status_scan` (walk local repos, collect git status)
 - **`monitor/`**: Long-running monitor loop (periodic scan + Unix-socket server) used by `gisa monitor` and reusable by host apps like the Tauri GUI
-- **`config/`** — TOML config parser. Default: `~/.config/git-same/config.toml`. Top-level keys: `workspaces`, `default_workspace`, plus `[clone]` and `[filters]` sections
-- **`discovery.rs`** — `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
-- **`operations/clone.rs`** — `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
-- **`operations/sync.rs`** — `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
-- **`provider/`** — Trait-based provider abstraction (`Provider` trait in `traits.rs`). GitHub implementation in `github/client.rs` with pagination. Mock provider in `mock.rs` for testing
-- **`git/`** — `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands
-- **`cache/`** — `discovery.rs` provides `DiscoveryCache` (TTL-based validity, persisted at `<workspace-root>/.git-same/cache.json`); `sync_history.rs` records sync runs at `<workspace-root>/.git-same/sync-history.json`
-- **`domain/`** — Domain primitives, currently `repo_path_template.rs` for resolving `{org}/{repo}` style structures
-- **`infra/storage/`** — Storage abstractions for workspace-local persistence
-- **`ipc/`** — Monitor ↔ Finder-extension interface (`status_file.rs`, `unix_socket.rs`)
-- **`api/`** — Higher-level service helpers built on top of git/provider/config (e.g. `RepoScanService`)
-- **`errors/`** — Custom error hierarchy: `AppError`, `GitError`, `ProviderError` with `suggested_action()` methods
-- **`output/`** — `printer.rs` for verbosity-aware text output; `progress/` holds the `indicatif` progress bars (`CloneProgressBar`, `SyncProgressBar`, `DiscoveryProgressBar`)
-- **`types/`** — Core data types: `Repo`, `Org`, `ActionPlan`, `OpResult`, `OpSummary`, plus `RepoEntry`/`SyncHistoryEntry` (lifted out of the TUI in B0.1)
-- **`checks.rs`** — System/runtime checks (presence of `git`, `gh`, auth status, SSH access via `check_ssh_github_access`)
+- **`config/`**: TOML config parser. Default: `~/.config/git-same/config.toml`. Top-level keys: `workspaces`, `default_workspace`, plus `[clone]` and `[filters]` sections
+- **`discovery.rs`**: `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
+- **`operations/clone.rs`**: `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
+- **`operations/sync.rs`**: `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
+- **`provider/`**: Trait-based provider abstraction (`Provider` trait in `traits.rs`). GitHub implementation in `github/client.rs` with pagination. Mock provider in `mock.rs` for testing
+- **`git/`**: `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands
+- **`cache/`**: `discovery.rs` provides `DiscoveryCache` (TTL-based validity, persisted at `<workspace-root>/.git-same/cache.json`); `sync_history.rs` records sync runs at `<workspace-root>/.git-same/sync-history.json`
+- **`domain/`**: Domain primitives, currently `repo_path_template.rs` for resolving `{org}/{repo}` style structures
+- **`infra/storage/`**: Storage abstractions for workspace-local persistence
+- **`ipc/`**: Monitor ↔ Finder-extension interface (`status_file.rs`, `unix_socket.rs`)
+- **`api/`**: Higher-level service helpers built on top of git/provider/config (e.g. `RepoScanService`)
+- **`errors/`**: Custom error hierarchy: `AppError`, `GitError`, `ProviderError` with `suggested_action()` methods
+- **`output/`**: `printer.rs` for verbosity-aware text output; `progress/` holds the `indicatif` progress bars (`CloneProgressBar`, `SyncProgressBar`, `DiscoveryProgressBar`)
+- **`types/`**: Core data types: `Repo`, `Org`, `ActionPlan`, `OpResult`, `OpSummary`, plus `RepoEntry`/`SyncHistoryEntry` (lifted out of the TUI in B0.1)
+- **`checks.rs`**: System/runtime checks (presence of `git`, `gh`, auth status, SSH access via `check_ssh_github_access`)
 
 ### CLI / TUI modules (`crates/git-same-cli/src/`)
 
-- **`app/`** — Top-level entry points: `app/cli/` runs the CLI subcommand path, `app/tui/` boots the interactive TUI. `main.rs` dispatches to one or the other based on whether a subcommand was given
-- **`commands/`** — Per-subcommand handlers (`init`, `setup`, `sync_cmd`, `status`, `scan`, `reset`, `workspace`, `monitor`, `refresh`) plus shared `support/` helpers
-- **`setup/`** — Setup wizard state machine + ratatui rendering, shared between the CLI `setup` command and the TUI workspace-setup screen (gated by the `tui` feature)
-- **`tui/`** — Ratatui-based TUI (gated by the `tui` feature)
-- **`cli.rs`** — clap derive types
-- **`banner.rs`** — CLI banner rendering
-- **`bin/gen_completions.rs`, `bin/gen_manpage.rs`** — Release-only helpers gated by the `release-tools` feature
+- **`app/`**: Top-level entry points: `app/cli/` runs the CLI subcommand path, `app/tui/` boots the interactive TUI. `main.rs` dispatches to one or the other based on whether a subcommand was given
+- **`commands/`**: Per-subcommand handlers (`init`, `setup`, `sync_cmd`, `status`, `scan`, `reset`, `workspace`, `monitor`, `refresh`) plus shared `support/` helpers
+- **`setup/`**: Setup wizard state machine + ratatui rendering, shared between the CLI `setup` command and the TUI workspace-setup screen (gated by the `tui` feature)
+- **`tui/`**: Ratatui-based TUI (gated by the `tui` feature)
+- **`cli.rs`**: clap derive types
+- **`banner.rs`**: CLI banner rendering
+- **`bin/gen_completions.rs`, `bin/gen_manpage.rs`**: Release-only helpers gated by the `release-tools` feature
 
 ### TUI module (`crates/git-same-cli/src/tui/`, feature-gated behind `tui`)
 
 Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
-- **`app.rs`** — `App` struct holds all TUI state. `Screen` enum: `WorkspaceSetup`, `Workspaces`, `Dashboard`, `Sync`, `Settings`
-- **`handler.rs`** — Keyboard input handlers per screen + `handle_backend_message` for async results
-- **`backend.rs`** — Spawns Tokio tasks for async operations (sync, status scan), sends `BackendMessage` variants via unbounded channels
-- **`event.rs`** — `AppEvent` (terminal input, backend messages, ticks) and `BackendMessage` enum
-- **`screens/`** — Stateless render functions per screen (dashboard, workspace, settings, etc.)
-- **`widgets/`** — Shared widgets (status bar, spinner)
+- **`app.rs`**: `App` struct holds all TUI state. `Screen` enum: `WorkspaceSetup`, `Workspaces`, `Dashboard`, `Sync`, `Settings`
+- **`handler.rs`**: Keyboard input handlers per screen + `handle_backend_message` for async results
+- **`backend.rs`**: Spawns Tokio tasks for async operations (sync, status scan), sends `BackendMessage` variants via unbounded channels
+- **`event.rs`**: `AppEvent` (terminal input, backend messages, ticks) and `BackendMessage` enum
+- **`screens/`**: Stateless render functions per screen (dashboard, workspace, settings, etc.)
+- **`widgets/`**: Shared widgets (status bar, spinner)
 
 ### Key patterns
 
-- **Trait-based abstractions:** `GitOperations`, `Provider`, progress traits — enables mocking in tests
+- **Trait-based abstractions:** `GitOperations`, `Provider`, progress traits: enables mocking in tests
 - **Concurrency:** Tokio tasks with `Arc<dyn Trait>` for sharing progress reporters across tasks
 - **Error handling:** `thiserror` for typed errors + `anyhow` for propagation. Custom `Result` type alias in `errors/`
 - **Channel-based TUI updates:** Backend operations send `BackendMessage` through `mpsc::UnboundedSender<AppEvent>`, processed by the TUI event loop
@@ -93,7 +93,7 @@ Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
 ## FinderSync extension gotchas (macOS)
 
-Three non-obvious traps in `macos/GitSameBadges/`. Each one silently breaks badges with no error log — the extension self-check still shows green.
+Three non-obvious traps in `macos/GitSameBadges/`. Each one silently breaks badges with no error log: the extension self-check still shows green.
 
 1. **Boot-volume alias paths.** macOS auto-creates `/Volumes/<boot-volume-name>` as a symlink to `/`. Finder presents home-folder URLs with that prefix (`/Volumes/Manuel-SSD-4TB/Users/m/...`) and gates `requestBadgeIdentifier` on the URL matching an entry in `directoryURLs`. `Principal.updateMonitoredDirectories()` must register both the canonical and the alias-prefixed form of every watched root, otherwise the callback fires for nothing.
 
@@ -101,15 +101,15 @@ Three non-obvious traps in `macos/GitSameBadges/`. Each one silently breaks badg
 
 3. **Google Drive's FinderSync poisons the badge-rendering pipeline.** When `com.google.drivefs.finderhelper.findersync` is enabled, peer FinderSync extensions render no badge image even after Finder calls `setBadgeIdentifier`. Confirmed in this environment: badges only began appearing after the user disabled Google Drive in System Settings → Login Items & Extensions. Other peers (Keka, Synology, Dropbox) coexist fine. There is no code fix; document the workaround and surface it in the in-app self-check if you can.
 
-`scan_roots` and `show_ambient`: defaults are `["~"]` / `false`. Never re-enable `show_ambient = true` with `~` in `scan_roots` — Finder refuses to call `requestBadgeIdentifier` on extensions whose `directoryURLs` contain the home folder (separate issue from the three above).
+`scan_roots` and `show_ambient`: defaults are `["~"]` / `false`. Never re-enable `show_ambient = true` with `~` in `scan_roots`: Finder refuses to call `requestBadgeIdentifier` on extensions whose `directoryURLs` contain the home folder (separate issue from the three above).
 
 ## Workspace folder branding (macOS)
 
-The host paints a custom icon onto every workspace root via `NSWorkspace.setIcon` (wrapped in `crates/git-same-core/src/macos/folder_icon.rs`) so Finder shows it in the sidebar, column, list, icon, and Get Info views. A FinderSync extension can never replicate this — it only exposes corner badges. The icon is `crates/git-same-core/assets/workspace-folder.icns`, embedded via `include_bytes!` and regenerable via `bash toolkit/icons/build-workspace-folder-icns.sh`.
+The host paints a custom icon onto every workspace root via `NSWorkspace.setIcon` (wrapped in `crates/git-same-core/src/macos/folder_icon.rs`) so Finder shows it in the sidebar, column, list, icon, and Get Info views. A FinderSync extension can never replicate this; it only exposes corner badges. The icon is `crates/git-same-core/assets/workspace-folder.icns`, embedded via `include_bytes!` and regenerable via `bash toolkit/icons/build-workspace-folder-icns.sh`.
 
 Lifecycle: painted by `core::setup::save_workspace` and `app::commands::save_workspace`, reapplied by the monitor (`monitor::run::reapply_workspace_folder_icons`) on every full scan if the `Icon\r` is missing, and stripped by `cli::commands::reset` and `app::commands::delete_workspace`. Opt out globally with `[ui] custom_folder_icon = false`.
 
-**Finder Sidebar snapshot caveat.** `LSSharedFileList` captures a per-item icon bitmap into `~/Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.FavoriteItems.sfl3` at the moment the user drags a folder into Favorites. That snapshot is frozen — repainting the folder's `Icon\r` does **not** update the sidebar. The only refresh path is manual: right-click the stale sidebar item → Remove from Sidebar, then drag the folder back from a Finder window into Favorites. Don't waste time looking for a programmatic refresh API; the framework doesn't expose one, and the recommended workaround used by Synology / Dropbox is the same drag-and-drop.
+**Finder Sidebar snapshot caveat.** `LSSharedFileList` captures a per-item icon bitmap into `~/Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.FavoriteItems.sfl3` at the moment the user drags a folder into Favorites. That snapshot is frozen: repainting the folder's `Icon\r` does **not** update the sidebar. The only refresh path is manual: right-click the stale sidebar item → Remove from Sidebar, then drag the folder back from a Finder window into Favorites. Don't waste time looking for a programmatic refresh API; the framework doesn't expose one, and the recommended workaround used by Synology / Dropbox is the same drag-and-drop.
 
 ## Formatting
 
@@ -128,7 +128,7 @@ mod tests;
 
 The test file contains `use super::*;` and all `#[test]` / `#[tokio::test]` functions.
 
-**Do not** write inline `#[cfg(test)] mod tests { ... }` blocks — always use separate `_tests.rs` files.
+**Do not** write inline `#[cfg(test)] mod tests { ... }` blocks; always use separate `_tests.rs` files.
 
 **Integration tests** live in `crates/git-same-cli/tests/integration_test.rs`. They spawn the binary via `env!("CARGO_BIN_EXE_git-same")` (compile-time path), so they always run against the freshly built CLI binary at the workspace `target/`.
 
@@ -149,4 +149,4 @@ S2 runs all S1 jobs (test, coverage, audit) as gates before building release art
 
 ## Specs & Docs
 
-End-user docs in `docs/README.md`. Contributor/build-from-source docs in `docs/DEVELOPMENT.md`. Sync-screen design notes in `docs/Sync-Screen.md`. In-flight design plans live under `docs/plans/` and the workspace-local `.context/plans/`.
+End-user docs in `docs/README.md`. Contributor/build-from-source docs in `docs/DEVELOPMENT.md`. Sync-screen design notes in `docs/Sync-Screen.md`. In-flight design plans live under `docs/plans/`.

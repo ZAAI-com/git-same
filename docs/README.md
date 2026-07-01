@@ -48,7 +48,7 @@ brew install --cask zaai-com/tap/git-same
 brew install zaai-com/tap/git-same-cli
 ```
 
-> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The cask is the seam for the upcoming Tauri GUI app and Finder badges, which arrive via `brew upgrade --cask git-same` with no second migration.
+> As of 3.0.1, macOS distribution moved to a Homebrew Cask. The cask ships the Tauri GUI app and Finder badges alongside the CLI, and `brew upgrade --cask git-same` keeps them current with no second migration.
 
 <details>
 <summary>Other installation methods</summary>
@@ -206,8 +206,8 @@ All examples in this README use `git-same`, but any alias works interchangeably.
 
 Git-Same depends on two external tools at runtime:
 
-- **[`git`](https://git-scm.com/)** — Git-Same shells out to `git` for all repository operations — clone, fetch, pull, and status. Without it, no git operations can run.
-- **[`gh`](https://cli.github.com/) (GitHub CLI)** — Git-Same calls `gh auth token` to obtain GitHub API tokens for repo discovery and `gh api user` to resolve your username. Without it, Git-Same cannot authenticate with the GitHub API.
+- **[`git`](https://git-scm.com/)**: Git-Same shells out to `git` for all repository operations (clone, fetch, pull, and status). Without it, no git operations can run.
+- **[`gh`](https://cli.github.com/) (GitHub CLI)**: Git-Same calls `gh auth token` to obtain GitHub API tokens for repo discovery and `gh api user` to resolve your username. Without it, Git-Same cannot authenticate with the GitHub API.
 
 ### Installing and authenticating `gh`
 
