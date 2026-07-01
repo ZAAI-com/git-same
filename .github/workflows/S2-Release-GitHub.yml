@@ -100,7 +100,7 @@ jobs:
 
           # Exactly 1 default [[bin]] in Cargo.toml. [[bin]] entries gated by
           # `required-features` (e.g. release-tools helpers gen-completions and
-          # gen-manpage) are excluded — they don't ship in normal builds.
+          # gen-manpage) are excluded: they don't ship in normal builds.
           read DEFAULT_COUNT CARGO_BIN <<<"$(awk '
             function flush() {
               if (in_bin && !has_req) {
@@ -166,6 +166,11 @@ jobs:
   audit:
     name: Security Audit
     runs-on: macos-latest
+    # audit-check creates a check run with annotations, which needs checks:write
+    # on top of the workflow-wide contents:read default.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -173,6 +178,11 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Transitive advisories with no patched release, all pulled in by the
+          # Tauri app crate's Linux backend (gtk-rs 0.18 + glib), its proc-macro
+          # tooling, and the unic-* unicode crates. Real vulnerabilities are not
+          # ignored: quinn-proto and anyhow were fixed by bumping Cargo.lock.
+          ignore: RUSTSEC-2024-0370,RUSTSEC-2024-0411,RUSTSEC-2024-0412,RUSTSEC-2024-0413,RUSTSEC-2024-0414,RUSTSEC-2024-0415,RUSTSEC-2024-0416,RUSTSEC-2024-0417,RUSTSEC-2024-0418,RUSTSEC-2024-0419,RUSTSEC-2024-0420,RUSTSEC-2024-0429,RUSTSEC-2025-0075,RUSTSEC-2025-0080,RUSTSEC-2025-0081,RUSTSEC-2025-0098,RUSTSEC-2025-0100
 
   workflow-secret-safety:
     name: Workflow Secret Safety
