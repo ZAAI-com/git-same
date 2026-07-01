@@ -141,7 +141,7 @@ All workflows are `workflow_dispatch` (manual trigger) in `.github/workflows/`:
 | Workflow | Purpose | Trigger |
 |----------|---------|---------|
 | `S1-Test-CI.yml` | fmt, clippy, test, build dry-run, coverage, audit | Manual dispatch |
-| `S2-Release-GitHub.yml` | Full CI + cross-compile 4 targets (per `toolkit/packaging/targets.txt`) + GitHub Release | Manual dispatch (select tag) |
+| `S2-Release-GitHub.yml` | Full CI + cross-compile 4 targets (per `toolkit/packaging/targets.txt`) + build/notarize the macOS app DMGs (aarch64, x86_64) + GitHub Release (all assets attached atomically) | Manual dispatch (select tag) |
 | `S3-Publish-Homebrew.yml` | Download release tarballs and render `git-same-cli` formula + `git-same` cask templates into `zaai-com/homebrew-tap` | Manual dispatch (select tag) |
 | `S4-Publish-Crates.yml` | Two-stage publish to crates.io: `git-same-core` → poll until indexed → `git-same` | Manual dispatch (select tag) |
 

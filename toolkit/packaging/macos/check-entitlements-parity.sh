@@ -6,8 +6,8 @@
 # one group and the extension reads from another, and badges stop rendering
 # without an obvious error. CI must catch this before signing.
 #
-# macOS-only (uses /usr/bin/plutil). Run from S5 before the bundle build,
-# and from S1's macOS Tauri build job so PRs catch drift early.
+# macOS-only (uses /usr/bin/plutil). Run from S2's app-DMG build job before the
+# bundle build, and from S1's macOS Tauri build job so PRs catch drift early.
 
 set -euo pipefail
 
