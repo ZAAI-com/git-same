@@ -83,6 +83,10 @@ fn test_default_path_uses_group_container_on_macos() {
     );
 }
 
+// On Windows, directories::ProjectDirs adds a `config` component
+// (`git-same\config`), so the legacy layout only ends in `git-same/finder` on
+// Unix (macOS/Linux), matching the sibling macOS-gated default-path test.
+#[cfg(unix)]
 #[test]
 fn test_legacy_default_path_ends_in_finder() {
     // legacy_default_path leans on Config::default_path which respects XDG

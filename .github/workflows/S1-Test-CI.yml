@@ -60,7 +60,9 @@ jobs:
         run: cargo +${{ matrix.rust }} clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
-        run: cargo +${{ matrix.rust }} test --workspace --all-features -- --test-threads=1
+        # --no-fail-fast so a failure in one crate's test binary still runs the
+        # rest, surfacing every platform-specific failure in a single CI run.
+        run: cargo +${{ matrix.rust }} test --workspace --all-features --no-fail-fast -- --test-threads=1
 
   build:
     name: Build (${{ matrix.target }})
