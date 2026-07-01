@@ -24,6 +24,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 shellexpand = { workspace = true }
 tauri = { version = "2", features = [] }
+# Pin: tauri's transitive `cookie` 0.18.1 calls time's Parsable::parse with the
+# pre-0.3.52 one-arg signature; time 0.3.52 made it two-arg and fails to compile.
+# No fixed cookie release exists yet. Remove this cap once cookie ships a fix.
+time = ">=0.3, <0.3.52"
 tauri-plugin-dialog = "2"
 tokio = { workspace = true }
 toml = { workspace = true }
