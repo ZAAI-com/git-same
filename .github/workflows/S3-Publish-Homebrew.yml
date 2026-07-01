@@ -97,6 +97,13 @@ jobs:
             --out cask.rb
 
       - name: Verify rendered cask + formula against a temp tap
+        # brew audit --online calls the GitHub API (livecheck + release checks).
+        # Without a token brew uses unauthenticated requests (60/hr per IP),
+        # which the shared runner IP routinely exhausts ("API rate limit
+        # exceeded"). GITHUB_TOKEN raises it to the authenticated tier and is
+        # read-only here.
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bash toolkit/homebrew/verify-tap.sh \
             --cask cask.rb \
