@@ -122,6 +122,9 @@ fn render_monitor_plist_replaces_binary_placeholder() {
     assert!(rendered.contains("com.zaai.git-same.monitor"));
 }
 
+// Executability is a Unix permission concept; is_executable() treats every
+// existing file as runnable on non-Unix, so this rejection only applies there.
+#[cfg(unix)]
 #[test]
 fn render_monitor_plist_rejects_non_executable_binary() {
     let temp = TestDir::new("monitor-plist-invalid");
