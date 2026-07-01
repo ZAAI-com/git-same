@@ -13,7 +13,7 @@ cask "git-same" do
 
   url "https://github.com/zaai-com/git-same/releases/download/#{version}/git-same-#{version}-#{arch}.dmg"
   name "Git-Same"
-  desc "Git-Same-Badges"
+  desc "Discover and mirror GitHub org/repo structures locally"
   homepage "https://github.com/zaai-com/git-same"
 
   livecheck do
@@ -21,10 +21,9 @@ cask "git-same" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Git-Same.app"
-
   binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same"
   binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same", target: "gitsame"
   binary "#{appdir}/Git-Same.app/Contents/Helpers/git-same", target: "gitsa"
@@ -62,9 +61,9 @@ cask "git-same" do
   # need the legacy label so launchctl unloads the old plist before the new
   # one is installed.
   uninstall launchctl: ["com.zaai.git-same.monitor", "com.zaai.git-same.daemon"],
-            delete: [
-              "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
+            delete:    [
               "~/Library/LaunchAgents/com.zaai.git-same.daemon.plist",
+              "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
             ]
 
   zap trash: [
@@ -73,7 +72,7 @@ cask "git-same" do
     "~/Library/Caches/com.zaai.git-same",
     "~/Library/Caches/git-same",
     "~/Library/Group Containers/group.57KL6Y7V32.com.zaai.git-same",
-    "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
     "~/Library/LaunchAgents/com.zaai.git-same.daemon.plist",
+    "~/Library/LaunchAgents/com.zaai.git-same.monitor.plist",
   ]
 end
