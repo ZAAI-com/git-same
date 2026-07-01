@@ -4,3 +4,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+
+  # Cargo is configured only to record accepted-risk suppressions, not to open
+  # version-bump PRs (open-pull-requests-limit: 0 disables version updates; the
+  # ignore block still applies to Dependabot security updates).
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    ignore:
+      # RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g: unsoundness in
+      # glib::VariantStrIter. Patched only in glib 0.20, but tauri 2.11's GTK3
+      # Linux backend (gtk 0.18) hard-pins glib ^0.18, so the fix is
+      # unreachable. The GTK3 stack is Linux-only and is never shipped: Linux
+      # releases carry the CLI only, and the macOS app uses WebKit, not glib.
+      # Mirrors the S1 cargo-audit ignore list.
+      - dependency-name: "glib"
