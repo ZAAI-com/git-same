@@ -388,6 +388,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Resolve Rust toolchain
+        id: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLCHAIN="$(awk -F'"' '/^[[:space:]]*channel[[:space:]]*=/ { print $2; exit }' rust-toolchain.toml)"
+          if [ -z "$TOOLCHAIN" ]; then
+            echo "ERROR: rust-toolchain.toml channel not found" >&2
+            exit 1
+          fi
+          echo "toolchain=$TOOLCHAIN" >> "$GITHUB_OUTPUT"
+
       - name: Resolve version from tag
         if: startsWith(github.ref, 'refs/tags/')
         id: version
@@ -403,6 +415,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ steps.rust.outputs.toolchain }}
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -413,7 +426,9 @@ jobs:
           node-version: 24
 
       - name: Enable pnpm
-        run: corepack enable pnpm
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@11.0.9 --activate
 
       - name: Verify entitlements parity
         run: bash toolkit/packaging/macos/check-entitlements-parity.sh

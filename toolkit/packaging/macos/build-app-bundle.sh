@@ -55,6 +55,8 @@ echo "==> Building CLI ($TARGET)"
 echo "==> Installing frontend dependencies"
 if command -v corepack >/dev/null 2>&1; then
     corepack enable pnpm
+    PINNED_PNPM="$(node -p "require('$ROOT/crates/git-same-app/ui/package.json').packageManager.split('+')[0]")"
+    corepack prepare "$PINNED_PNPM" --activate
 fi
 PNPM=(pnpm)
 if ! command -v pnpm >/dev/null 2>&1; then
