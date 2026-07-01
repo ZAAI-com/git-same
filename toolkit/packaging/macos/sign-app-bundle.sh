@@ -129,7 +129,6 @@ sign_app() {
         "$APP_ABS"
 
     /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_ABS"
-    /usr/sbin/spctl --assess --type execute --verbose "$APP_ABS"
 
     verify_helper_entitlements
 }
@@ -170,6 +169,11 @@ notarize_app() {
         --timeout 1200
     xcrun stapler staple "$APP_ABS"
     xcrun stapler validate "$APP_ABS"
+    # Gatekeeper only accepts a Developer ID app once it is notarized and
+    # stapled, so this assessment runs here, after stapling, not during
+    # signing. On an unnotarized bundle spctl exits 3 with
+    # "source=Unnotarized Developer ID", which aborts the script under set -e.
+    /usr/sbin/spctl --assess --type execute --verbose "$APP_ABS"
 }
 
 sign_dmg() {
