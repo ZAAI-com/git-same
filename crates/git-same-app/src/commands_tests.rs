@@ -246,6 +246,39 @@ fn read_status_snapshot_removes_a_status_symlink_and_reports_absent() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn remove_legacy_status_symlink_returns_remove_errors() {
+    use std::io;
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("status-symlink-remove-error");
+    let status_path = temp.path().join("status.json");
+    let external_target = temp.path().join("container-status.json");
+    symlink(&external_target, &status_path).unwrap();
+
+    let error = remove_legacy_status_symlink_with(&status_path, |_| {
+        Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "synthetic unlink failure",
+        ))
+    })
+    .unwrap_err();
+
+    match error {
+        AppError::Path(message) => {
+            assert!(message.contains("Failed to remove legacy status symlink"));
+            assert!(message.contains(&status_path.display().to_string()));
+            assert!(message.contains("synthetic unlink failure"));
+        }
+        other => panic!("expected path error, got {other}"),
+    }
+    assert!(std::fs::symlink_metadata(&status_path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
 #[test]
 fn ensure_config_creates_default_config() {
     let temp = TestDir::new("ensure-config");

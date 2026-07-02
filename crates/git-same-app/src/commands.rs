@@ -1259,7 +1259,7 @@ fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {
 pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
     ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
-    remove_legacy_status_symlink(&status_path);
+    remove_legacy_status_symlink(&status_path)?;
     let writer = StatusFileWriter::new(status_path.clone());
     let metadata = fs::metadata(&status_path).ok();
     let updated_at = metadata
@@ -1309,12 +1309,26 @@ pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapsho
 /// prompt on the non-sandboxed host. `symlink_metadata` does not follow the
 /// link, so detecting and unlinking it never touches the container; the
 /// monitor's next mirror write recreates a real file here.
-fn remove_legacy_status_symlink(status_path: &Path) {
+fn remove_legacy_status_symlink(status_path: &Path) -> Result<(), AppError> {
+    remove_legacy_status_symlink_with(status_path, |path| fs::remove_file(path))
+}
+
+fn remove_legacy_status_symlink_with(
+    status_path: &Path,
+    remove_file: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> Result<(), AppError> {
     if let Ok(meta) = fs::symlink_metadata(status_path) {
         if meta.file_type().is_symlink() {
-            let _ = fs::remove_file(status_path);
+            remove_file(status_path).map_err(|error| {
+                AppError::path(format!(
+                    "Failed to remove legacy status symlink '{}': {}",
+                    status_path.display(),
+                    error
+                ))
+            })?;
         }
     }
+    Ok(())
 }
 
 fn workspace_summary(
