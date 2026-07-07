@@ -1,6 +1,7 @@
 use crate::commands::read_status_snapshot_with;
 use git_same_core::ipc::IpcConfig;
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use std::ffi::OsStr;
 use tauri::{AppHandle, Emitter};
 
 /// Watches the host-facing IPC directory for `status.json` changes and emits a
@@ -33,7 +34,10 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
             }
 
             for event in rx {
-                if event.is_err() {
+                let Ok(event) = event else {
+                    continue;
+                };
+                if !event_touches_status_file(&event) {
                     continue;
                 }
                 if let Ok(snapshot) = read_status_snapshot_with(&ipc) {
@@ -44,3 +48,22 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Whether a watcher event concerns the final `status.json` rather than, for
+/// example, the sibling `status.json.tmp` the atomic write creates first.
+/// Without this filter every monitor write (tmp create + rename) triggers
+/// several full snapshot reads and duplicate `status-updated` emits.
+///
+/// Events with no paths are kept: notify emits path-less rescan/flag events
+/// after kernel-side queue drops, and skipping those could miss an update.
+fn event_touches_status_file(event: &Event) -> bool {
+    event.paths.is_empty()
+        || event
+            .paths
+            .iter()
+            .any(|path| path.file_name() == Some(OsStr::new("status.json")))
+}
+
+#[cfg(test)]
+#[path = "status_stream_tests.rs"]
+mod tests;

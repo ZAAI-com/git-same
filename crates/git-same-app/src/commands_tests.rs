@@ -246,37 +246,21 @@ fn read_status_snapshot_removes_a_status_symlink_and_reports_absent() {
     );
 }
 
-#[cfg(unix)]
 #[test]
-fn remove_legacy_status_symlink_returns_remove_errors() {
-    use std::io;
-    use std::os::unix::fs::symlink;
+fn read_status_snapshot_reports_stale_when_status_file_is_corrupt() {
+    let temp = TestDir::new("status-corrupt");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+    std::fs::write(ipc.status_file_path(), "{ not json").unwrap();
 
-    let temp = TestDir::new("status-symlink-remove-error");
-    let status_path = temp.path().join("status.json");
-    let external_target = temp.path().join("container-status.json");
-    symlink(&external_target, &status_path).unwrap();
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
 
-    let error = remove_legacy_status_symlink_with(&status_path, |_| {
-        Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "synthetic unlink failure",
-        ))
-    })
-    .unwrap_err();
-
-    match error {
-        AppError::Path(message) => {
-            assert!(message.contains("Failed to remove legacy status symlink"));
-            assert!(message.contains(&status_path.display().to_string()));
-            assert!(message.contains("synthetic unlink failure"));
-        }
-        other => panic!("expected path error, got {other}"),
-    }
-    assert!(std::fs::symlink_metadata(&status_path)
-        .unwrap()
-        .file_type()
-        .is_symlink());
+    // A corrupt file must degrade to "no status, stale", not an error.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(snapshot.updated_at.is_some());
 }
 
 #[test]

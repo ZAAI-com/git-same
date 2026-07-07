@@ -47,13 +47,25 @@ impl StatusFileWriter {
     /// readers never observe a partial file and any pre-existing symlink at a
     /// destination is replaced by a real file (rename swaps the directory
     /// entry; it does not follow the link).
+    ///
+    /// Only a primary-path failure is an error. Mirrors are a convenience copy
+    /// for the host app, so a failing mirror (e.g. an unwritable
+    /// `~/.config/git-same/finder/`) is logged as a warning and skipped rather
+    /// than taking down the caller (the monitor would otherwise crash-loop
+    /// under launchd even though the container primary was written fine).
     pub fn write(&self, status: &FinderStatus) -> Result<(), AppError> {
         let json = serde_json::to_string_pretty(status)
             .map_err(|e| AppError::config(format!("Failed to serialize finder status: {}", e)))?;
 
         write_atomic(&self.path, &json)?;
         for mirror in &self.mirrors {
-            write_atomic(mirror, &json)?;
+            if let Err(e) = write_atomic(mirror, &json) {
+                tracing::warn!(
+                    mirror = %mirror.display(),
+                    error = %e,
+                    "Failed to write status mirror; primary status file was written"
+                );
+            }
         }
 
         Ok(())
@@ -76,6 +88,44 @@ impl StatusFileWriter {
     /// Checks if the status file exists.
     pub fn exists(&self) -> bool {
         self.path.exists()
+    }
+
+    /// Mirror paths this writer copies to after the primary (test support).
+    #[cfg(test)]
+    pub(crate) fn mirror_paths(&self) -> &[PathBuf] {
+        &self.mirrors
+    }
+}
+
+/// Removes `path` if it is a symlink, leaving regular files untouched.
+///
+/// Returns `Ok(true)` when a symlink was removed (or vanished concurrently
+/// mid-removal) and `Ok(false)` when there was nothing to remove.
+///
+/// Used by the Tauri host before reading `status.json`: older layouts
+/// symlinked `~/.config/git-same/finder/status.json` into the app-group
+/// container, and following that link (via `metadata`/`exists`, which
+/// dereference symlinks) would re-trigger the "access data from other apps"
+/// TCC prompt on the non-sandboxed host. `symlink_metadata` does not follow
+/// the link, so detecting and unlinking it never touches the container; the
+/// monitor's next mirror write recreates a real file at the path.
+///
+/// Concurrent callers may race between the check and the unlink; `NotFound`
+/// from the removal is treated as success. The narrower race where the
+/// monitor renames a real file over the symlink inside that window is
+/// accepted: the next monitor write (at most one scan interval) restores it.
+pub fn remove_symlink_if_present(path: &Path) -> Result<bool, AppError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => match std::fs::remove_file(path) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(e) => Err(AppError::path(format!(
+                "Failed to remove symlink '{}': {}",
+                path.display(),
+                e
+            ))),
+        },
+        _ => Ok(false),
     }
 }
 

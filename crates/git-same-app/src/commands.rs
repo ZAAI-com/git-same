@@ -9,7 +9,7 @@ use git_same_core::config::{
 use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::AppError;
-use git_same_core::ipc::{IpcConfig, StatusFileWriter};
+use git_same_core::ipc::{remove_symlink_if_present, IpcConfig, StatusFileWriter};
 use git_same_core::macos::folder_icon;
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
@@ -379,15 +379,12 @@ pub fn set_default_workspace(
 pub async fn check_requirements(
     ipc: tauri::State<'_, HostIpc>,
 ) -> Result<Vec<RequirementCheckDto>, String> {
-    // Clone the resolved host IPC config out of the state guard before any
-    // `.await` so no borrow of the guard is held across an await point.
-    let host_ipc = ipc.inner().0.clone();
     let mut checks: Vec<RequirementCheckDto> = git_same_core::checks::check_requirements()
         .await
         .into_iter()
         .map(requirement_check_dto)
         .collect();
-    checks.extend(app_requirement_checks(&host_ipc));
+    checks.extend(app_requirement_checks(&ipc.0));
     Ok(checks)
 }
 
@@ -452,9 +449,6 @@ pub async fn start_sync(
     workspace_id: String,
     ipc: tauri::State<'_, HostIpc>,
 ) -> Result<StatusSnapshot, String> {
-    // Clone the resolved host IPC config out of the state guard before any
-    // `.await` so no borrow of the guard is held across an await point.
-    let host_ipc = ipc.inner().0.clone();
     let config = Config::load().map_err(error_string)?;
     let mut workspace =
         WorkspaceManager::resolve(Some(&workspace_id), &config).map_err(error_string)?;
@@ -496,7 +490,7 @@ pub async fn start_sync(
 
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
-    read_status_snapshot_with(&host_ipc).map_err(error_string)
+    read_status_snapshot_with(&ipc.0).map_err(error_string)
 }
 
 fn sync_progress_reporter(app: tauri::AppHandle, workspace_id: String) -> ProgressReporter {
@@ -1259,16 +1253,18 @@ fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {
 pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
     ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
-    remove_legacy_status_symlink(&status_path)?;
-    let writer = StatusFileWriter::new(status_path.clone());
-    let metadata = fs::metadata(&status_path).ok();
-    let updated_at = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
-        .map(system_time_to_rfc3339);
-    let stale_by_age = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
+    // Older layouts symlinked status.json into the app-group container;
+    // following that link would re-trigger the "access data from other apps"
+    // TCC prompt, so unlink it before anything dereferences the path. The
+    // monitor's next mirror write recreates a real file here.
+    remove_symlink_if_present(&status_path)?;
+    // Single parse: None covers both a missing and a corrupt status file.
+    let status = StatusFileWriter::new(status_path.clone()).read().ok();
+    let modified = fs::metadata(&status_path)
+        .ok()
+        .and_then(|meta| meta.modified().ok());
+    let updated_at = modified.map(system_time_to_rfc3339);
+    let stale_by_age = modified
         .map(|modified| {
             modified
                 .elapsed()
@@ -1276,22 +1272,11 @@ pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapsho
                 > Duration::from_secs(DAEMON_STALE_AFTER_SECS)
         })
         .unwrap_or(true);
-    let monitor_alive = if writer.exists() {
-        writer
-            .read()
-            .map(|status| is_process_alive(status.daemon_pid))
-            .unwrap_or(false)
-    } else {
-        false
-    };
+    let monitor_alive = status
+        .as_ref()
+        .map(|status| is_process_alive(status.daemon_pid))
+        .unwrap_or(false);
     let stale = stale_by_age || !monitor_alive;
-    let status = if writer.exists() && !stale {
-        Some(writer.read()?)
-    } else if writer.exists() {
-        writer.read().ok()
-    } else {
-        None
-    };
 
     Ok(StatusSnapshot {
         status_path: status_path.display().to_string(),
@@ -1299,36 +1284,6 @@ pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapsho
         stale,
         status,
     })
-}
-
-/// Removes a `status.json` left behind as a symlink by an earlier layout.
-///
-/// Older versions symlinked `~/.config/git-same/finder/status.json` into the
-/// app-group container. Following that link (via `metadata`/`exists`, which
-/// dereference symlinks) would re-trigger the "access data from other apps" TCC
-/// prompt on the non-sandboxed host. `symlink_metadata` does not follow the
-/// link, so detecting and unlinking it never touches the container; the
-/// monitor's next mirror write recreates a real file here.
-fn remove_legacy_status_symlink(status_path: &Path) -> Result<(), AppError> {
-    remove_legacy_status_symlink_with(status_path, |path| fs::remove_file(path))
-}
-
-fn remove_legacy_status_symlink_with(
-    status_path: &Path,
-    remove_file: impl FnOnce(&Path) -> std::io::Result<()>,
-) -> Result<(), AppError> {
-    if let Ok(meta) = fs::symlink_metadata(status_path) {
-        if meta.file_type().is_symlink() {
-            remove_file(status_path).map_err(|error| {
-                AppError::path(format!(
-                    "Failed to remove legacy status symlink '{}': {}",
-                    status_path.display(),
-                    error
-                ))
-            })?;
-        }
-    }
-    Ok(())
 }
 
 fn workspace_summary(

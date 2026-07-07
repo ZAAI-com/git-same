@@ -130,6 +130,61 @@ fn test_write_produces_primary_and_every_mirror() {
     assert_eq!(mirror_reader.read().unwrap(), status);
 }
 
+#[test]
+fn test_mirror_write_failure_does_not_fail_primary_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let primary = temp.path().join("container/status.json");
+    // A regular file where the mirror's parent dir should be makes
+    // create_dir_all fail deterministically on every platform.
+    let blocker = temp.path().join("blocker");
+    std::fs::write(&blocker, "not a directory").unwrap();
+    let mirror = blocker.join("status.json");
+
+    let writer = StatusFileWriter::new_with_mirrors(primary.clone(), vec![mirror.clone()]);
+    let status = sample_status();
+    writer.write(&status).unwrap();
+
+    // The primary is written and readable; the failed mirror is only warned.
+    assert!(primary.exists());
+    assert_eq!(writer.read().unwrap(), status);
+    assert!(
+        std::fs::symlink_metadata(&mirror).is_err(),
+        "mirror must not exist"
+    );
+}
+
+#[test]
+fn test_remove_symlink_if_present_leaves_regular_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("status.json");
+    std::fs::write(&file, "{}").unwrap();
+
+    assert!(!remove_symlink_if_present(&file).unwrap());
+    assert!(file.exists());
+}
+
+#[test]
+fn test_remove_symlink_if_present_ok_when_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    assert!(!remove_symlink_if_present(&temp.path().join("absent.json")).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_remove_symlink_if_present_removes_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("target.json");
+    std::fs::write(&target, "{}").unwrap();
+    let link = temp.path().join("status.json");
+    symlink(&target, &link).unwrap();
+
+    assert!(remove_symlink_if_present(&link).unwrap());
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    assert!(target.exists(), "the symlink target must be untouched");
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn test_mirror_write_replaces_existing_symlink_with_real_file() {

@@ -60,11 +60,7 @@ where
     info!("Starting git-same monitor");
     output.info("Starting git-same monitor...");
 
-    let primary_status_path = ipc_config.status_file_path();
-    let status_writer = StatusFileWriter::new_with_mirrors(
-        primary_status_path.clone(),
-        status_mirror_paths(&primary_status_path),
-    );
+    let status_writer = ipc_config.status_writer();
     let git = ShellGit::new();
 
     let owner_types = OwnerTypeCache::load(OwnerTypeCache::default_path(&ipc_config.dir));
@@ -213,30 +209,6 @@ where
 
     let _ = ambient_upgrades;
     Ok(())
-}
-
-/// Mirror paths for the status writer. On macOS the primary `status.json`
-/// lives in the app-group container; mirror a real copy into the host-facing
-/// `~/.config/git-same/finder/` so the non-sandboxed Tauri host can read live
-/// status without reaching into the container (which would trigger the "access
-/// data from other apps" TCC prompt). On other platforms the primary path is
-/// already the host path, so there are no mirrors.
-fn status_mirror_paths(primary: &Path) -> Vec<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(host) = IpcConfig::host_status_path() {
-            let mirror = host.status_file_path();
-            if mirror.as_path() != primary {
-                return vec![mirror];
-            }
-        }
-        Vec::new()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = primary;
-        Vec::new()
-    }
 }
 
 fn flush_pending(
