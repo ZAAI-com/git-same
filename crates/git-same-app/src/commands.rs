@@ -1077,9 +1077,11 @@ fn monitor_requirement_suggestion(
         Some(agent) if !agent.loaded || !agent.running => {
             Some("Restart the Git-Same monitor LaunchAgent".to_string())
         }
-        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
-            Some("Restart the monitor or wait for the next scan".to_string())
-        }
+        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => Some(
+            "Restart the monitor (Settings) or wait for the next scan; \
+             if you just upgraded, a restart picks up the new monitor build"
+                .to_string(),
+        ),
         Some(_) => None,
         None => Some("Check LaunchAgent permissions and the git-same binary path".to_string()),
     }
