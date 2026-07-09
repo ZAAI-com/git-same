@@ -1,0 +1,19 @@
+crates/git-same-app/src/commands.rs
+  s_d2f2c98d3ed29b::t_060f7fac1b50b2 1080-1084
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3924e5e62e0ddbca79f5924d57f03bfd91889886",
+  "prompts": {},
+  "sessions": {
+    "s_d2f2c98d3ed29b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "716d4fe9-84c7-48a4-8f59-a64f0679746c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
