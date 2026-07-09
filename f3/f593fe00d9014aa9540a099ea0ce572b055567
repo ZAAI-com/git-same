@@ -1,0 +1,21 @@
+Cargo.lock
+  s_d2f2c98d3ed29b::t_c794e916ffcf4c 1527,1552,1571
+crates/git-same-app/ui/package.json
+  s_d2f2c98d3ed29b::t_6eb619691aa5ea 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f3f593fe00d9014aa9540a099ea0ce572b055567",
+  "prompts": {},
+  "sessions": {
+    "s_d2f2c98d3ed29b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "716d4fe9-84c7-48a4-8f59-a64f0679746c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
