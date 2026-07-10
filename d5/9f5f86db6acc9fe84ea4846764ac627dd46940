@@ -1,0 +1,31 @@
+crates/git-same-app/src/commands.rs
+  s_d2f2c98d3ed29b::t_42641fe1e98a22 1057-1061,1066-1071,1075,1077,1087-1091,1102,1116-1118
+  s_d2f2c98d3ed29b::t_39ab6b618e6b0f 1062-1065
+  s_d2f2c98d3ed29b::t_df73415bd170f3 1002-1011
+crates/git-same-app/src/commands_tests.rs
+  s_d2f2c98d3ed29b::t_67b52ee5e6a421 160,164,169-222
+  s_d2f2c98d3ed29b::t_896baf19d39413 223
+crates/git-same-core/src/types/finder_status.rs
+  s_d2f2c98d3ed29b::t_1c8d8734ef1341 157-161
+  s_d2f2c98d3ed29b::t_27258a981c01fc 180
+crates/git-same-core/src/types/finder_status_tests.rs
+  s_d2f2c98d3ed29b::t_2cfd374749e194 146-168
+crates/git-same-app/ui/src/lib/types.ts
+  s_d2f2c98d3ed29b::t_f56bd088a28289 217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d59f5f86db6acc9fe84ea4846764ac627dd46940",
+  "prompts": {},
+  "sessions": {
+    "s_d2f2c98d3ed29b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "716d4fe9-84c7-48a4-8f59-a64f0679746c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
