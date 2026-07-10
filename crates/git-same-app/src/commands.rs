@@ -590,6 +590,21 @@ fn install_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, A
     restart_monitor_launch_agent_inner()
 }
 
+/// Best-effort recovery for the upgrade-skew case: restart the monitor
+/// LaunchAgent *only if it is already installed*, so an old (pre-upgrade)
+/// monitor process is replaced by the on-disk build, which mirrors a real
+/// `status.json` into the host dir. Does nothing when no LaunchAgent is
+/// installed (the user never set up the monitor); it never installs one
+/// implicitly. Called from `setup()` when a leftover legacy status symlink
+/// signals that an old monitor is still running.
+pub(crate) fn restart_monitor_if_installed() -> Result<(), AppError> {
+    if !monitor_launch_agent_path()?.exists() {
+        return Ok(());
+    }
+    restart_monitor_launch_agent_inner()?;
+    Ok(())
+}
+
 fn restart_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
     let plist_path = monitor_launch_agent_path()?;
     if !plist_path.exists() {
