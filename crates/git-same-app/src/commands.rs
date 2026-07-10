@@ -999,8 +999,16 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
         name: "Monitor".to_string(),
         passed: monitor_agent.as_ref().is_some_and(|agent| agent.running)
             && snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
-        message: monitor_requirement_message(monitor_agent.as_ref(), snapshot.as_ref()),
-        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref(), snapshot.as_ref()),
+        message: monitor_requirement_message(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
+        suggestion: monitor_requirement_suggestion(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
         critical: false,
     });
 
@@ -1046,10 +1054,27 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
     checks
 }
 
+/// The monitor's build version when the mirrored status reports one that
+/// differs from the app's own build, or `None` when they match or none is
+/// known. Older monitors that predate the `monitor_version` field, or that are
+/// too old to mirror a readable status at all, report `None` here; the stale
+/// arm covers that case instead.
+fn monitor_version_mismatch(
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> Option<String> {
+    snapshot
+        .and_then(|snapshot| snapshot.status.as_ref())
+        .and_then(|status| status.monitor_version.clone())
+        .filter(|version| version != app_version)
+}
+
 fn monitor_requirement_message(
     agent: Option<&MonitorLaunchAgentStatusDto>,
     snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
 ) -> String {
+    let skew = monitor_version_mismatch(snapshot, app_version);
     match agent {
         Some(agent) if !agent.installed => "LaunchAgent plist missing".to_string(),
         Some(agent) if !agent.loaded => "LaunchAgent installed but not loaded".to_string(),
@@ -1059,6 +1084,11 @@ fn monitor_requirement_message(
         Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
             "Monitor running but status file is stale".to_string()
         }
+        Some(_) if skew.is_some() => format!(
+            "Monitor is running a different build ({}) than the app ({})",
+            skew.as_deref().unwrap_or_default(),
+            app_version
+        ),
         Some(_) => snapshot
             .and_then(|snapshot| snapshot.updated_at.clone())
             .unwrap_or_else(|| "Monitor running".to_string()),
@@ -1069,6 +1099,7 @@ fn monitor_requirement_message(
 fn monitor_requirement_suggestion(
     agent: Option<&MonitorLaunchAgentStatusDto>,
     snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
 ) -> Option<String> {
     match agent {
         Some(agent) if !agent.installed => {
@@ -1082,6 +1113,9 @@ fn monitor_requirement_suggestion(
              if you just upgraded, a restart picks up the new monitor build"
                 .to_string(),
         ),
+        Some(_) if monitor_version_mismatch(snapshot, app_version).is_some() => {
+            Some("Restart the monitor so it runs the same build as the app".to_string())
+        }
         Some(_) => None,
         None => Some("Check LaunchAgent permissions and the git-same binary path".to_string()),
     }

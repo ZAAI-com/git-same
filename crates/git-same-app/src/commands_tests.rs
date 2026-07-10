@@ -157,12 +157,67 @@ fn monitor_requirement_message_distinguishes_missing_plist() {
     };
 
     assert_eq!(
-        monitor_requirement_message(Some(&agent), None),
+        monitor_requirement_message(Some(&agent), None, "3.2.0"),
         "LaunchAgent plist missing"
     );
     assert_eq!(
-        monitor_requirement_suggestion(Some(&agent), None),
+        monitor_requirement_suggestion(Some(&agent), None, "3.2.0"),
         Some("Install the Git-Same monitor LaunchAgent".to_string())
+    );
+}
+
+fn running_agent() -> MonitorLaunchAgentStatusDto {
+    MonitorLaunchAgentStatusDto {
+        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
+        plist_path: "/tmp/agent.plist".to_string(),
+        binary_path: Some("/usr/local/bin/git-same".to_string()),
+        installed: true,
+        loaded: true,
+        running: true,
+        state: "running".to_string(),
+        message: "Monitor running".to_string(),
+    }
+}
+
+fn snapshot_with_monitor_version(version: Option<&str>) -> StatusSnapshot {
+    let mut status = FinderStatus::new(4242, "2026-07-07T00:00:00Z".to_string());
+    status.monitor_version = version.map(str::to_string);
+    StatusSnapshot {
+        status_path: "/tmp/status.json".to_string(),
+        updated_at: Some("2026-07-07T00:00:00Z".to_string()),
+        stale: false,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn monitor_requirement_flags_version_skew() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.1.0"));
+
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Monitor is running a different build (3.1.0) than the app (3.2.0)"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        Some("Restart the monitor so it runs the same build as the app".to_string())
+    );
+}
+
+#[test]
+fn monitor_requirement_ignores_matching_version() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.2.0"));
+
+    // Matching versions surface the healthy updated_at message and no skew hint.
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "2026-07-07T00:00:00Z"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        None
     );
 }
 
