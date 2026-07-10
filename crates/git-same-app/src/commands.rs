@@ -967,8 +967,16 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
         passed: monitor_agent.as_ref().is_some_and(monitor_is_healthy),
-        message: monitor_requirement_message(monitor_agent.as_ref()),
-        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref()),
+        message: monitor_requirement_message(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
+        suggestion: monitor_requirement_suggestion(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
         critical: false,
     });
 
@@ -1019,8 +1027,39 @@ fn monitor_is_healthy(agent: &MonitorLaunchAgentStatusDto) -> bool {
     )
 }
 
-fn monitor_requirement_message(agent: Option<&MonitorLaunchAgentStatusDto>) -> String {
+/// The monitor's build version when the mirrored status reports one that
+/// differs from the app's own build, or `None` when they match or none is
+/// known. Older monitors that predate the `monitor_version` field, or that are
+/// too old to mirror a readable status at all, report `None` here; the agent
+/// state arms cover that case instead.
+fn monitor_version_mismatch(
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> Option<String> {
+    snapshot
+        .and_then(|snapshot| snapshot.status.as_ref())
+        .and_then(|status| status.monitor_version.clone())
+        .filter(|version| version != app_version)
+}
+
+fn monitor_requirement_message(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> String {
     match agent {
+        Some(agent) if monitor_is_healthy(agent) => {
+            match monitor_version_mismatch(snapshot, app_version) {
+                Some(skew) => format!(
+                    "Monitor is running a different build ({}) than the app ({})",
+                    skew, app_version
+                ),
+                None => agent
+                    .detail
+                    .clone()
+                    .unwrap_or_else(|| agent.message.clone()),
+            }
+        }
         Some(agent) => agent
             .detail
             .clone()
@@ -1029,10 +1068,17 @@ fn monitor_requirement_message(agent: Option<&MonitorLaunchAgentStatusDto>) -> S
     }
 }
 
-fn monitor_requirement_suggestion(agent: Option<&MonitorLaunchAgentStatusDto>) -> Option<String> {
+fn monitor_requirement_suggestion(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> Option<String> {
     let agent = agent?;
     match agent.state {
-        MonitorAgentState::Running | MonitorAgentState::Starting => None,
+        MonitorAgentState::Running | MonitorAgentState::Starting => {
+            monitor_version_mismatch(snapshot, app_version)
+                .map(|_| "Restart the monitor so it runs the same build as the app".to_string())
+        }
         MonitorAgentState::Deferred => {
             Some("Nothing to do: it starts at your next login".to_string())
         }

@@ -115,7 +115,7 @@ fn monitor_requirement_treats_a_long_first_scan_as_healthy() {
     assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Starting)));
     assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Running)));
     assert_eq!(
-        monitor_requirement_suggestion(Some(&agent_in(MonitorAgentState::Starting))),
+        monitor_requirement_suggestion(Some(&agent_in(MonitorAgentState::Starting)), None, "3.2.0"),
         None
     );
 }
@@ -125,7 +125,7 @@ fn monitor_requirement_does_not_call_an_intentional_stop_broken() {
     let stopped = agent_in(MonitorAgentState::Disabled);
     assert!(!monitor_is_healthy(&stopped));
     assert_eq!(
-        monitor_requirement_suggestion(Some(&stopped)),
+        monitor_requirement_suggestion(Some(&stopped), None, "3.2.0"),
         Some("Start monitoring to see Finder badges".to_string())
     );
 }
@@ -134,7 +134,7 @@ fn monitor_requirement_does_not_call_an_intentional_stop_broken() {
 fn monitor_requirement_prefers_the_concrete_error_detail() {
     let failed = agent_in(MonitorAgentState::Failed).failed("launchctl bootstrap failed");
     assert_eq!(
-        monitor_requirement_message(Some(&failed)),
+        monitor_requirement_message(Some(&failed), None, "3.2.0"),
         "launchctl bootstrap failed"
     );
 }
@@ -624,4 +624,50 @@ fn open_url_scheme_match_is_case_insensitive() {
     assert!(is_openable(
         "X-Apple.SystemPreferences:com.apple.LoginItems-Settings.extension"
     ));
+}
+
+fn running_agent() -> MonitorLaunchAgentStatusDto {
+    agent_in(MonitorAgentState::Running)
+}
+
+fn snapshot_with_monitor_version(version: Option<&str>) -> StatusSnapshot {
+    let mut status = FinderStatus::new(4242, "2026-07-07T00:00:00Z".to_string());
+    status.monitor_version = version.map(str::to_string);
+    StatusSnapshot {
+        status_path: "/tmp/status.json".to_string(),
+        updated_at: Some("2026-07-07T00:00:00Z".to_string()),
+        stale: false,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn monitor_requirement_flags_version_skew() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.1.0"));
+
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Monitor is running a different build (3.1.0) than the app (3.2.0)"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        Some("Restart the monitor so it runs the same build as the app".to_string())
+    );
+}
+
+#[test]
+fn monitor_requirement_ignores_matching_version() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.2.0"));
+
+    // Matching versions leave the healthy agent message and no skew hint.
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Running"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        None
+    );
 }
