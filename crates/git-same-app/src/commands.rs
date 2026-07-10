@@ -745,6 +745,26 @@ fn monitor_launch_agent_status_inner() -> Result<MonitorLaunchAgentStatusDto, Ap
     }
 }
 
+/// Best-effort recovery for the upgrade-skew case: restart the monitor
+/// *only if a LaunchAgent is already installed*, so an old (pre-upgrade)
+/// monitor process is replaced by the on-disk build, which mirrors a real
+/// `status.json` into the host dir. Does nothing when nothing is installed
+/// (the user never set up the monitor); it never installs one implicitly.
+/// Called from app startup when a leftover legacy status symlink signals
+/// that an old monitor is still running.
+pub(crate) fn restart_monitor_if_installed() -> Result<(), AppError> {
+    let controller = match monitor_agent::controller_for_current_user(false) {
+        Ok(controller) => controller,
+        Err(MonitorAgentError::Unsupported) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if controller.inspect()?.state == MonitorAgentState::NotInstalled {
+        return Ok(());
+    }
+    controller.restart()?;
+    Ok(())
+}
+
 // `pluginkit -m -v -i <id>` prints one line per plugin matching the id, or
 // nothing if no match. Each line begins with `+` (enabled) or `-` (disabled),
 // followed by the plugin id and bundle path. We treat any line containing
