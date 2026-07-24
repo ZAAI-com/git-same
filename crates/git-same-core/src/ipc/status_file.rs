@@ -114,18 +114,35 @@ impl StatusFileWriter {
 /// from the removal is treated as success. The narrower race where the
 /// monitor renames a real file over the symlink inside that window is
 /// accepted: the next monitor write (at most one scan interval) restores it.
+///
+/// A `symlink_metadata` failure other than `NotFound` (e.g. a permission or
+/// I/O error inspecting the path) is propagated rather than swallowed as
+/// "nothing to remove": callers such as `read_status_snapshot_with` abort
+/// instead of continuing on to dereference a path they could not inspect,
+/// which for an un-inspectable symlink would re-trigger the TCC prompt.
 pub fn remove_symlink_if_present(path: &Path) -> Result<bool, AppError> {
-    match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => match std::fs::remove_file(path) {
-            Ok(()) => Ok(true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
-            Err(e) => Err(AppError::path(format!(
-                "Failed to remove symlink '{}': {}",
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => {
+            return Err(AppError::path(format!(
+                "Failed to inspect '{}': {}",
                 path.display(),
                 e
-            ))),
-        },
-        _ => Ok(false),
+            )))
+        }
+    };
+    if !meta.file_type().is_symlink() {
+        return Ok(false);
+    }
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(AppError::path(format!(
+            "Failed to remove symlink '{}': {}",
+            path.display(),
+            e
+        ))),
     }
 }
 

@@ -1012,8 +1012,11 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
     let monitor_agent = monitor_launch_agent_status_inner().ok();
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
-        passed: monitor_agent.as_ref().is_some_and(|agent| agent.running)
-            && snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
+        passed: monitor_requirement_passed(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
         message: monitor_requirement_message(
             monitor_agent.as_ref(),
             snapshot.as_ref(),
@@ -1082,6 +1085,20 @@ fn monitor_version_mismatch(
         .and_then(|snapshot| snapshot.status.as_ref())
         .and_then(|status| status.monitor_version.clone())
         .filter(|version| version != app_version)
+}
+
+/// Whether the Monitor requirement is satisfied. Mirrors the conditions that
+/// `monitor_requirement_message`/`monitor_requirement_suggestion` treat as
+/// problems, including a build-version skew, so the row's pass state never
+/// contradicts its own message and suggestion.
+fn monitor_requirement_passed(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> bool {
+    agent.is_some_and(|agent| agent.running)
+        && snapshot.is_some_and(|snapshot| !snapshot.stale)
+        && monitor_version_mismatch(snapshot, app_version).is_none()
 }
 
 fn monitor_requirement_message(

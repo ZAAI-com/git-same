@@ -34,14 +34,23 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
             }
 
             for event in rx {
-                let Ok(event) = event else {
-                    continue;
+                let event = match event {
+                    Ok(event) => event,
+                    Err(error) => {
+                        eprintln!("status watcher event error: {error}");
+                        continue;
+                    }
                 };
                 if !event_touches_status_file(&event) {
                     continue;
                 }
-                if let Ok(snapshot) = read_status_snapshot_with(&ipc) {
-                    let _ = app.emit("status-updated", snapshot);
+                match read_status_snapshot_with(&ipc) {
+                    Ok(snapshot) => {
+                        let _ = app.emit("status-updated", snapshot);
+                    }
+                    Err(error) => {
+                        eprintln!("failed to read status snapshot: {error}");
+                    }
                 }
             }
         })?;
