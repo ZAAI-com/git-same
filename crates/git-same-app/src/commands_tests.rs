@@ -671,3 +671,25 @@ fn monitor_requirement_ignores_matching_version() {
         None
     );
 }
+
+#[test]
+fn monitor_requirement_fails_pass_on_version_skew() {
+    let agent = running_agent();
+
+    // A running monitor on a mismatched build must not pass, so the row's
+    // state agrees with its "different build" message and restart suggestion.
+    let skewed = snapshot_with_monitor_version(Some("3.1.0"));
+    assert!(!monitor_requirement_passed(
+        Some(&agent),
+        Some(&skewed),
+        "3.2.0"
+    ));
+
+    // Matching builds still pass.
+    let matched = snapshot_with_monitor_version(Some("3.2.0"));
+    assert!(monitor_requirement_passed(
+        Some(&agent),
+        Some(&matched),
+        "3.2.0"
+    ));
+}

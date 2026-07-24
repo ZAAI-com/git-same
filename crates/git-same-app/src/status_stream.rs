@@ -184,14 +184,21 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
                             .unwrap_or(Relevance::Ignore);
                         debouncer.record(relevance, Instant::now());
                     }
-                    Ok(Err(_)) => {}
+                    Ok(Err(error)) => {
+                        eprintln!("status watcher event error: {error}");
+                    }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         let Some(fired) = debouncer.take_due(Instant::now()) else {
                             continue;
                         };
                         if fired == Relevance::DataAndMonitor {
-                            if let Ok(snapshot) = read_status_snapshot_with(&ipc) {
-                                let _ = app.emit("status-updated", snapshot);
+                            match read_status_snapshot_with(&ipc) {
+                                Ok(snapshot) => {
+                                    let _ = app.emit("status-updated", snapshot);
+                                }
+                                Err(error) => {
+                                    eprintln!("failed to read status snapshot: {error}");
+                                }
                             }
                         }
                         if fired != Relevance::Ignore {
