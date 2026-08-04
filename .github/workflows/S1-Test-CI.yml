@@ -161,7 +161,7 @@ jobs:
           prefix-key: v1-rust-no-bin
 
       - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.6
         with:
           tool: cargo-tarpaulin
 
