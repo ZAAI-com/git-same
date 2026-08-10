@@ -142,3 +142,38 @@ fn ignored_events_never_arm_the_debouncer() {
     assert_eq!(debouncer.timeout(start), Duration::from_secs(3600));
     assert_eq!(debouncer.take_due(start + Duration::from_secs(10)), None);
 }
+
+#[test]
+fn rescan_and_pathless_events_count_as_new_data() {
+    use notify::{event::Flag, EventKind};
+
+    let targets = targets();
+
+    // Path-bearing rescan: the path names the directory, not status.json.
+    let rescan = Event::new(EventKind::Other)
+        .set_flag(Flag::Rescan)
+        .add_path(std::path::PathBuf::from("/group"));
+    assert_eq!(
+        event_relevance(&targets, &rescan),
+        Relevance::DataAndMonitor
+    );
+
+    // Path-less rescan.
+    let pathless_rescan = Event::new(EventKind::Other).set_flag(Flag::Rescan);
+    assert_eq!(
+        event_relevance(&targets, &pathless_rescan),
+        Relevance::DataAndMonitor
+    );
+
+    // Path-less event without the rescan flag.
+    let pathless = Event::new(EventKind::Other);
+    assert_eq!(
+        event_relevance(&targets, &pathless),
+        Relevance::DataAndMonitor
+    );
+
+    // A normal irrelevant path is still ignored.
+    let temp =
+        Event::new(EventKind::Other).add_path(std::path::PathBuf::from("/group/monitor.lock"));
+    assert_eq!(event_relevance(&targets, &temp), Relevance::Ignore);
+}

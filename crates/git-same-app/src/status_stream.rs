@@ -10,7 +10,7 @@
 
 use crate::commands::{read_status_snapshot_with, refresh_monitor_status};
 use git_same_core::ipc::IpcConfig;
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -98,6 +98,25 @@ fn file_name_of(path: &Path) -> OsString {
     path.file_name().unwrap_or(path.as_os_str()).to_os_string()
 }
 
+/// What a watcher event means for the UI.
+///
+/// A rescan event says the backend dropped kernel-side events, so the status
+/// file may have changed without a path-bearing event ever arriving; the same
+/// goes for a path-less event on backends that use those to signal a missed
+/// update. Both are treated as new data rather than ignored, otherwise the
+/// dashboard can sit on stale status indefinitely.
+pub(crate) fn event_relevance(targets: &WatchTargets, event: &Event) -> Relevance {
+    if event.need_rescan() || event.paths.is_empty() {
+        return Relevance::DataAndMonitor;
+    }
+    event
+        .paths
+        .iter()
+        .map(|path| targets.relevance(path))
+        .max()
+        .unwrap_or(Relevance::Ignore)
+}
+
 /// Collects a burst of events into one update.
 ///
 /// Trailing edge: each further event pushes the deadline out, so a scan no
@@ -176,13 +195,7 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
                 let timeout = debouncer.timeout(Instant::now());
                 match rx.recv_timeout(timeout) {
                     Ok(Ok(event)) => {
-                        let relevance = event
-                            .paths
-                            .iter()
-                            .map(|path| targets.relevance(path))
-                            .max()
-                            .unwrap_or(Relevance::Ignore);
-                        debouncer.record(relevance, Instant::now());
+                        debouncer.record(event_relevance(&targets, &event), Instant::now());
                     }
                     Ok(Err(error)) => {
                         eprintln!("status watcher event error: {error}");
