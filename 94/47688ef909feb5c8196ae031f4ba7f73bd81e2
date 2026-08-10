@@ -1,0 +1,22 @@
+crates/git-same-app/src/status_stream.rs
+  s_b0ea03f8de4224::t_5842806111c402 66-69,71-72
+crates/git-same-app/src/status_stream_tests.rs
+  s_b0ea03f8de4224::t_5842806111c402 2,33-40,43-45
+  s_b0ea03f8de4224::t_32babde6ecdedc 46-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "9447688ef909feb5c8196ae031f4ba7f73bd81e2",
+  "prompts": {},
+  "sessions": {
+    "s_b0ea03f8de4224": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe206-42f0-7e11-91ef-fa5f95d36a95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
