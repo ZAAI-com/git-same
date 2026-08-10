@@ -63,10 +63,13 @@ pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
 /// Without this filter every monitor write (tmp create + rename) triggers
 /// several full snapshot reads and duplicate `status-updated` emits.
 ///
-/// Events with no paths are kept: notify emits path-less rescan/flag events
-/// after kernel-side queue drops, and skipping those could miss an update.
+/// Rescan events are always kept: after a kernel-side queue drop, notify's
+/// macOS FSEvents backend marks the event for rescan but still attaches the
+/// watched-directory path. Pathless events are also kept defensively because
+/// other backends may use them to signal that an update was missed.
 fn event_touches_status_file(event: &Event) -> bool {
-    event.paths.is_empty()
+    event.need_rescan()
+        || event.paths.is_empty()
         || event
             .paths
             .iter()
