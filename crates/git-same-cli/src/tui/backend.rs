@@ -17,7 +17,7 @@ use git_same_core::workflows::sync_workspace::{
     execute_prepared_sync, prepare_sync_workspace, SyncWorkspaceRequest,
 };
 
-use super::app::{App, Operation};
+use super::app::{App, Operation, OperationState};
 use super::event::{AppEvent, BackendMessage};
 
 // -- Progress adapters that send events to the TUI via channels --
@@ -211,6 +211,28 @@ impl SyncProgress for TuiSyncProgress {
 }
 
 // -- Spawn functions --
+
+/// Start a background status refresh when it cannot conflict with another scan or sync.
+pub(crate) fn try_start_status_refresh(app: &mut App, tx: &UnboundedSender<AppEvent>) -> bool {
+    let sync_active = matches!(
+        &app.operation_state,
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            ..
+        } | OperationState::Running {
+            operation: Operation::Sync,
+            ..
+        }
+    );
+
+    if app.active_workspace.is_none() || app.status_loading || sync_active {
+        return false;
+    }
+
+    app.status_loading = true;
+    spawn_operation(Operation::Status, app, tx.clone());
+    true
+}
 
 /// Spawn an async task to fetch recent commits for a repo (post-sync deep dive).
 pub fn spawn_commit_fetch(

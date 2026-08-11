@@ -104,6 +104,120 @@ fn test_no_temp_file_remains_after_write() {
     assert!(!temp_path.exists());
 }
 
+#[test]
+fn test_write_produces_primary_and_every_mirror() {
+    let temp = tempfile::tempdir().unwrap();
+    let primary = temp.path().join("container/status.json");
+    let mirror = temp.path().join("host/status.json");
+    let writer = StatusFileWriter::new_with_mirrors(primary.clone(), vec![mirror.clone()]);
+
+    let status = sample_status();
+    writer.write(&status).unwrap();
+
+    // Both files exist as real files with identical content.
+    assert!(primary.exists());
+    assert!(mirror.exists());
+    assert_eq!(
+        std::fs::read_to_string(&primary).unwrap(),
+        std::fs::read_to_string(&mirror).unwrap()
+    );
+
+    // The writer reads back from the primary.
+    assert_eq!(writer.read().unwrap(), status);
+
+    // A reader pointed at the mirror sees the same status.
+    let mirror_reader = StatusFileWriter::new(mirror);
+    assert_eq!(mirror_reader.read().unwrap(), status);
+}
+
+#[test]
+fn test_mirror_write_failure_does_not_fail_primary_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let primary = temp.path().join("container/status.json");
+    // A regular file where the mirror's parent dir should be makes
+    // create_dir_all fail deterministically on every platform.
+    let blocker = temp.path().join("blocker");
+    std::fs::write(&blocker, "not a directory").unwrap();
+    let mirror = blocker.join("status.json");
+
+    let writer = StatusFileWriter::new_with_mirrors(primary.clone(), vec![mirror.clone()]);
+    let status = sample_status();
+    writer.write(&status).unwrap();
+
+    // The primary is written and readable; the failed mirror is only warned.
+    assert!(primary.exists());
+    assert_eq!(writer.read().unwrap(), status);
+    assert!(
+        std::fs::symlink_metadata(&mirror).is_err(),
+        "mirror must not exist"
+    );
+}
+
+#[test]
+fn test_remove_symlink_if_present_leaves_regular_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("status.json");
+    std::fs::write(&file, "{}").unwrap();
+
+    assert!(!remove_symlink_if_present(&file).unwrap());
+    assert!(file.exists());
+}
+
+#[test]
+fn test_remove_symlink_if_present_ok_when_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    assert!(!remove_symlink_if_present(&temp.path().join("absent.json")).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn test_remove_symlink_if_present_removes_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join("target.json");
+    std::fs::write(&target, "{}").unwrap();
+    let link = temp.path().join("status.json");
+    symlink(&target, &link).unwrap();
+
+    assert!(remove_symlink_if_present(&link).unwrap());
+    assert!(std::fs::symlink_metadata(&link).is_err());
+    assert!(target.exists(), "the symlink target must be untouched");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_mirror_write_replaces_existing_symlink_with_real_file() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let container = temp.path().join("container");
+    let host = temp.path().join("host");
+    std::fs::create_dir_all(&container).unwrap();
+    std::fs::create_dir_all(&host).unwrap();
+
+    let primary = container.join("status.json");
+    let mirror = host.join("status.json");
+
+    // Simulate the pre-upgrade layout: the host mirror path is a symlink into
+    // the container.
+    symlink(&primary, &mirror).unwrap();
+    assert!(std::fs::symlink_metadata(&mirror)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let writer = StatusFileWriter::new_with_mirrors(primary, vec![mirror.clone()]);
+    writer.write(&sample_status()).unwrap();
+
+    // The first mirror write replaces the symlink with a real file.
+    let meta = std::fs::symlink_metadata(&mirror).unwrap();
+    assert!(
+        meta.file_type().is_file(),
+        "mirror must be a real file, not a symlink, after write"
+    );
+}
+
 #[cfg(target_os = "macos")]
 mod symlink_helper {
     use super::*;
@@ -189,20 +303,36 @@ mod symlink_helper {
     }
 
     #[test]
-    fn ensure_legacy_symlinks_is_noop_when_legacy_dir_missing() {
-        // Use a non-existent legacy dir override path: we can't easily inject
-        // a custom legacy dir into the public helper, so we exercise the
-        // private one with a known-missing legacy path.
-        let (_root, _legacy, group) = dirs();
-        let missing_legacy_file =
-            PathBuf::from("/nonexistent/path/that/should/not/exist/status.json");
-        // ensure_one_symlink should still happily create a symlink if the
-        // parent can be created; we sanity-check by NOT creating the parent
-        // and asserting we get an error rather than a crash.
-        // (Linux/macOS will fail at `create_dir_all` for a path we cannot
-        // write to.)
-        let _ = ensure_one_symlink(&missing_legacy_file, &group.join("status.json"));
-        // No assertion about success/failure here; the point is just that
-        // the helper does not panic on unexpected inputs.
+    fn ensure_legacy_symlinks_symlinks_only_the_socket() {
+        let (_root, legacy, group) = dirs();
+
+        ensure_legacy_symlinks_in(&legacy, &group).unwrap();
+
+        // finder.sock is symlinked into the group container.
+        let sock = legacy.join("finder.sock");
+        let sock_meta = fs::symlink_metadata(&sock).unwrap();
+        assert!(sock_meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(&sock).unwrap(), group.join("finder.sock"));
+
+        // status.json is deliberately NOT symlinked; the monitor mirrors a real
+        // file there instead.
+        assert!(
+            fs::symlink_metadata(legacy.join("status.json")).is_err(),
+            "status.json must not be symlinked"
+        );
+    }
+
+    #[test]
+    fn ensure_legacy_symlinks_creates_socket_when_legacy_dir_missing() {
+        let (_root, legacy, group) = dirs();
+        let missing_legacy = legacy.join("finder");
+        assert!(!missing_legacy.exists());
+
+        ensure_legacy_symlinks_in(&missing_legacy, &group).unwrap();
+
+        let sock = missing_legacy.join("finder.sock");
+        let sock_meta = fs::symlink_metadata(&sock).unwrap();
+        assert!(sock_meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(&sock).unwrap(), group.join("finder.sock"));
     }
 }

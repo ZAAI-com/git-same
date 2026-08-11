@@ -39,7 +39,7 @@ tui = ["dep:ratatui", "dep:crossterm"]
 release-tools = ["dep:clap_complete", "dep:clap_mangen"]
 
 [dependencies]
-git-same-core = { path = "../git-same-core", version = "=3.1.0" }
+git-same-core = { path = "../git-same-core", version = "=3.2.0" }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

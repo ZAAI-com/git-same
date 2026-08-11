@@ -9,7 +9,7 @@ use git_same_core::config::{
 use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::AppError;
-use git_same_core::ipc::{IpcConfig, StatusFileWriter};
+use git_same_core::ipc::{remove_symlink_if_present, IpcConfig, StatusFileWriter};
 use git_same_core::macos::folder_icon;
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
@@ -41,6 +41,14 @@ const MONITOR_PLIST_TEMPLATE: &str = include_str!("../../../macos/com.zaai.git-s
 #[cfg(test)]
 #[path = "commands_tests.rs"]
 mod tests;
+
+/// Resolved host-facing IPC config, shared across Tauri command handlers via
+/// `tauri::State`. Resolved once in `main.rs` `setup()` so handlers read live
+/// status from `~/.config/git-same/finder/` (where the monitor mirrors a real
+/// `status.json`) instead of reaching into the app-group container, which would
+/// trigger the "access data from other apps" TCC prompt on the non-sandboxed
+/// host.
+pub struct HostIpc(pub IpcConfig);
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspaceSummary {
@@ -368,13 +376,15 @@ pub fn set_default_workspace(
 }
 
 #[tauri::command]
-pub async fn check_requirements() -> Result<Vec<RequirementCheckDto>, String> {
+pub async fn check_requirements(
+    ipc: tauri::State<'_, HostIpc>,
+) -> Result<Vec<RequirementCheckDto>, String> {
     let mut checks: Vec<RequirementCheckDto> = git_same_core::checks::check_requirements()
         .await
         .into_iter()
         .map(requirement_check_dto)
         .collect();
-    checks.extend(app_requirement_checks());
+    checks.extend(app_requirement_checks(&ipc.0));
     Ok(checks)
 }
 
@@ -429,14 +439,15 @@ pub async fn read_workspace_structure(
 }
 
 #[tauri::command]
-pub async fn read_status() -> Result<StatusSnapshot, String> {
-    read_status_snapshot().map_err(error_string)
+pub async fn read_status(ipc: tauri::State<'_, HostIpc>) -> Result<StatusSnapshot, String> {
+    read_status_snapshot_with(&ipc.0).map_err(error_string)
 }
 
 #[tauri::command]
 pub async fn start_sync(
     app: tauri::AppHandle,
     workspace_id: String,
+    ipc: tauri::State<'_, HostIpc>,
 ) -> Result<StatusSnapshot, String> {
     let config = Config::load().map_err(error_string)?;
     let mut workspace =
@@ -479,8 +490,7 @@ pub async fn start_sync(
 
     workspace.last_synced = Some(chrono::Utc::now().to_rfc3339());
     WorkspaceManager::save(&workspace).map_err(error_string)?;
-    let ipc = IpcConfig::default_path().map_err(error_string)?;
-    read_status_snapshot_with(&ipc).map_err(error_string)
+    read_status_snapshot_with(&ipc.0).map_err(error_string)
 }
 
 fn sync_progress_reporter(app: tauri::AppHandle, workspace_id: String) -> ProgressReporter {
@@ -578,6 +588,21 @@ fn install_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, A
         ))
     })?;
     restart_monitor_launch_agent_inner()
+}
+
+/// Best-effort recovery for the upgrade-skew case: restart the monitor
+/// LaunchAgent *only if it is already installed*, so an old (pre-upgrade)
+/// monitor process is replaced by the on-disk build, which mirrors a real
+/// `status.json` into the host dir. Does nothing when no LaunchAgent is
+/// installed (the user never set up the monitor); it never installs one
+/// implicitly. Called from `setup()` when a leftover legacy status symlink
+/// signals that an old monitor is still running.
+pub(crate) fn restart_monitor_if_installed() -> Result<(), AppError> {
+    if !monitor_launch_agent_path()?.exists() {
+        return Ok(());
+    }
+    restart_monitor_launch_agent_inner()?;
+    Ok(())
 }
 
 fn restart_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
@@ -957,7 +982,7 @@ fn sync_mode_label(sync_mode: SyncMode) -> String {
     .to_string()
 }
 
-fn app_requirement_checks() -> Vec<RequirementCheckDto> {
+fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
     let config_path = match Config::default_path() {
         Ok(path) => path,
         Err(error) => {
@@ -983,14 +1008,25 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
         critical: true,
     }];
 
-    let snapshot = read_status_snapshot().ok();
+    let snapshot = read_status_snapshot_with(ipc).ok();
     let monitor_agent = monitor_launch_agent_status_inner().ok();
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
-        passed: monitor_agent.as_ref().is_some_and(|agent| agent.running)
-            && snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
-        message: monitor_requirement_message(monitor_agent.as_ref(), snapshot.as_ref()),
-        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref(), snapshot.as_ref()),
+        passed: monitor_requirement_passed(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
+        message: monitor_requirement_message(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
+        suggestion: monitor_requirement_suggestion(
+            monitor_agent.as_ref(),
+            snapshot.as_ref(),
+            env!("CARGO_PKG_VERSION"),
+        ),
         critical: false,
     });
 
@@ -1036,10 +1072,41 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
     checks
 }
 
+/// The monitor's build version when the mirrored status reports one that
+/// differs from the app's own build, or `None` when they match or none is
+/// known. Older monitors that predate the `monitor_version` field, or that are
+/// too old to mirror a readable status at all, report `None` here; the stale
+/// arm covers that case instead.
+fn monitor_version_mismatch(
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> Option<String> {
+    snapshot
+        .and_then(|snapshot| snapshot.status.as_ref())
+        .and_then(|status| status.monitor_version.clone())
+        .filter(|version| version != app_version)
+}
+
+/// Whether the Monitor requirement is satisfied. Mirrors the conditions that
+/// `monitor_requirement_message`/`monitor_requirement_suggestion` treat as
+/// problems, including a build-version skew, so the row's pass state never
+/// contradicts its own message and suggestion.
+fn monitor_requirement_passed(
+    agent: Option<&MonitorLaunchAgentStatusDto>,
+    snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
+) -> bool {
+    agent.is_some_and(|agent| agent.running)
+        && snapshot.is_some_and(|snapshot| !snapshot.stale)
+        && monitor_version_mismatch(snapshot, app_version).is_none()
+}
+
 fn monitor_requirement_message(
     agent: Option<&MonitorLaunchAgentStatusDto>,
     snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
 ) -> String {
+    let skew = monitor_version_mismatch(snapshot, app_version);
     match agent {
         Some(agent) if !agent.installed => "LaunchAgent plist missing".to_string(),
         Some(agent) if !agent.loaded => "LaunchAgent installed but not loaded".to_string(),
@@ -1049,6 +1116,11 @@ fn monitor_requirement_message(
         Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
             "Monitor running but status file is stale".to_string()
         }
+        Some(_) if skew.is_some() => format!(
+            "Monitor is running a different build ({}) than the app ({})",
+            skew.as_deref().unwrap_or_default(),
+            app_version
+        ),
         Some(_) => snapshot
             .and_then(|snapshot| snapshot.updated_at.clone())
             .unwrap_or_else(|| "Monitor running".to_string()),
@@ -1059,6 +1131,7 @@ fn monitor_requirement_message(
 fn monitor_requirement_suggestion(
     agent: Option<&MonitorLaunchAgentStatusDto>,
     snapshot: Option<&StatusSnapshot>,
+    app_version: &str,
 ) -> Option<String> {
     match agent {
         Some(agent) if !agent.installed => {
@@ -1067,8 +1140,13 @@ fn monitor_requirement_suggestion(
         Some(agent) if !agent.loaded || !agent.running => {
             Some("Restart the Git-Same monitor LaunchAgent".to_string())
         }
-        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
-            Some("Restart the monitor or wait for the next scan".to_string())
+        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => Some(
+            "Restart the monitor (Settings) or wait for the next scan; \
+             if you just upgraded, a restart picks up the new monitor build"
+                .to_string(),
+        ),
+        Some(_) if monitor_version_mismatch(snapshot, app_version).is_some() => {
+            Some("Restart the monitor so it runs the same build as the app".to_string())
         }
         Some(_) => None,
         None => Some("Check LaunchAgent permissions and the git-same binary path".to_string()),
@@ -1240,23 +1318,21 @@ fn requirement_check_dto(check: CheckResult) -> RequirementCheckDto {
     }
 }
 
-pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
-    let ipc = IpcConfig::default_path()?;
-    read_status_snapshot_with(&ipc)
-}
-
-fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
+pub(crate) fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
     ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
-    let writer = StatusFileWriter::new(status_path.clone());
-    let metadata = fs::metadata(&status_path).ok();
-    let updated_at = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
-        .map(system_time_to_rfc3339);
-    let stale_by_age = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
+    // Older layouts symlinked status.json into the app-group container;
+    // following that link would re-trigger the "access data from other apps"
+    // TCC prompt, so unlink it before anything dereferences the path. The
+    // monitor's next mirror write recreates a real file here.
+    remove_symlink_if_present(&status_path)?;
+    // Single parse: None covers both a missing and a corrupt status file.
+    let status = StatusFileWriter::new(status_path.clone()).read().ok();
+    let modified = fs::metadata(&status_path)
+        .ok()
+        .and_then(|meta| meta.modified().ok());
+    let updated_at = modified.map(system_time_to_rfc3339);
+    let stale_by_age = modified
         .map(|modified| {
             modified
                 .elapsed()
@@ -1264,22 +1340,11 @@ fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError
                 > Duration::from_secs(DAEMON_STALE_AFTER_SECS)
         })
         .unwrap_or(true);
-    let monitor_alive = if writer.exists() {
-        writer
-            .read()
-            .map(|status| is_process_alive(status.daemon_pid))
-            .unwrap_or(false)
-    } else {
-        false
-    };
+    let monitor_alive = status
+        .as_ref()
+        .map(|status| is_process_alive(status.daemon_pid))
+        .unwrap_or(false);
     let stale = stale_by_age || !monitor_alive;
-    let status = if writer.exists() && !stale {
-        Some(writer.read()?)
-    } else if writer.exists() {
-        writer.read().ok()
-    } else {
-        None
-    };
 
     Ok(StatusSnapshot {
         status_path: status_path.display().to_string(),

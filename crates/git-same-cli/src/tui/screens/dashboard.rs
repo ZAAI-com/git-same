@@ -31,9 +31,15 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             show_sync_progress(app);
         }
         KeyCode::Char('t') => {
-            app.last_status_scan = None; // Force immediate refresh
-            app.status_loading = true;
-            start_operation(app, Operation::Status, backend_tx);
+            if crate::tui::backend::try_start_status_refresh(app, backend_tx) {
+                app.last_status_scan = None;
+
+                // An in-flight requirements check already refreshes these results. Otherwise,
+                // clear the completed results so the next tick starts a fresh check.
+                if !app.checks_loading {
+                    app.check_results.clear();
+                }
+            }
         }
         // Tab shortcuts
         KeyCode::Char('o') => {
@@ -112,7 +118,13 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
     }
 }
 
-fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSender<AppEvent>) {
+pub(crate) fn start_sync_operation(app: &mut App, backend_tx: &UnboundedSender<AppEvent>) {
+    if app.status_loading {
+        app.error_message =
+            Some("Status refresh is still running; try again when it completes".to_string());
+        return;
+    }
+
     if matches!(
         app.operation_state,
         OperationState::Discovering { .. } | OperationState::Running { .. }
@@ -123,17 +135,13 @@ fn start_operation(app: &mut App, operation: Operation, backend_tx: &UnboundedSe
 
     app.tick_count = 0;
     app.operation_state = OperationState::Discovering {
-        operation,
-        message: format!("Starting {}...", operation),
+        operation: Operation::Sync,
+        message: "Starting Sync...".to_string(),
     };
     app.log_lines.clear();
     app.scroll_offset = 0;
 
-    crate::tui::backend::spawn_operation(operation, app, backend_tx.clone());
-}
-
-pub(crate) fn start_sync_operation(app: &mut App, backend_tx: &UnboundedSender<AppEvent>) {
-    start_operation(app, Operation::Sync, backend_tx);
+    crate::tui::backend::spawn_operation(Operation::Sync, app, backend_tx.clone());
 }
 
 pub(crate) fn show_sync_progress(app: &mut App) {
@@ -321,33 +329,39 @@ fn render_config_reqs(app: &App, frame: &mut Frame, area: Rect) {
         Span::styled(" Settings    ", dim),
     ];
 
-    let right = if app.checks_loading || app.check_results.is_empty() {
-        vec![
-            Span::styled(" Checking...", Style::default().fg(Color::Yellow)),
-            Span::raw("  "),
-            Span::styled("[t]", key_style),
-            Span::styled(" Refresh", dim),
-        ]
+    let mut right = if app.checks_loading || app.check_results.is_empty() {
+        vec![Span::styled(
+            " Checking...",
+            Style::default().fg(Color::Yellow),
+        )]
     } else {
         let all_passed = app.check_results.iter().all(|c| c.passed);
         if all_passed {
             vec![
                 Span::styled(" [✓]", Style::default().fg(Color::Rgb(21, 128, 61))),
                 Span::styled(" Requirements Satisfied", dim),
-                Span::raw("  "),
-                Span::styled("[t]", key_style),
-                Span::styled(" Refresh", dim),
             ]
         } else {
             vec![
                 Span::styled(" [✗]", Style::default().fg(Color::Red)),
                 Span::styled(" Requirements Not Met", dim),
-                Span::raw("  "),
-                Span::styled("[t]", key_style),
-                Span::styled(" Refresh", dim),
             ]
         }
     };
+
+    right.push(Span::raw("  "));
+    if app.status_loading {
+        right.push(Span::styled(
+            format!(
+                "{} Refreshing...",
+                crate::tui::widgets::spinner::frame(app.tick_count)
+            ),
+            Style::default().fg(Color::Yellow),
+        ));
+    } else {
+        right.push(Span::styled("[t]", key_style));
+        right.push(Span::styled(" Refresh", dim));
+    }
 
     render_info_line(frame, area, left, right);
 }

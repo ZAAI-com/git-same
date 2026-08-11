@@ -144,6 +144,29 @@ fn test_finder_status_serialization() {
 }
 
 #[test]
+fn test_new_stamps_monitor_version() {
+    let status = FinderStatus::new(1, "t".to_string());
+    assert_eq!(
+        status.monitor_version.as_deref(),
+        Some(env!("CARGO_PKG_VERSION")),
+        "new() must stamp the building crate's version"
+    );
+    // The stamped version survives a round-trip.
+    let json = serde_json::to_string(&status).unwrap();
+    let parsed: FinderStatus = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.monitor_version, status.monitor_version);
+}
+
+#[test]
+fn test_legacy_status_without_monitor_version_deserializes_to_none() {
+    // Status files written before this field existed lack the key; they must
+    // still parse, with monitor_version absent.
+    let legacy = r#"{"version":1,"timestamp":"t","daemon_pid":1,"workspaces":[],"repos":[]}"#;
+    let parsed: FinderStatus = serde_json::from_str(legacy).unwrap();
+    assert!(parsed.monitor_version.is_none());
+}
+
+#[test]
 fn test_boot_volume_aliases_serialization() {
     // Empty: the key is omitted entirely (skip_serializing_if).
     let mut status = FinderStatus::new(1, "t".to_string());

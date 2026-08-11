@@ -214,6 +214,7 @@ export interface FinderStatus {
   org_folders?: OrgFolderInfo[];
   monitored_roots?: string[];
   boot_volume_aliases?: string[];
+  monitor_version?: string;
 }
 
 export interface StatusSnapshot {

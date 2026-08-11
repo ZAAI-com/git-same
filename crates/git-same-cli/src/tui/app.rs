@@ -234,7 +234,7 @@ pub struct App {
     /// Scroll offset for the workspace detail right pane.
     pub workspace_detail_scroll: u16,
 
-    /// Tick counter for driving animations on the Progress screen.
+    /// Tick counter for driving Sync and Dashboard animations.
     pub tick_count: u64,
 
     /// Structured sync log entries (enriched data).

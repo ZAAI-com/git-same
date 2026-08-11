@@ -157,12 +157,89 @@ fn monitor_requirement_message_distinguishes_missing_plist() {
     };
 
     assert_eq!(
-        monitor_requirement_message(Some(&agent), None),
+        monitor_requirement_message(Some(&agent), None, "3.2.0"),
         "LaunchAgent plist missing"
     );
     assert_eq!(
-        monitor_requirement_suggestion(Some(&agent), None),
+        monitor_requirement_suggestion(Some(&agent), None, "3.2.0"),
         Some("Install the Git-Same monitor LaunchAgent".to_string())
+    );
+}
+
+fn running_agent() -> MonitorLaunchAgentStatusDto {
+    MonitorLaunchAgentStatusDto {
+        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
+        plist_path: "/tmp/agent.plist".to_string(),
+        binary_path: Some("/usr/local/bin/git-same".to_string()),
+        installed: true,
+        loaded: true,
+        running: true,
+        state: "running".to_string(),
+        message: "Monitor running".to_string(),
+    }
+}
+
+fn snapshot_with_monitor_version(version: Option<&str>) -> StatusSnapshot {
+    let mut status = FinderStatus::new(4242, "2026-07-07T00:00:00Z".to_string());
+    status.monitor_version = version.map(str::to_string);
+    StatusSnapshot {
+        status_path: "/tmp/status.json".to_string(),
+        updated_at: Some("2026-07-07T00:00:00Z".to_string()),
+        stale: false,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn monitor_requirement_flags_version_skew() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.1.0"));
+
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Monitor is running a different build (3.1.0) than the app (3.2.0)"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        Some("Restart the monitor so it runs the same build as the app".to_string())
+    );
+}
+
+#[test]
+fn monitor_requirement_fails_pass_on_version_skew() {
+    let agent = running_agent();
+
+    // A running monitor on a mismatched build must not pass, so the row's
+    // state agrees with its "different build" message and restart suggestion.
+    let skewed = snapshot_with_monitor_version(Some("3.1.0"));
+    assert!(!monitor_requirement_passed(
+        Some(&agent),
+        Some(&skewed),
+        "3.2.0"
+    ));
+
+    // Matching builds still pass.
+    let matched = snapshot_with_monitor_version(Some("3.2.0"));
+    assert!(monitor_requirement_passed(
+        Some(&agent),
+        Some(&matched),
+        "3.2.0"
+    ));
+}
+
+#[test]
+fn monitor_requirement_ignores_matching_version() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.2.0"));
+
+    // Matching versions surface the healthy updated_at message and no skew hint.
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "2026-07-07T00:00:00Z"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        None
     );
 }
 
@@ -205,6 +282,62 @@ fn read_status_snapshot_returns_last_known_status_when_monitor_pid_is_stale() {
         .status
         .expect("stale monitor should still surface the last-known status from disk");
     assert!(status.repos.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn read_status_snapshot_removes_a_status_symlink_and_reports_absent() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("status-symlink");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+
+    // Simulate the pre-upgrade layout: status.json is a symlink into another
+    // location (the app-group container). Following it would re-trigger the
+    // cross-app TCC prompt.
+    let external_target = temp.path().join("container-status.json");
+    let mut external = FinderStatus::new(4242, chrono::Utc::now().to_rfc3339());
+    external.repos = Vec::new();
+    StatusFileWriter::new(external_target.clone())
+        .write(&external)
+        .unwrap();
+    let status_path = ipc.status_file_path();
+    symlink(&external_target, &status_path).unwrap();
+    assert!(std::fs::symlink_metadata(&status_path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
+
+    // The guard unlinks the symlink and reports status absent rather than
+    // dereferencing it into the container.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(
+        std::fs::symlink_metadata(&status_path).is_err(),
+        "status.json symlink must be removed"
+    );
+}
+
+#[test]
+fn read_status_snapshot_reports_stale_when_status_file_is_corrupt() {
+    let temp = TestDir::new("status-corrupt");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+    std::fs::write(ipc.status_file_path(), "{ not json").unwrap();
+
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
+
+    // A corrupt file must degrade to "no status, stale", not an error.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(snapshot.updated_at.is_some());
 }
 
 #[test]

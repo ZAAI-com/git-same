@@ -60,7 +60,7 @@ where
     info!("Starting git-same monitor");
     output.info("Starting git-same monitor...");
 
-    let status_writer = StatusFileWriter::new(ipc_config.status_file_path());
+    let status_writer = ipc_config.status_writer();
     let git = ShellGit::new();
 
     let owner_types = OwnerTypeCache::load(OwnerTypeCache::default_path(&ipc_config.dir));
@@ -150,7 +150,7 @@ where
                     match result {
                         Ok((stream, _)) => {
                             let config_clone = config.clone();
-                            let writer_path = status_writer.path().to_path_buf();
+                            let writer = status_writer.clone();
                             let owner_clone = service.owner_types_clone();
                             let ambient_clone = service.ambient_upgrades_clone();
                             let status_clone = shared_status.clone();
@@ -159,7 +159,7 @@ where
                                     stream,
                                     &config_clone,
                                     pid,
-                                    &writer_path,
+                                    writer,
                                     status_clone,
                                     owner_clone,
                                     ambient_clone,

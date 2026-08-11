@@ -99,3 +99,56 @@ fn test_legacy_default_path_ends_in_finder() {
         );
     }
 }
+
+#[test]
+fn test_host_status_path_matches_legacy_default_path() {
+    // The host reads from the non-container host path; it must resolve to the
+    // same directory as legacy_default_path (a distinct name for clarity).
+    let host = IpcConfig::host_status_path();
+    let legacy = IpcConfig::legacy_default_path();
+    match (host, legacy) {
+        (Ok(host), Ok(legacy)) => {
+            assert_eq!(host.dir, legacy.dir);
+            // On Windows the dir ends in `git-same\config\finder` (see the
+            // comment on test_legacy_default_path_ends_in_finder), so the
+            // suffix check is unix-only; the equality above is the real point.
+            #[cfg(unix)]
+            assert!(host.dir.ends_with("git-same/finder"));
+        }
+        (Err(_), Err(_)) => {}
+        _ => panic!("host_status_path and legacy_default_path disagreed on success"),
+    }
+}
+
+#[test]
+fn test_status_writer_has_no_mirrors_for_custom_dir() {
+    // A caller-supplied dir (tests, embedders) must never leak mirror writes
+    // into the real user's host dir.
+    let temp = tempfile::tempdir().unwrap();
+    let config = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    let writer = config.status_writer();
+    assert_eq!(writer.path(), config.status_file_path().as_path());
+    assert!(writer.mirror_paths().is_empty());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_status_writer_mirrors_host_status_for_group_container() {
+    if std::env::var_os("HOME").is_none() {
+        return;
+    }
+    let config = IpcConfig::default_path().expect("default_path");
+    let writer = config.status_writer();
+    if Some(config.dir.as_path()) == macos_group_container_dir().as_deref() {
+        let host = IpcConfig::host_status_path().expect("host_status_path");
+        assert_eq!(
+            writer.mirror_paths().to_vec(),
+            vec![host.status_file_path()]
+        );
+    } else {
+        // Legacy fallback (HOME unset is handled above; this arm is defensive).
+        assert!(writer.mirror_paths().is_empty());
+    }
+}
