@@ -197,8 +197,8 @@ fn write_atomic(path: &Path, json: &str) -> Result<(), AppError> {
 ///
 /// Idempotent. If a legacy regular file already exists at the destination, it
 /// is renamed aside as `<name>.user-saved-<UTC-timestamp>` and a `warn` log
-/// line is emitted, then the symlink is created. If the legacy directory
-/// itself does not exist (fresh install), this is a no-op.
+/// line is emitted, then the symlink is created. If the legacy directory does
+/// not exist, it is created so fresh installs receive the socket symlink.
 ///
 /// Pre-existing 3.x users had the monitor writing to `~/.config/git-same/finder/`
 /// and the FinderSync extension reading from it via an absolute-path entitlement
@@ -218,13 +218,9 @@ pub fn ensure_legacy_symlinks(group_dir: &Path) -> Result<(), AppError> {
 /// can exercise it against a controlled directory.
 #[cfg(target_os = "macos")]
 fn ensure_legacy_symlinks_in(legacy_dir: &Path, group_dir: &Path) -> Result<(), AppError> {
-    if !legacy_dir.exists() {
-        // Fresh install (no XDG config dir at all yet); nothing to migrate.
-        return Ok(());
-    }
-
     // Only the socket is symlinked; status.json is a real mirror file written
-    // by the monitor (see the doc comment on `ensure_legacy_symlinks`).
+    // by the monitor (see the doc comment on `ensure_legacy_symlinks`). The
+    // socket helper creates the legacy directory as needed.
     let legacy_sock = legacy_dir.join("finder.sock");
     let target_sock = group_dir.join("finder.sock");
     ensure_one_symlink(&legacy_sock, &target_sock)
