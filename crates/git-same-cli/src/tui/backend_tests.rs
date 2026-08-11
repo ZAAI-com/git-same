@@ -1,6 +1,6 @@
 use super::*;
 use crate::tui::event::{AppEvent, BackendMessage};
-use git_same_core::config::Config;
+use git_same_core::config::{Config, WorkspaceConfig};
 use git_same_core::git::{FetchResult, PullResult};
 use git_same_core::operations::clone::CloneProgress;
 use git_same_core::operations::sync::SyncProgress;
@@ -18,6 +18,104 @@ fn expect_backend_event(event: AppEvent) -> BackendMessage {
     match event {
         AppEvent::Backend(msg) => msg,
         _ => panic!("expected backend event"),
+    }
+}
+
+fn app_with_temp_workspace() -> (tempfile::TempDir, App) {
+    let temp = tempfile::tempdir().expect("temp workspace");
+    let workspace = WorkspaceConfig::new_from_root(temp.path());
+    let app = App::new(Config::default(), vec![workspace], false);
+    (temp, app)
+}
+
+#[tokio::test]
+async fn try_start_status_refresh_starts_scan() {
+    let (_temp, mut app) = app_with_temp_workspace();
+    let (tx, mut rx) = unbounded_channel();
+
+    assert!(try_start_status_refresh(&mut app, &tx));
+    assert!(app.status_loading);
+    assert!(matches!(app.operation_state, OperationState::Idle));
+
+    let event = timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("timed out waiting for status results")
+        .expect("channel closed unexpectedly");
+    assert!(matches!(
+        expect_backend_event(event),
+        BackendMessage::StatusResults(_)
+    ));
+}
+
+#[test]
+fn try_start_status_refresh_rejects_duplicate_scan() {
+    let (_temp, mut app) = app_with_temp_workspace();
+    app.status_loading = true;
+    let (tx, mut rx) = unbounded_channel();
+
+    assert!(!try_start_status_refresh(&mut app, &tx));
+    assert!(app.status_loading);
+    assert!(matches!(app.operation_state, OperationState::Idle));
+    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn try_start_status_refresh_rejects_missing_workspace() {
+    let mut app = App::new(Config::default(), Vec::new(), false);
+    let (tx, mut rx) = unbounded_channel();
+
+    assert!(!try_start_status_refresh(&mut app, &tx));
+    assert!(!app.status_loading);
+    assert!(matches!(app.operation_state, OperationState::Idle));
+    assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[test]
+fn try_start_status_refresh_rejects_active_sync_states() {
+    let (_temp, mut app) = app_with_temp_workspace();
+    let active_states = [
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            message: "Discovering repositories".to_string(),
+        },
+        OperationState::Running {
+            operation: Operation::Sync,
+            total: 1,
+            completed: 0,
+            failed: 0,
+            skipped: 0,
+            current_repo: "acme/rocket".to_string(),
+            with_updates: 0,
+            cloned: 0,
+            synced: 0,
+            to_clone: 0,
+            to_sync: 1,
+            total_new_commits: 0,
+            started_at: std::time::Instant::now(),
+            active_repos: vec!["acme/rocket".to_string()],
+            throughput_samples: Vec::new(),
+            last_sample_completed: 0,
+        },
+    ];
+
+    for state in active_states {
+        app.operation_state = state;
+        app.status_loading = false;
+        let (tx, mut rx) = unbounded_channel();
+
+        assert!(!try_start_status_refresh(&mut app, &tx));
+        assert!(!app.status_loading);
+        assert!(matches!(
+            app.operation_state,
+            OperationState::Discovering {
+                operation: Operation::Sync,
+                ..
+            } | OperationState::Running {
+                operation: Operation::Sync,
+                ..
+            }
+        ));
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
     }
 }
 
