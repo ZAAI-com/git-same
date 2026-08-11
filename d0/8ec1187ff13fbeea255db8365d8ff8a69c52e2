@@ -1,0 +1,79 @@
+crates/git-same-cli/src/tui/backend_tests.rs
+  s_8483a85a06e391::t_4ea9203c59943b 3,24-118,120
+  s_c93eca03fb4587::t_0c86515ae8e8c4 119,121
+crates/git-same-cli/src/tui/widgets/spinner_tests.rs
+  s_8483a85a06e391::t_8283223fb1698d 1-14
+crates/git-same-cli/src/tui/screens/dashboard_tests.rs
+  s_8483a85a06e391::t_d26ca9357ab548 2,5-6,17-73,75-76,78-89,91-96,98-112,134-146,148-179,181-195,217-232
+  s_78cb549b29e7db::t_9b1bf18092edd4 196-199,201-216,233
+  s_78cb549b29e7db::t_b9bbdc713a4c7e 113-119,121-133
+  s_78cb549b29e7db::t_5a08703a895306 74
+  s_78cb549b29e7db::t_37aa6cd1169dfb 77,90,97,120,147,180,200
+  s_4b7a5b6204d503::t_77bcec4bcec43f 234
+crates/git-same-cli/src/tui/handler_tests.rs
+  s_78cb549b29e7db::t_f1e564c0477f3c 232
+  s_8483a85a06e391::t_ed12926681cbb9 233-235,238-250,252-264
+  s_78cb549b29e7db::t_37aa6cd1169dfb 236,251
+  s_8483a85a06e391::t_a78ca1959896c6 6,9-29,161,171,178,183,196-231,237,265-276,278-287,289-294,296-336
+  s_8483a85a06e391::t_d4d94db92c6fd7 295
+  s_78cb549b29e7db::t_900b71fff16f94 162-170,172-177,179-182,184-195,277,288
+crates/git-same-cli/src/tui/widgets/mod.rs
+  s_8483a85a06e391::t_8283223fb1698d 4
+crates/git-same-cli/src/tui/handler.rs
+  s_8483a85a06e391::t_8ea36bbf9a5904 37-38,42,138,562-568,578-581
+crates/git-same-cli/src/tui/screens/dashboard.rs
+  s_78cb549b29e7db::t_37aa6cd1169dfb 35-36
+  s_8483a85a06e391::t_8283223fb1698d 42,121,138-139,144,332,352-364
+  s_78cb549b29e7db::t_8dd8317fcfe822 34,37-41
+  s_78cb549b29e7db::t_2e0fcebd428a81 122-127
+  s_8483a85a06e391::t_fdb14a9ec7f912 333-336
+  s_4b7a5b6204d503::t_6b6d2295cd3341 365
+crates/git-same-cli/src/tui/widgets/spinner.rs
+  s_8483a85a06e391::t_8283223fb1698d 1-12
+crates/git-same-cli/src/tui/backend.rs
+  s_8483a85a06e391::t_4ea9203c59943b 20,215,217-235
+  s_8483a85a06e391::t_2e1df0fb32d745 216
+  s_8483a85a06e391::t_578b9c7c442af6 236
+crates/git-same-cli/src/tui/app.rs
+  s_78cb549b29e7db::t_37aa6cd1169dfb 237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d08ec1187ff13fbeea255db8365d8ff8a69c52e2",
+  "prompts": {},
+  "sessions": {
+    "s_4b7a5b6204d503": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa7e4-e21c-7243-8f2f-ef626a88951b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_78cb549b29e7db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fee46-3871-7820-a59b-5b957e4a3df9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_8483a85a06e391": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe142-73f3-7c80-a87c-cdd4b48153bc",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_c93eca03fb4587": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe206-a311-7052-add0-9b70d7941def",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
