@@ -1,0 +1,21 @@
+crates/git-same-core/src/ipc/status_file.rs
+  s_5e39e74035f7e9::t_92ef229e767216 200-201,222-223
+crates/git-same-core/src/ipc/status_file_tests.rs
+  s_5e39e74035f7e9::t_92ef229e767216 326-336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "ef35abb7584d51b941afb7533ae8968d4a926561",
+  "prompts": {},
+  "sessions": {
+    "s_5e39e74035f7e9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fee56-231f-7ab2-8ace-f4dd8eed1f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
