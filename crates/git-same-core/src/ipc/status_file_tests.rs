@@ -323,20 +323,16 @@ mod symlink_helper {
     }
 
     #[test]
-    fn ensure_legacy_symlinks_is_noop_when_legacy_dir_missing() {
-        // Use a non-existent legacy dir override path: we can't easily inject
-        // a custom legacy dir into the public helper, so we exercise the
-        // private one with a known-missing legacy path.
-        let (_root, _legacy, group) = dirs();
-        let missing_legacy_file =
-            PathBuf::from("/nonexistent/path/that/should/not/exist/status.json");
-        // ensure_one_symlink should still happily create a symlink if the
-        // parent can be created; we sanity-check by NOT creating the parent
-        // and asserting we get an error rather than a crash.
-        // (Linux/macOS will fail at `create_dir_all` for a path we cannot
-        // write to.)
-        let _ = ensure_one_symlink(&missing_legacy_file, &group.join("status.json"));
-        // No assertion about success/failure here; the point is just that
-        // the helper does not panic on unexpected inputs.
+    fn ensure_legacy_symlinks_creates_socket_when_legacy_dir_missing() {
+        let (_root, legacy, group) = dirs();
+        let missing_legacy = legacy.join("finder");
+        assert!(!missing_legacy.exists());
+
+        ensure_legacy_symlinks_in(&missing_legacy, &group).unwrap();
+
+        let sock = missing_legacy.join("finder.sock");
+        let sock_meta = fs::symlink_metadata(&sock).unwrap();
+        assert!(sock_meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(&sock).unwrap(), group.join("finder.sock"));
     }
 }
