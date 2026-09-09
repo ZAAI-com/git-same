@@ -1,0 +1,21 @@
+crates/git-same-app/src/commands_tests.rs
+  s_ee6ae02672c688::t_e1f7ff147940ee 16-24
+crates/git-same-core/src/config/workspace_store_tests.rs
+  s_ee6ae02672c688::t_e1f7ff147940ee 80-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "e81649466fcc71fb83838785b656c0fcce4130ae",
+  "prompts": {},
+  "sessions": {
+    "s_ee6ae02672c688": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "104c4115-ba44-494b-a9a4-cf39fcc15271",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
