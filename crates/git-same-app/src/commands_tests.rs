@@ -13,6 +13,15 @@ impl ConfigEnvGuard {
         let lock = CONFIG_ENV_LOCK.lock().unwrap();
         let previous = std::env::var("GIT_SAME_CONFIG_DIR").ok();
         std::env::set_var("GIT_SAME_CONFIG_DIR", path);
+        // Fail fast if isolation ever breaks: writing through the real user
+        // config would leave temp workspaces registered on the developer's Mac.
+        let resolved = Config::default_path().expect("default_path");
+        assert!(
+            resolved.starts_with(path),
+            "test config path {} escaped {}",
+            resolved.display(),
+            path.display()
+        );
         Self {
             _lock: lock,
             previous,

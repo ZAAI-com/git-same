@@ -77,6 +77,16 @@ fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
         std::fs::create_dir_all(&appdata).ok();
         std::env::set_var("APPDATA", &appdata);
     }
+    // Fail fast if isolation ever breaks: a test that resolves the real
+    // user config would silently register temp workspaces in
+    // ~/.config/git-same/config.toml instead of failing.
+    let resolved = crate::config::Config::default_path().expect("default_path");
+    assert!(
+        resolved.starts_with(home),
+        "test config path {} escaped the temp home {}",
+        resolved.display(),
+        home.display()
+    );
     f()
 }
 
