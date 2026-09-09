@@ -10,10 +10,14 @@ use std::path::Path;
 
 const TEMPLATE: &str = include_str!("../../../assets/com.zaai.git-same.monitor.plist");
 
-/// Renders the plist for `paths`. `associated_bundle` names the app that
-/// owns the helper so System Settings attributes the login item to it.
+/// Renders the plist for `paths`. `program` is the executable launchd runs:
+/// the managed helper copy for a CLI owner, the app bundle's own main
+/// executable for an app owner (see `source::program_for`).
+/// `associated_bundle` names the app that owns the service so System Settings
+/// attributes the login item to it.
 pub fn render(
     paths: &MonitorAgentPaths,
+    program: &Path,
     home: &Path,
     associated_bundle: Option<&str>,
 ) -> Result<String, MonitorAgentError> {
@@ -30,7 +34,7 @@ pub fn render(
     Ok(TEMPLATE
         // A comment in the template keeps the asset itself valid XML.
         .replace("<!--__GIT_SAME_ASSOCIATED_BUNDLE__-->", &associated)
-        .replace("__GIT_SAME_HELPER__", &escape_path(&paths.helper)?)
+        .replace("__GIT_SAME_HELPER__", &escape_path(program)?)
         .replace("__GIT_SAME_HOME__", &escape_path(home)?)
         .replace("__GIT_SAME_STDOUT__", &escape_path(&paths.stdout_log)?)
         .replace("__GIT_SAME_STDERR__", &escape_path(&paths.stderr_log)?))

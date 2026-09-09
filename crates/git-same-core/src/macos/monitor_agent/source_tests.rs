@@ -13,6 +13,11 @@ fn make_bundle(root: &Path, name: &str, identifier: &str) -> PathBuf {
     )
     .unwrap();
     write_executable(&helpers.join("git-same"), b"helper");
+    // The main executable is what an app-owned agent actually runs.
+    write_executable(
+        &bundle.join("Contents").join("MacOS").join("git-same-app"),
+        b"app",
+    );
     std::fs::canonicalize(bundle).unwrap()
 }
 
@@ -55,13 +60,53 @@ fn bundled_cli_and_app_binary_both_classify_as_the_app() {
     let dir = tempfile::tempdir().unwrap();
     let bundle = make_bundle(dir.path(), "Git Same & Co.app", APP_BUNDLE_ID);
     let helper = bundle.join("Contents/Helpers/git-same");
+    let executable = bundle.join("Contents/MacOS/git-same-app");
 
-    for executable in [helper.clone(), bundle.join("Contents/MacOS/git-same-app")] {
-        let source = classify(&executable);
+    // Either entry point identifies the same owner, and either way the
+    // installation runs the bundle's main executable in place: only that
+    // file carries the bundle's TCC identity.
+    for invoked in [helper, executable.clone()] {
+        let source = classify(&invoked);
         assert_eq!(source.owner_kind, OwnerKind::App);
         assert_eq!(source.owner_path, bundle);
-        assert_eq!(source.source_binary, helper);
+        assert_eq!(source.source_binary, executable);
+        assert!(source.in_place());
+        assert_eq!(source.program(Path::new("/managed/git-same")), executable);
     }
+}
+
+#[test]
+fn a_cli_owner_runs_the_managed_copy_not_its_own_binary() {
+    let source = classify(Path::new("/usr/local/bin/git-same"));
+    assert_eq!(source.owner_kind, OwnerKind::Cli);
+    assert!(!source.in_place());
+    assert_eq!(
+        source.program(Path::new("/managed/git-same")),
+        Path::new("/managed/git-same")
+    );
+}
+
+#[test]
+fn the_expected_program_is_derived_from_the_owner_not_the_record() {
+    // An agent installed by an older build recorded the copied helper as its
+    // source; the expected program is still the bundle executable, so the
+    // next repair re-renders the plist onto it.
+    assert_eq!(
+        program_for(
+            OwnerKind::App,
+            Path::new("/Applications/Git-Same.app"),
+            Path::new("/managed/git-same")
+        ),
+        Path::new("/Applications/Git-Same.app/Contents/MacOS/git-same-app")
+    );
+    assert_eq!(
+        program_for(
+            OwnerKind::Cli,
+            Path::new("/usr/local/bin/git-same"),
+            Path::new("/managed/git-same")
+        ),
+        Path::new("/managed/git-same")
+    );
 }
 
 #[test]
@@ -122,9 +167,10 @@ fn cask_source_copies_from_staging_but_records_the_final_app() {
     assert_eq!(source.owner_kind, OwnerKind::HomebrewCask);
     assert_eq!(
         source.source_binary,
-        Path::new("/Users/ada/Applications/Git-Same.app/Contents/Helpers/git-same")
+        Path::new("/Users/ada/Applications/Git-Same.app/Contents/MacOS/git-same-app")
     );
     assert!(source.copy_from.starts_with("/opt/homebrew/Caskroom"));
+    assert!(source.in_place());
 }
 
 #[test]
@@ -185,7 +231,8 @@ fn damaged_app_does_not_take_over_from_a_usable_recorded_cli() {
     let bundle = make_bundle(dir.path(), "Git-Same.app", APP_BUNDLE_ID);
     let app_helper = bundle.join("Contents/Helpers/git-same");
     let caller = classify(&app_helper);
-    std::fs::remove_file(app_helper).unwrap();
+    // Damage the file the agent would actually run.
+    std::fs::remove_file(bundle.join("Contents/MacOS/git-same-app")).unwrap();
     let recorded = dir.path().join("cli/git-same");
     write_executable(&recorded, b"usable cli");
     let existing = record(OwnerKind::Cli, &recorded, &recorded);

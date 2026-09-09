@@ -152,6 +152,19 @@ export interface MonitorAgentStatusDto {
 /** Compatibility name. */
 export type MonitorLaunchAgentStatusDto = MonitorAgentStatusDto;
 
+export type FullDiskAccessState = 'granted' | 'denied' | 'unknown' | 'not_applicable';
+
+export interface FullDiskAccessDto {
+  /** This app process's own probe. */
+  host: FullDiskAccessState;
+  /** The monitor's stamped answer from status.json, when it wrote one. */
+  monitor: boolean | null;
+  /** Whether that status is fresh; a stale monitor may predate a grant. */
+  monitor_fresh: boolean;
+  /** Whether Finder badges may be enabled. */
+  granted: boolean;
+}
+
 export interface ProviderOrgDto {
   name: string;
   repo_count: number;
@@ -251,6 +264,7 @@ export interface FinderStatus {
   monitored_roots?: string[];
   boot_volume_aliases?: string[];
   monitor_version?: string;
+  full_disk_access?: boolean;
 }
 
 export interface StatusSnapshot {

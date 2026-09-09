@@ -11,6 +11,7 @@ use git_same_core::domain::RepoPathTemplate;
 use git_same_core::errors::{AppError, MonitorAgentError};
 use git_same_core::ipc::{remove_symlink_if_present, IpcConfig, StatusFileWriter};
 use git_same_core::macos::folder_icon;
+use git_same_core::macos::full_disk_access::{self, FullDiskAccess};
 use git_same_core::macos::monitor_agent::{self, MonitorAgentState, MonitorAgentStatus};
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -234,6 +236,22 @@ pub struct ExtensionStatus {
 /// Service status of the managed monitor. The lifecycle lives in
 /// `git_same_core::macos::monitor_agent`; this crate only adapts it.
 pub type MonitorLaunchAgentStatusDto = MonitorAgentStatus;
+
+/// Full Disk Access as seen by the host and by the monitor. TCC keys the
+/// grant on the executable, so both answers are reported and `granted` is
+/// the gate the badge setup flow uses (see `fda_gate_passes`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FullDiskAccessDto {
+    /// This app process's own probe: `granted`, `denied`, `unknown`, or
+    /// `not_applicable`.
+    pub host: String,
+    /// The monitor's stamped answer from `status.json`, when it wrote one.
+    pub monitor: Option<bool>,
+    /// Whether that status is fresh; a stale monitor may predate a grant.
+    pub monitor_fresh: bool,
+    /// Whether Finder badges may be enabled.
+    pub granted: bool,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncProgressPayload {
@@ -716,6 +734,121 @@ fn is_openable(url: &str) -> bool {
         .any(|scheme| lower.starts_with(scheme) && url.len() > scheme.len())
 }
 
+/// Enable the Finder badge extension, refusing until Full Disk Access is
+/// granted: without it the monitor cannot read protected folders and the
+/// badges would silently stay blank. The gate lives here, not only in the UI,
+/// so no frontend path can bypass it.
+#[tauri::command]
+pub fn enable_finder_extension(ipc: tauri::State<'_, HostIpc>) -> Result<ExtensionStatus, String> {
+    let fda = full_disk_access_status_inner(&ipc.0);
+    if !fda.granted {
+        return Err("Grant Full Disk Access to Git-Same before enabling Finder badges".to_string());
+    }
+    set_extension_election(ExtensionElection::Use).map_err(|error| error.to_string())?;
+    extension_status()
+}
+
+#[tauri::command]
+pub fn disable_finder_extension() -> Result<ExtensionStatus, String> {
+    set_extension_election(ExtensionElection::Ignore).map_err(|error| error.to_string())?;
+    extension_status()
+}
+
+#[tauri::command]
+pub fn full_disk_access_status(
+    ipc: tauri::State<'_, HostIpc>,
+) -> Result<FullDiskAccessDto, String> {
+    Ok(full_disk_access_status_inner(&ipc.0))
+}
+
+fn full_disk_access_status_inner(ipc: &IpcConfig) -> FullDiskAccessDto {
+    let snapshot = read_status_snapshot_with(ipc).ok();
+    full_disk_access_dto(full_disk_access::probe(), snapshot.as_ref())
+}
+
+fn full_disk_access_dto(
+    host: FullDiskAccess,
+    snapshot: Option<&StatusSnapshot>,
+) -> FullDiskAccessDto {
+    let monitor_fresh = snapshot.is_some_and(|snapshot| !snapshot.stale);
+    let monitor = snapshot
+        .and_then(|snapshot| snapshot.status.as_ref())
+        .and_then(|status| status.full_disk_access);
+    FullDiskAccessDto {
+        host: host.as_str().to_string(),
+        monitor,
+        monitor_fresh,
+        granted: fda_gate_passes(host, monitor, monitor_fresh),
+    }
+}
+
+/// The badge-setup gate. A fresh monitor's own answer wins because TCC keys
+/// the grant on the monitor executable; otherwise fall back to this process's
+/// probe (the same identity once the LaunchAgent runs the app executable).
+/// Only a definite "granted" passes; unknown never does.
+fn fda_gate_passes(host: FullDiskAccess, monitor: Option<bool>, monitor_fresh: bool) -> bool {
+    match (monitor_fresh, monitor) {
+        (true, Some(granted)) => granted,
+        _ => host == FullDiskAccess::Granted,
+    }
+}
+
+fn full_disk_access_message(fda: &FullDiskAccessDto) -> String {
+    match (fda.granted, fda.host.as_str(), fda.monitor) {
+        (true, _, _) => "granted to Git-Same",
+        (false, "granted", Some(false)) => {
+            "granted to the app, but the running monitor lacks it (restart the monitor)"
+        }
+        (false, "not_applicable", _) => "not applicable on this platform",
+        (false, "unknown", None) => "could not be determined",
+        _ => "not granted (required for Finder badges)",
+    }
+    .to_string()
+}
+
+/// `pluginkit -e <election>`: the user election macOS stores for an app
+/// extension. `use` is what the System Settings toggle sets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtensionElection {
+    Use,
+    Ignore,
+}
+
+impl ExtensionElection {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn pluginkit_arg(self) -> &'static str {
+        match self {
+            Self::Use => "use",
+            Self::Ignore => "ignore",
+        }
+    }
+}
+
+fn set_extension_election(election: ExtensionElection) -> Result<(), AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("/usr/bin/pluginkit")
+            .args(["-e", election.pluginkit_arg(), "-i", FINDER_EXTENSION_ID])
+            .output()
+            .map_err(|error| AppError::config(format!("pluginkit invocation failed: {error}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        Err(AppError::config(format!(
+            "pluginkit -e {} failed: {}",
+            election.pluginkit_arg(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = election;
+        Err(AppError::config(
+            "Finder extensions are only available on macOS",
+        ))
+    }
+}
+
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
     if !is_openable(&url) {
@@ -1026,17 +1159,15 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
         critical: false,
     });
 
-    let fda_needed = full_disk_access_needed(monitor_agent.as_ref(), snapshot.as_ref());
+    let fda = full_disk_access_dto(full_disk_access::probe(), snapshot.as_ref());
     checks.push(RequirementCheckDto {
         name: "Full Disk Access".to_string(),
-        passed: !fda_needed,
-        message: if fda_needed {
-            "no repositories visible to the monitor".to_string()
-        } else {
-            "not currently required".to_string()
-        },
-        suggestion: fda_needed
-            .then(|| "Grant Full Disk Access to Git-Same in System Settings".to_string()),
+        passed: fda.granted,
+        message: full_disk_access_message(&fda),
+        suggestion: (!fda.granted).then(|| {
+            "Grant Full Disk Access to Git-Same in System Settings, then quit and reopen the app"
+                .to_string()
+        }),
         critical: false,
     });
 
@@ -1126,20 +1257,6 @@ fn monitor_requirement_suggestion(
         MonitorAgentState::Failed => Some("Start the monitor again to repair it".to_string()),
         MonitorAgentState::Unsupported => Some("Run `gisa monitor` in a terminal".to_string()),
     }
-}
-
-/// An empty repository list only suggests a permission problem once the
-/// current monitor process has completed a scan. Before that (first scan in
-/// progress, or data left by a previous process) it means nothing.
-fn full_disk_access_needed(
-    agent: Option<&MonitorLaunchAgentStatusDto>,
-    snapshot: Option<&StatusSnapshot>,
-) -> bool {
-    let scan_completed = agent.is_some_and(|agent| agent.state == MonitorAgentState::Running);
-    scan_completed
-        && snapshot
-            .and_then(|snapshot| snapshot.status.as_ref())
-            .is_some_and(|status| !status.workspaces.is_empty() && status.repos.is_empty())
 }
 
 async fn read_workspace_structure_inner(

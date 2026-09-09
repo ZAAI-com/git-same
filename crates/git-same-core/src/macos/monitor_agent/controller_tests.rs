@@ -85,13 +85,40 @@ impl Env {
         .collect()
     }
 
+    /// The program the installed agent runs, per the live install record:
+    /// the managed copy for a CLI owner, the bundle executable for an app or
+    /// cask owner, which is never copied anywhere.
+    fn installed_program(&self) -> Option<PathBuf> {
+        let record = InstallRecord::load(&self.paths.install_record).ok()??;
+        Some(super::source::program_for(
+            record.owner_kind,
+            &record.owner_path,
+            &self.paths.helper,
+        ))
+    }
+
+    /// The agent is installed and names the program the record implies.
+    fn program_installed(&self) -> bool {
+        let Some(program) = self.installed_program() else {
+            return false;
+        };
+        std::fs::read_to_string(&self.paths.launch_agent)
+            .is_ok_and(|plist| plist.contains(program.to_str().unwrap()))
+    }
+
+    /// `(staged installer, final app path, retained service tool)`, matching
+    /// what the cask passes: the installer is the staged bundle's CLI helper,
+    /// while the program that gets installed is the staged bundle's main
+    /// executable, run in place under the app's own TCC identity.
     fn cask_bundle(&self) -> (PathBuf, PathBuf, PathBuf) {
-        let staged = self
-            .dir
-            .path()
-            .join("Caskroom/git-same/3.1.2/Git-Same.app/Contents/Helpers/git-same");
+        let bundle = self.dir.path().join("Caskroom/git-same/3.1.2/Git-Same.app");
+        let staged = bundle.join("Contents/Helpers/git-same");
         if !staged.exists() {
-            write_executable(&staged, b"cask helper v1");
+            write_executable(&staged, b"cask cli v1");
+        }
+        let staged_app = bundle.join("Contents/MacOS/git-same-app");
+        if !staged_app.exists() {
+            write_executable(&staged_app, b"cask helper v1");
         }
         let app = self.dir.path().join("Applications").join("Git-Same.app");
         let tool = self
@@ -687,6 +714,16 @@ fn uninstall_removes_the_payload_and_keeps_everything_else() {
     assert!(env.system.with(|s| s.loaded.is_empty()));
 }
 
+/// The staged bundle's main executable, given its staged CLI helper.
+fn staged_app(staged_cli: &Path) -> PathBuf {
+    staged_cli
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("MacOS/git-same-app")
+}
+
 // ------------------------------------------------------------------ cask
 
 #[test]
@@ -702,15 +739,21 @@ fn cask_install_starts_monitoring_without_the_app() {
     assert!(status.running);
     assert_eq!(status.owner_kind, Some(OwnerKind::HomebrewCask));
     assert_eq!(status.source.as_deref(), Some(app.to_str().unwrap()));
-    assert_eq!(std::fs::read(&tool).unwrap(), b"cask helper v1");
+    assert_eq!(std::fs::read(&tool).unwrap(), b"cask cli v1");
     let record = InstallRecord::load(&env.paths.install_record)
         .unwrap()
         .unwrap();
     assert_eq!(
         record.source_binary,
-        app.join("Contents/Helpers/git-same"),
+        app.join("Contents/MacOS/git-same-app"),
         "never the staging path"
     );
+    // The monitor runs the bundle executable itself: a copy under the
+    // managed root would be a TCC identity the app's grant never reaches.
+    assert!(!env.paths.helper.exists());
+    assert!(std::fs::read_to_string(&env.paths.launch_agent)
+        .unwrap()
+        .contains(app.join("Contents/MacOS/git-same-app").to_str().unwrap()));
     assert!(std::fs::read_to_string(&env.paths.launch_agent)
         .unwrap()
         .contains("AssociatedBundleIdentifiers"));
@@ -724,13 +767,16 @@ fn cask_upgrade_after_a_stop_updates_the_helper_but_stays_stopped() {
     controller.install_for_cask(&staged, &app, &tool).unwrap();
     controller.stop().unwrap();
     assert!(controller.remove_for_cask(&app).unwrap());
-    write_executable(&staged, b"cask helper v2");
+    write_executable(&staged_app(&staged), b"cask helper v2");
     env.system.with(|s| s.calls.clear());
 
     let status = controller.install_for_cask(&staged, &app, &tool).unwrap();
 
     assert_eq!(status.state, MonitorAgentState::Disabled);
-    assert_eq!(std::fs::read(&env.paths.helper).unwrap(), b"cask helper v2");
+    assert_eq!(
+        std::fs::read(staged_app(&staged)).unwrap(),
+        b"cask helper v2"
+    );
     assert!(env.system.with(|s| s.active.is_none()));
     let calls = env.system.mutating_calls();
     assert!(!calls.iter().any(|c| c.contains("enable")), "{calls:?}");
@@ -746,12 +792,15 @@ fn cask_upgrade_while_enabled_starts_the_new_helper() {
     assert!(controller.remove_for_cask(&app).unwrap());
     assert!(read_monitor_autostart(&env.paths.config).unwrap());
     assert!(env.system.with(|s| s.disabled.is_empty()));
-    write_executable(&staged, b"cask helper v2");
+    write_executable(&staged_app(&staged), b"cask helper v2");
 
     let status = controller.install_for_cask(&staged, &app, &tool).unwrap();
 
     assert!(status.running);
-    assert_eq!(std::fs::read(&env.paths.helper).unwrap(), b"cask helper v2");
+    assert_eq!(
+        std::fs::read(staged_app(&staged)).unwrap(),
+        b"cask helper v2"
+    );
 }
 
 #[test]
@@ -762,13 +811,13 @@ fn app_launch_right_after_a_cask_install_changes_nothing() {
         .install_for_cask(&staged, &app, &tool)
         .unwrap();
     // Homebrew has moved the bundle into place and reopens the app.
-    let installed_helper = app.join("Contents/Helpers/git-same");
-    write_executable(&installed_helper, b"cask helper v1");
+    let installed_executable = app.join("Contents/MacOS/git-same-app");
+    write_executable(&installed_executable, b"cask helper v1");
     let app_caller = HelperSource {
         owner_kind: OwnerKind::App,
         owner_path: app.clone(),
-        source_binary: installed_helper.clone(),
-        copy_from: installed_helper,
+        source_binary: installed_executable.clone(),
+        copy_from: installed_executable,
     };
     let (pid, stamps) = (env.pid(), env.stamps());
     env.system.with(|s| s.calls.clear());
@@ -822,7 +871,7 @@ fn cask_removal_preserves_preference_and_disabled_state() {
 
     assert!(controller.remove_for_cask(&app).unwrap());
 
-    assert!(!env.paths.helper.exists() && !env.paths.launch_agent.exists());
+    assert!(!env.paths.install_record.exists() && !env.paths.launch_agent.exists());
     assert!(env.system.with(|s| s.active.is_none()));
     assert!(read_monitor_autostart(&env.paths.config).unwrap());
     let calls = env.system.mutating_calls();
@@ -851,7 +900,7 @@ fn cask_removal_for_a_different_app_path_does_nothing() {
 
     let elsewhere = env.dir.path().join("Other/Git-Same.app");
     assert!(!controller.remove_for_cask(&elsewhere).unwrap());
-    assert!(env.paths.helper.exists());
+    assert!(env.program_installed());
 }
 
 #[test]
@@ -872,7 +921,7 @@ fn cask_removal_refuses_to_guess_when_ownership_is_unreadable() {
     let error = controller.remove_for_cask(&app).unwrap_err();
 
     assert!(matches!(error, MonitorAgentError::OwnershipMismatch(_)));
-    assert!(env.paths.helper.exists());
+    assert!(env.paths.launch_agent.exists());
 }
 
 #[test]
@@ -886,7 +935,7 @@ fn cask_install_with_a_malformed_config_installs_but_does_not_start() {
         .install_for_cask(&staged, &app, &tool);
 
     assert!(result.is_ok(), "brew install must not fail: {result:?}");
-    assert!(env.paths.helper.exists());
+    assert!(env.program_installed());
     assert!(env.system.with(|s| s.active.is_none()));
 }
 

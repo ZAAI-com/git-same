@@ -167,6 +167,31 @@ fn test_legacy_status_without_monitor_version_deserializes_to_none() {
 }
 
 #[test]
+fn test_full_disk_access_round_trips_and_is_omitted_when_unknown() {
+    // Unknown: the key is omitted entirely so older readers see no change.
+    let mut status = FinderStatus::new(1, "t".to_string());
+    assert!(status.full_disk_access.is_none());
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(!json.contains("full_disk_access"));
+
+    // Stamped: survives a round-trip in both states.
+    for granted in [true, false] {
+        status.full_disk_access = Some(granted);
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains(&format!("\"full_disk_access\":{granted}")));
+        let parsed: FinderStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.full_disk_access, Some(granted));
+    }
+}
+
+#[test]
+fn test_legacy_status_without_full_disk_access_deserializes_to_none() {
+    let legacy = r#"{"version":1,"timestamp":"t","daemon_pid":1,"workspaces":[],"repos":[]}"#;
+    let parsed: FinderStatus = serde_json::from_str(legacy).unwrap();
+    assert!(parsed.full_disk_access.is_none());
+}
+
+#[test]
 fn test_boot_volume_aliases_serialization() {
     // Empty: the key is omitted entirely (skip_serializing_if).
     let mut status = FinderStatus::new(1, "t".to_string());

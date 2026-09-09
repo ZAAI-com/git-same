@@ -13,6 +13,7 @@
 
 pub mod incremental;
 pub mod live_config;
+pub mod managed;
 pub mod owner_classifier;
 pub mod process;
 pub mod run;
@@ -20,5 +21,6 @@ pub mod runtime_guard;
 #[cfg(unix)]
 pub mod socket_handler;
 
-pub use run::{run, run_with, Options, RunContext};
+pub use managed::run_managed;
+pub use run::{default_shutdown_signal, run, run_with, Options, RunContext};
 pub use runtime_guard::MonitorMode;

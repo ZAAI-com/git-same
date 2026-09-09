@@ -51,6 +51,47 @@ pub struct Options {
     pub ipc_config: IpcConfig,
 }
 
+impl Options {
+    /// Build options from `config.toml`. An explicit `interval_override` (the
+    /// CLI `--interval` flag) wins over `[monitor] fullscan_interval_secs`.
+    pub fn from_config(
+        config: &Config,
+        ipc_config: IpcConfig,
+        interval_override: Option<u64>,
+    ) -> Self {
+        let secs = interval_override.unwrap_or(config.monitor.fullscan_interval_secs);
+        Self {
+            interval: Duration::from_secs(secs),
+            ipc_config,
+        }
+    }
+}
+
+/// Resolve when the process receives SIGINT (ctrl-c) or SIGTERM (`gisa
+/// monitor --stop`, `launchctl bootout`). Shared by every monitor host: the
+/// CLI subcommand and the app's headless monitor mode.
+pub async fn default_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut sigterm =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(signal) => signal,
+                Err(_) => {
+                    let _ = tokio::signal::ctrl_c().await;
+                    return;
+                }
+            };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = sigterm.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 /// How and from where this monitor process was started.
 ///
 /// Kept separate from [`Options`] so that struct's public shape stays stable.

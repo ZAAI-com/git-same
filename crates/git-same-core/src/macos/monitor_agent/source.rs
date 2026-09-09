@@ -10,6 +10,12 @@ use std::path::{Component, Path, PathBuf};
 
 /// Bundle identifier of `Git-Same.app`.
 pub const APP_BUNDLE_ID: &str = "com.zaai.git-same";
+/// `CFBundleExecutable` of `Git-Same.app`. The LaunchAgent of an app-owned
+/// installation execs this file in place: macOS TCC attributes a
+/// launchd-spawned process to the bundle only when the executable is the
+/// bundle's main one, so a copy elsewhere would be a separate identity that
+/// a Full Disk Access grant for "Git-Same" never reaches.
+pub const APP_MAIN_EXECUTABLE: &str = "git-same-app";
 const FORMULA_NAME: &str = "git-same-cli";
 
 /// A candidate helper source.
@@ -18,11 +24,55 @@ pub struct HelperSource {
     pub owner_kind: OwnerKind,
     /// Stable app bundle or CLI installation path.
     pub owner_path: PathBuf,
-    /// Stable path recorded for future updates.
+    /// Stable path recorded for future updates. For an app-owned source this
+    /// is also the program launchd runs; see [`HelperSource::in_place`].
     pub source_binary: PathBuf,
-    /// File to copy right now. Differs from `source_binary` only while a
-    /// cask installer runs from its staging directory.
+    /// File to verify (and, for a CLI owner, copy) right now. Differs from
+    /// `source_binary` only while a cask installer runs from its staging
+    /// directory.
     pub copy_from: PathBuf,
+}
+
+impl HelperSource {
+    /// Whether the installation runs the source where it already lives
+    /// instead of copying it into the managed root.
+    ///
+    /// True for every app bundle: only the bundle's own main executable
+    /// carries the bundle's TCC identity. False for CLI installs, whose
+    /// binary may be upgraded or removed underneath the service, so the
+    /// managed copy is what makes the service survive `brew upgrade`.
+    pub fn in_place(&self) -> bool {
+        self.owner_kind.is_app()
+    }
+
+    /// The program the LaunchAgent execs for this source.
+    pub fn program(&self, managed_helper: &Path) -> PathBuf {
+        if self.in_place() {
+            self.source_binary.clone()
+        } else {
+            managed_helper.to_path_buf()
+        }
+    }
+}
+
+/// The program a LaunchAgent execs for an installation owned by `owner_kind`
+/// at `owner_path`. Derived, never persisted, so an agent installed by an
+/// older build that still points at a copied helper is re-rendered onto the
+/// bundle executable the next time anything inspects or repairs it.
+pub fn program_for(owner_kind: OwnerKind, owner_path: &Path, managed_helper: &Path) -> PathBuf {
+    if owner_kind.is_app() {
+        app_main_executable(owner_path)
+    } else {
+        managed_helper.to_path_buf()
+    }
+}
+
+/// `<bundle>/Contents/MacOS/git-same-app`.
+pub fn app_main_executable(bundle: &Path) -> PathBuf {
+    bundle
+        .join("Contents")
+        .join("MacOS")
+        .join(APP_MAIN_EXECUTABLE)
 }
 
 /// Resolves and classifies the running executable.
@@ -37,12 +87,12 @@ pub fn invoking_source() -> Result<HelperSource, MonitorAgentError> {
 /// Classifies an already canonicalized executable path.
 pub fn classify(real_path: &Path) -> HelperSource {
     if let Some(bundle) = enclosing_app_bundle(real_path) {
-        let helper = bundle.join("Contents").join("Helpers").join("git-same");
+        let executable = app_main_executable(&bundle);
         return HelperSource {
             owner_kind: OwnerKind::App,
             owner_path: bundle,
-            source_binary: helper.clone(),
-            copy_from: helper,
+            source_binary: executable.clone(),
+            copy_from: executable,
         };
     }
     let stable = homebrew_opt_path(real_path).unwrap_or_else(|| real_path.to_path_buf());
@@ -54,18 +104,32 @@ pub fn classify(real_path: &Path) -> HelperSource {
     }
 }
 
-/// Source for a cask installation: copy from the staged bundle, but record
-/// the final app path Homebrew is about to move it to.
-pub fn cask_source(staged_executable: &Path, final_app_path: &Path) -> HelperSource {
+/// Source for a cask installation.
+///
+/// `staged_cli` is the installer itself: `Contents/Helpers/git-same` inside
+/// the bundle Homebrew has staged but not yet moved. What the agent runs is
+/// the bundle's main executable, so the file verified now is that executable
+/// in the same staged bundle, and the path recorded is where Homebrew is
+/// about to put it.
+pub fn cask_source(staged_cli: &Path, final_app_path: &Path) -> HelperSource {
+    let staged_bundle = enclosing_bundle_dir(staged_cli);
     HelperSource {
         owner_kind: OwnerKind::HomebrewCask,
         owner_path: final_app_path.to_path_buf(),
-        source_binary: final_app_path
-            .join("Contents")
-            .join("Helpers")
-            .join("git-same"),
-        copy_from: staged_executable.to_path_buf(),
+        source_binary: app_main_executable(final_app_path),
+        copy_from: staged_bundle
+            .map(|bundle| app_main_executable(&bundle))
+            .unwrap_or_else(|| staged_cli.to_path_buf()),
     }
+}
+
+/// The `<name>.app` directory two levels above `Contents/<dir>/<file>`.
+/// Unlike [`enclosing_app_bundle`] this does not read `Info.plist`: the
+/// cask installer already knows which bundle it is running from, and the
+/// staged bundle may not be fully assembled.
+fn enclosing_bundle_dir(executable: &Path) -> Option<PathBuf> {
+    let bundle = executable.parent()?.parent()?.parent()?;
+    (bundle.extension().is_some_and(|ext| ext == "app")).then(|| bundle.to_path_buf())
 }
 
 /// The `Git-Same.app` containing `path`, verified through its `Info.plist`.

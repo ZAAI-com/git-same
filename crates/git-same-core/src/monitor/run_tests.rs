@@ -120,3 +120,24 @@ async fn managed_startup_exits_successfully_when_runtime_lock_is_unusable() {
 
     assert!(result.is_ok(), "managed helper must not restart-loop");
 }
+
+#[test]
+fn from_config_uses_config_interval_when_no_override() {
+    let mut config = Config::default();
+    config.monitor.fullscan_interval_secs = 90;
+
+    let opts = Options::from_config(&config, ipc_at(PathBuf::from("/tmp/from-config")), None);
+
+    assert_eq!(opts.interval, Duration::from_secs(90));
+    assert_eq!(opts.ipc_config.dir, PathBuf::from("/tmp/from-config"));
+}
+
+#[test]
+fn from_config_lets_explicit_override_win() {
+    let mut config = Config::default();
+    config.monitor.fullscan_interval_secs = 30;
+
+    let opts = Options::from_config(&config, ipc_at(PathBuf::from("/tmp/from-config")), Some(10));
+
+    assert_eq!(opts.interval, Duration::from_secs(10));
+}

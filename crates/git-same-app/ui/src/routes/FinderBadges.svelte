@@ -5,43 +5,50 @@
     ExternalLink,
     FolderSearch,
     Info,
+    Play,
   } from '@lucide/svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
   import MonitorPanel from '../lib/MonitorPanel.svelte';
-  import { presentMonitor, shouldSuggestFullDiskAccess } from '../lib/monitorPresentation';
+  import { presentMonitor } from '../lib/monitorPresentation';
   import { monitorStatus } from '../stores/monitor';
-  import { extensionStatus, snapshot, workspaces } from '../stores/status';
+  import {
+    enableExtension,
+    extensionStatus,
+    fullDiskAccess,
+    installMonitor,
+    restartMonitor,
+    snapshot,
+  } from '../stores/status';
   import { openUrl } from '../lib/tauri';
+  import { EXTENSIONS_URL, FDA_URL } from '../lib/systemSettings';
   import { relativeTime } from '../lib/utils';
+  import type { FullDiskAccessDto } from '../lib/types';
 
-  const EXTENSIONS_URL =
-    'x-apple.systempreferences:com.apple.LoginItems-Settings.extension';
-  const FDA_URL =
-    'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+  type SetupRow = {
+    label: string;
+    passed: boolean;
+    detail: string;
+    action: string | null;
+    disabled?: boolean;
+    hint?: string;
+  };
+
+  // Set once an in-app enable attempt left the extension disabled (the
+  // pluginkit election did not stick); the row then falls back to the
+  // System Settings pane.
+  let enableFallback = false;
 
   $: status = $snapshot?.status ?? null;
   $: roots = status?.monitored_roots ?? [];
   $: monitorView = presentMonitor($monitorStatus);
-  $: needsFda = shouldSuggestFullDiskAccess({
-    status: $monitorStatus,
-    extensionEnabled: Boolean($extensionStatus?.enabled),
-    workspaceCount: $workspaces.length,
-    repoCount: status?.repos.length ?? 0,
-  });
+  $: fdaGranted = Boolean($fullDiskAccess?.granted);
+  $: extensionEnabled = Boolean($extensionStatus?.enabled);
+  $: if (extensionEnabled) enableFallback = false;
+  // Order matters: the monitor must run so it can report its own Full Disk
+  // Access, the grant must exist before badges make sense, and only then is
+  // enabling the extension offered.
   $: setupRows = [
-    {
-      label: 'Finder extension installed',
-      passed: Boolean($extensionStatus?.installed),
-      detail: $extensionStatus?.installed ? 'GitSameBadges.appex is registered' : 'Extension not found',
-      action: EXTENSIONS_URL,
-    },
-    {
-      label: 'Finder extension enabled',
-      passed: Boolean($extensionStatus?.enabled),
-      detail: $extensionStatus?.enabled ? 'Finder can request badges' : 'Enable Git-Same Badges in System Settings',
-      action: EXTENSIONS_URL,
-    },
     {
       // Controls live in the Monitor panel above; an intentional stop is
       // listed here without being presented as something broken to fix.
@@ -56,14 +63,60 @@
     },
     {
       label: 'Full Disk Access',
-      passed: !needsFda,
-      detail: needsFda ? 'No repositories are visible to the monitor' : 'No access issue detected',
+      passed: fdaGranted,
+      detail: fdaDetail($fullDiskAccess),
       action: FDA_URL,
     },
-  ];
+    {
+      label: 'Finder extension installed',
+      passed: Boolean($extensionStatus?.installed),
+      detail: $extensionStatus?.installed ? 'GitSameBadges.appex is registered' : 'Extension not found',
+      action: EXTENSIONS_URL,
+    },
+    {
+      label: 'Finder extension enabled',
+      passed: extensionEnabled,
+      detail: extensionEnabled
+        ? 'Finder can request badges'
+        : !fdaGranted
+          ? 'Grant Full Disk Access first'
+          : enableFallback
+            ? 'Enable Git-Same Badges in System Settings'
+            : 'Enable Git-Same Badges to show status in Finder',
+      action: enableFallback ? EXTENSIONS_URL : 'enable-extension',
+      disabled: !fdaGranted,
+      hint: !fdaGranted ? 'Grant Full Disk Access first' : undefined,
+    },
+  ] satisfies SetupRow[];
 
-  function runAction(action: string | null) {
-    if (action) void openUrl(action);
+  function fdaDetail(fda: FullDiskAccessDto | null): string {
+    if (!fda) return 'Could not be determined';
+    if (fda.granted) return 'Granted to Git-Same';
+    if (fda.host === 'granted' && fda.monitor === false) {
+      return 'Granted to the app; the monitor restarts to pick up the grant';
+    }
+    if (fda.host === 'denied' || fda.monitor === false) {
+      return 'Not granted. Grant it in System Settings, then quit and reopen Git-Same';
+    }
+    if (fda.host === 'not_applicable') return 'Not applicable on this platform';
+    return 'Could not be determined';
+  }
+
+  function actionLabel(action: string): string {
+    if (action === 'install-monitor') return 'Install';
+    if (action === 'restart-monitor') return 'Restart';
+    if (action === 'enable-extension') return 'Enable badges';
+    return 'Open';
+  }
+
+  async function runAction(action: string | null) {
+    if (!action) return;
+    if (action === 'install-monitor') await installMonitor();
+    else if (action === 'restart-monitor') await restartMonitor();
+    else if (action === 'enable-extension') {
+      await enableExtension();
+      if (!$extensionStatus?.enabled && $fullDiskAccess?.granted) enableFallback = true;
+    } else await openUrl(action);
   }
 </script>
 
@@ -87,9 +140,14 @@
             <small>{row.detail}</small>
           </div>
           {#if row.action && !row.passed}
-            <button type="button" on:click={() => runAction(row.action)}>
-              <ExternalLink size={15} />
-              <span>Open</span>
+            <button
+              type="button"
+              disabled={row.disabled}
+              title={row.hint ?? ''}
+              on:click={() => void runAction(row.action)}
+            >
+              {#if row.action.includes('monitor') || row.action === 'enable-extension'}<Play size={15} />{:else}<ExternalLink size={15} />{/if}
+              <span>{actionLabel(row.action)}</span>
             </button>
           {/if}
         </article>
@@ -262,6 +320,11 @@
     cursor: pointer;
     padding: 0 10px;
     font-weight: 700;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   .two-column {

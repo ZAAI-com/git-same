@@ -5,11 +5,27 @@
   import StatusBanner from './lib/StatusBanner.svelte';
   import TitleBar from './lib/TitleBar.svelte';
   import { loadMonitorStatus, subscribeMonitor } from './stores/monitor';
-  import { errorMessage, loading, refresh, subscribePush } from './stores/status';
+  import {
+    errorMessage,
+    loading,
+    refresh,
+    refreshPermissions,
+    subscribePush,
+  } from './stores/status';
   import { routes } from './routes/router';
 
   let unsubscribe: (() => void) | undefined;
   let unsubscribeMonitor: (() => void) | undefined;
+
+  // The user grants Full Disk Access and enables the extension in System
+  // Settings, so re-probe whenever the window comes back to the front.
+  function handleFocus() {
+    void refreshPermissions();
+  }
+
+  function handleVisibility() {
+    if (document.visibilityState === 'visible') void refreshPermissions();
+  }
 
   onMount(() => {
     void (async () => {
@@ -25,11 +41,15 @@
         loading.set(false);
       }
     })();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
   });
 
   onDestroy(() => {
     unsubscribe?.();
     unsubscribeMonitor?.();
+    window.removeEventListener('focus', handleFocus);
+    document.removeEventListener('visibilitychange', handleVisibility);
   });
 </script>
 

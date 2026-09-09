@@ -9,13 +9,15 @@
        so both processes reach the same files. No absolute-path
        exception is needed for the IPC files.
 
-  Workspace folders: the extension reads arbitrary user-defined
-       repository paths to compute badges. The shippable answer is
-       Full Disk Access, granted by the user once via System Settings >
-       Privacy & Security > Full Disk Access on first launch of
-       Git-Same.app. Per-workspace absolute-path entitlements would
-       require the user to re-sign the extension when adding a workspace,
-       which is impractical without an Apple Developer ID.
+  Workspace folders: the extension never reads repository paths itself.
+       It only registers the monitor's `monitored_roots` as
+       `directoryURLs` and answers Finder from `status.json`, so it needs
+       no file entitlements and triggers no TCC prompts. The process that
+       reads the folders is the monitor, which runs under the app's
+       bundle identity and needs Full Disk Access, granted once via
+       System Settings > Privacy & Security > Full Disk Access. Per-path
+       absolute-path exceptions would require re-signing the extension
+       for every new workspace, so they are deliberately not used.
 
   macOS 26 testing constraints (memory: feedback_finder_sync_testing.md):
      - Sandbox stays ON.

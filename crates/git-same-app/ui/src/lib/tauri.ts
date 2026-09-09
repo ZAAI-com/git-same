@@ -5,6 +5,7 @@ import type {
   AppConfigDto,
   AppConfigInput,
   ExtensionStatus,
+  FullDiskAccessDto,
   MonitorAgentStatusDto,
   MonitorLaunchAgentStatusDto,
   ProviderDiscoveryDto,
@@ -106,6 +107,18 @@ export function startSync(workspaceId: string): Promise<StatusSnapshot> {
 
 export function readExtensionStatus(): Promise<ExtensionStatus> {
   return invoke('extension_status');
+}
+
+export function enableFinderExtension(): Promise<ExtensionStatus> {
+  return invoke('enable_finder_extension');
+}
+
+export function disableFinderExtension(): Promise<ExtensionStatus> {
+  return invoke('disable_finder_extension');
+}
+
+export function readFullDiskAccess(): Promise<FullDiskAccessDto> {
+  return invoke('full_disk_access_status');
 }
 
 export function openUrl(url: string): Promise<void> {

@@ -14,7 +14,7 @@ use crate::config::edit::{read_monitor_autostart, set_monitor_autostart};
 use crate::errors::MonitorAgentError;
 use crate::ipc::StatusFileWriter;
 use crate::monitor::runtime_guard::{MonitorMode, RuntimeIdentity, RuntimeMonitorState};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -113,6 +113,7 @@ impl Controller {
         };
         let launchd = self.launchd();
         let record = InstallRecord::load(&self.paths.install_record);
+        let program = self.program(record.as_ref().ok().and_then(|r| r.as_ref()));
         let runtime = self.system.monitor_state(&self.paths.ipc);
         let active = match &runtime {
             RuntimeMonitorState::Active(identity) => Some(identity.clone()),
@@ -121,7 +122,8 @@ impl Controller {
         let facts = Facts {
             autostart,
             launchd_disabled: launchd.is_disabled(LABEL)?,
-            installed: is_executable(&self.paths.helper) && self.paths.launch_agent.exists(),
+            installed: program_installed(&program, record_of(&record))
+                && self.paths.launch_agent.exists(),
             gui_session: launchd.gui_session_available()?,
             service: launchd.service(LABEL)?,
             scan_complete: active
@@ -131,15 +133,11 @@ impl Controller {
             active,
         };
         let state = derive_state(&facts);
-        let record_ok = record.as_ref().ok().and_then(|r| r.as_ref());
+        let record_ok = record_of(&record);
         let status = MonitorAgentStatus {
             label: LABEL.to_string(),
             plist_path: self.paths.launch_agent.display().to_string(),
-            binary_path: self
-                .paths
-                .helper
-                .exists()
-                .then(|| self.paths.helper.display().to_string()),
+            binary_path: program.exists().then(|| program.display().to_string()),
             installed: facts.installed,
             loaded: facts.service.loaded,
             running: facts.active.is_some(),
@@ -276,7 +274,7 @@ impl Controller {
         }
 
         let record = InstallRecord::load(&self.paths.install_record)?;
-        let helper_intact = helper_matches_record(&self.paths.helper, record.as_ref());
+        let helper_intact = program_matches_record(&self.program(record.as_ref()), record.as_ref());
         let selection = source::select(
             record.as_ref(),
             helper_intact,
@@ -296,7 +294,10 @@ impl Controller {
                 }
             }
             Selection::Keep => {
-                let expected = self.render_plist(record.as_ref().map(|r| r.owner_kind))?;
+                let expected = self.render_plist(
+                    &self.program(record.as_ref()),
+                    record.as_ref().map(|r| r.owner_kind),
+                )?;
                 let plist_current = std::fs::read_to_string(&self.paths.launch_agent)
                     .is_ok_and(|current| current == expected);
                 if !plist_current {
@@ -357,11 +358,25 @@ impl Controller {
     // installation
     // ------------------------------------------------------------------
 
-    fn render_plist(&self, owner_kind: Option<OwnerKind>) -> Result<String> {
+    /// The program launchd runs for the installation described by `record`:
+    /// the bundle's own executable for an app owner, the managed helper copy
+    /// otherwise. Derived rather than persisted, so an agent written by an
+    /// older build that still points at a copied helper is re-rendered onto
+    /// the bundle executable the next time anything repairs the service.
+    fn program(&self, record: Option<&InstallRecord>) -> PathBuf {
+        match record {
+            Some(record) => {
+                source::program_for(record.owner_kind, &record.owner_path, &self.paths.helper)
+            }
+            None => self.paths.helper.clone(),
+        }
+    }
+
+    fn render_plist(&self, program: &Path, owner_kind: Option<OwnerKind>) -> Result<String> {
         let associated = owner_kind
             .is_some_and(OwnerKind::is_app)
             .then_some(APP_BUNDLE_ID);
-        plist::render(&self.paths, &self.user.home, associated)
+        plist::render(&self.paths, program, &self.user.home, associated)
     }
 
     /// Transactional helper replacement. On failure the previous files and
@@ -434,7 +449,10 @@ impl Controller {
             }
         }
         self.wait_for_managed_exit()?;
-        let rendered = self.render_plist(Some(staged.source.owner_kind))?;
+        let rendered = self.render_plist(
+            &staged.source.program(&self.paths.helper),
+            Some(staged.source.owner_kind),
+        )?;
         self.installer().activate(staged, &rendered)?;
         let foreground_active = !matches!(
             self.system.monitor_state(&self.paths.ipc),
@@ -728,13 +746,20 @@ impl Controller {
         };
         if record.owner_kind != OwnerKind::HomebrewCask
             || record.owner_path != source.owner_path
-            || !helper_matches_record(&self.paths.helper, Some(&record))
+            || !program_matches_record(&self.program(Some(&record)), Some(&record))
         {
             return Ok(false);
         }
         let staged_hash = sha256_file(&source.copy_from)
             .map_err(|e| MonitorAgentError::io("Failed to hash the staged helper", e))?;
-        let expected = self.render_plist(Some(OwnerKind::HomebrewCask))?;
+        let expected = self.render_plist(
+            &source::program_for(
+                OwnerKind::HomebrewCask,
+                &record.owner_path,
+                &self.paths.helper,
+            ),
+            Some(OwnerKind::HomebrewCask),
+        )?;
         let plist_current = std::fs::read_to_string(&self.paths.launch_agent)
             .is_ok_and(|current| current == expected);
         Ok(staged_hash == record.binary_sha256 && plist_current)
@@ -817,6 +842,35 @@ fn source_changed(record: &InstallRecord) -> bool {
         return false;
     }
     sha256_file(&record.source_binary).is_ok_and(|hash| hash != record.binary_sha256)
+}
+
+fn record_of(record: &Result<Option<InstallRecord>>) -> Option<&InstallRecord> {
+    record.as_ref().ok().and_then(|record| record.as_ref())
+}
+
+/// Whether the recorded installation is present.
+///
+/// A copied helper has to be on disk. An in-place installation names a file
+/// inside the owner's bundle that the installer never places itself: during a
+/// cask install Homebrew moves the bundle in only after the installer runs,
+/// so the plist plus the record is the installation. A bundle that is
+/// genuinely gone surfaces as a launchd start failure, not as "not
+/// installed".
+fn program_installed(program: &Path, record: Option<&InstallRecord>) -> bool {
+    match record {
+        Some(record) if record.owner_kind.is_app() => true,
+        _ => is_executable(program),
+    }
+}
+
+/// Whether the installed program still matches what was recorded. Used to
+/// decide whether an installation needs repairing; see
+/// [`program_installed`] for why an absent in-place program is not damage.
+fn program_matches_record(program: &Path, record: Option<&InstallRecord>) -> bool {
+    match record {
+        Some(record) if record.owner_kind.is_app() && !program.exists() => true,
+        _ => helper_matches_record(program, record),
+    }
 }
 
 fn helper_matches_record(path: &Path, record: Option<&InstallRecord>) -> bool {

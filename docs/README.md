@@ -275,6 +275,17 @@ All examples in this README use `git-same`, but any alias works interchangeably.
 
 The cask installs `Git-Same.app`, the CLI aliases, a FinderSync badge extension, and a monitor LaunchAgent. The app reads the same config as the CLI and shows workspace status from the monitor. Finder badges use the monitor's status file, and workspace root folders get a custom Git-Same folder icon unless `[ui] custom_folder_icon = false` is set.
 
+### Full Disk Access and Finder badges
+
+Finder badges need Full Disk Access. The monitor reads every repository folder, and without the grant macOS asks for each protected location (Desktop, Documents, Downloads, external and network volumes) and denies the folders you decline. The app therefore walks you through badge setup in this order, and refuses to enable the extension until the grant is in place:
+
+1. The monitor is running.
+2. Full Disk Access is granted to `Git-Same` in System Settings > Privacy & Security > Full Disk Access. macOS applies the grant when a process starts, so quit and reopen the app afterwards; the app restarts the monitor for you once it sees the grant.
+3. The Finder extension is installed.
+4. Enable badges. The app sets the extension election itself; if macOS ignores that, use the Open button to toggle Git-Same Badges in Login Items & Extensions.
+
+One grant covers both the app and the monitor because the LaunchAgent runs the monitor through the app's own executable (`Git-Same.app/Contents/MacOS/git-same-app monitor`). Two things the grant never covers: `gisa` run from a terminal uses the terminal's permissions, and a development build under `target/` is a separate identity that macOS prompts for again.
+
 Useful checks:
 
 ```bash

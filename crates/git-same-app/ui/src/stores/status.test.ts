@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   readStatus: vi.fn(),
   listWorkspaces: vi.fn(),
   readExtensionStatus: vi.fn(),
+  readFullDiskAccess: vi.fn(),
   readAppConfig: vi.fn(),
 }));
 
@@ -14,6 +15,7 @@ vi.mock('../lib/tauri', () => ({
   readStatus: api.readStatus,
   listWorkspaces: api.listWorkspaces,
   readExtensionStatus: api.readExtensionStatus,
+  readFullDiskAccess: api.readFullDiskAccess,
   readAppConfig: api.readAppConfig,
   onStatusUpdated: async (callback: (snapshot: StatusSnapshot) => void) => {
     api.listener = callback;
@@ -36,6 +38,8 @@ vi.mock('../lib/tauri', () => ({
   saveAppConfig: vi.fn(),
   setDefaultWorkspace: vi.fn(),
   startSync: vi.fn(),
+  enableFinderExtension: vi.fn(),
+  restartMonitorLaunchAgent: vi.fn(),
 }));
 
 const make = (updated_at: string | null, stale = false): StatusSnapshot => ({
@@ -55,6 +59,7 @@ beforeEach(() => {
   api.listener = undefined;
   api.listWorkspaces.mockResolvedValue([]);
   api.readExtensionStatus.mockResolvedValue(null);
+  api.readFullDiskAccess.mockResolvedValue(null);
   api.readAppConfig.mockResolvedValue(null);
 });
 

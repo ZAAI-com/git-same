@@ -95,6 +95,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSDesktopFolderUsageDescription</key><string>Git-Same scans your repository folders to show sync status badges in Finder.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Git-Same scans your repository folders to show sync status badges in Finder.</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>Git-Same scans your repository folders to show sync status badges in Finder.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>Git-Same scans your repository folders to show sync status badges in Finder.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>Git-Same scans your repository folders to show sync status badges in Finder.</string>
 </dict>
 </plist>
 EOF

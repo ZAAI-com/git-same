@@ -1,8 +1,18 @@
 use super::*;
+use crate::macos::monitor_agent::source::{app_main_executable, APP_BUNDLE_ID};
 
 fn render_for(home: &str, bundle: Option<&str>) -> String {
-    let home = Path::new(home);
-    render(&MonitorAgentPaths::for_home(home), home, bundle).unwrap()
+    let paths = MonitorAgentPaths::for_home(Path::new(home));
+    let program = paths.helper.clone();
+    render(&paths, &program, Path::new(home), bundle).unwrap()
+}
+
+/// An app-owned installation execs the bundle's own main executable, so the
+/// Full Disk Access grant for "Git-Same" covers the monitor.
+fn render_for_app(home: &str, bundle_path: &str) -> String {
+    let paths = MonitorAgentPaths::for_home(Path::new(home));
+    let program = app_main_executable(Path::new(bundle_path));
+    render(&paths, &program, Path::new(home), Some(APP_BUNDLE_ID)).unwrap()
 }
 
 // The asserted paths are POSIX: `Path::join` uses backslashes on Windows, so
@@ -52,7 +62,9 @@ fn app_association_is_optional() {
 #[test]
 fn xml_control_characters_are_rejected() {
     let home = Path::new("/Users/a\u{1}da");
-    assert!(render(&MonitorAgentPaths::for_home(home), home, None).is_err());
+    let paths = MonitorAgentPaths::for_home(home);
+    let program = paths.helper.clone();
+    assert!(render(&paths, &program, home, None).is_err());
 }
 
 #[cfg(unix)]
@@ -60,7 +72,9 @@ fn xml_control_characters_are_rejected() {
 fn non_utf8_paths_are_rejected() {
     use std::os::unix::ffi::OsStrExt;
     let home = Path::new(std::ffi::OsStr::from_bytes(b"/Users/\xff"));
-    assert!(render(&MonitorAgentPaths::for_home(home), home, None).is_err());
+    let paths = MonitorAgentPaths::for_home(home);
+    let program = paths.helper.clone();
+    assert!(render(&paths, &program, home, None).is_err());
 }
 
 #[cfg(target_os = "macos")]
@@ -79,4 +93,18 @@ fn rendered_plist_passes_plutil_lint() {
         .output()
         .unwrap();
     assert!(status.status.success(), "{status:?}");
+}
+
+// POSIX literals again: see `renders_the_managed_helper_invocation`.
+#[cfg(unix)]
+#[test]
+fn an_app_owned_agent_execs_the_bundle_executable() {
+    let plist = render_for_app("/Users/ada", "/Applications/Git-Same.app");
+    let executable = "/Applications/Git-Same.app/Contents/MacOS/git-same-app";
+
+    assert_eq!(plist.matches(executable).count(), 2, "Program and argv[0]");
+    // Never the copied helper: that path is a separate TCC identity.
+    assert!(!plist.contains("com.zaai.git-same/monitor/git-same<"));
+    assert!(plist.contains("<string>--foreground</string>\n        <string>--managed</string>"));
+    assert!(plist.contains("com.zaai.git-same"));
 }

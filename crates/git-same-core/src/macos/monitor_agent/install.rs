@@ -26,14 +26,22 @@ struct Transaction {
     had_helper: bool,
     had_plist: bool,
     had_record: bool,
+    /// The activation ran the source in place and never touched the managed
+    /// helper, so rollback must leave that file exactly as it found it.
+    /// Absent in records written before in-place installs existed, where
+    /// every activation replaced the helper.
+    #[serde(default)]
+    in_place: bool,
 }
 
-/// A verified helper copy waiting to be activated.
+/// A verified source waiting to be activated.
 #[derive(Debug)]
 pub struct Staged {
     pub source: HelperSource,
     pub sha256: String,
-    temp_helper: PathBuf,
+    /// The staged copy to move into place, or `None` for an in-place
+    /// installation, which runs the source where it already lives.
+    temp_helper: Option<PathBuf>,
 }
 
 pub struct Installer<'a> {
@@ -59,7 +67,8 @@ impl<'a> Installer<'a> {
         self.paths.managed_root.join("install.rollback.json")
     }
 
-    /// Copies and verifies the source without touching the live installation.
+    /// Verifies the source, and copies it unless the installation runs it in
+    /// place. Nothing live is touched either way.
     pub fn stage(&self, source: HelperSource) -> Result<Staged, MonitorAgentError> {
         let from = &source.copy_from;
         if !from.is_file() {
@@ -72,6 +81,19 @@ impl<'a> Installer<'a> {
             return Err(invalid(from, "it is not executable"));
         }
         create_private_dir(&self.paths.managed_root)?;
+
+        // An in-place installation has nothing to copy or verify a copy of:
+        // launchd execs the source itself. Its hash still goes into the
+        // record so a later app upgrade is detected as a changed source.
+        if source.in_place() {
+            let sha256 = sha256_file(from)
+                .map_err(|e| MonitorAgentError::io("Failed to hash the monitor program", e))?;
+            return Ok(Staged {
+                source,
+                sha256,
+                temp_helper: None,
+            });
+        }
 
         let temp_helper = self.staged_helper();
         let _ = std::fs::remove_file(&temp_helper);
@@ -93,7 +115,7 @@ impl<'a> Installer<'a> {
             Ok(sha256) => Ok(Staged {
                 source,
                 sha256,
-                temp_helper,
+                temp_helper: Some(temp_helper),
             }),
             Err(e) => {
                 let _ = std::fs::remove_file(&temp_helper);
@@ -173,10 +195,12 @@ impl<'a> Installer<'a> {
     /// Saves rollback copies and the transaction record, then replaces the
     /// helper and the plist atomically.
     pub fn activate(&self, staged: &Staged, plist: &str) -> Result<(), MonitorAgentError> {
+        let in_place = staged.temp_helper.is_none();
         let transaction = Transaction {
-            had_helper: self.paths.helper.exists(),
+            had_helper: !in_place && self.paths.helper.exists(),
             had_plist: self.paths.launch_agent.exists(),
             had_record: self.paths.install_record.exists(),
+            in_place,
         };
         let io = |context: &str, e: std::io::Error| MonitorAgentError::io(context.to_string(), e);
 
@@ -198,8 +222,10 @@ impl<'a> Installer<'a> {
         atomic_write(&self.paths.transaction_record, &json, Some(0o600))
             .map_err(|e| io("Failed to write the transaction record", e))?;
 
-        std::fs::rename(&staged.temp_helper, &self.paths.helper)
-            .map_err(|e| io("Failed to activate the new helper", e))?;
+        if let Some(temp_helper) = &staged.temp_helper {
+            std::fs::rename(temp_helper, &self.paths.helper)
+                .map_err(|e| io("Failed to activate the new helper", e))?;
+        }
         atomic_write(&self.paths.launch_agent, plist.as_bytes(), Some(0o644))
             .map_err(|e| io("Failed to write the LaunchAgent", e))?;
         Ok(())
@@ -245,11 +271,13 @@ impl<'a> Installer<'a> {
                 failures.push(format!("{}: {e}", target.display()));
             }
         };
-        restore(
-            transaction.had_helper,
-            self.helper_backup(),
-            &self.paths.helper,
-        );
+        if !transaction.in_place {
+            restore(
+                transaction.had_helper,
+                self.helper_backup(),
+                &self.paths.helper,
+            );
+        }
         restore(
             transaction.had_plist,
             self.plist_backup(),

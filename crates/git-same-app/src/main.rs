@@ -1,9 +1,18 @@
 mod commands;
+mod monitor_mode;
 mod status_stream;
 
 use tauri::Manager;
 
 fn main() {
+    // Headless monitor mode: the LaunchAgent runs this executable so the
+    // monitor shares the app bundle's TCC identity (one Full Disk Access grant
+    // covers app and monitor). Must run before any Tauri/AppKit initialisation
+    // so no window or Dock icon appears.
+    if monitor_mode::is_monitor_invocation(std::env::args_os()) {
+        std::process::exit(monitor_mode::run());
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -28,6 +37,9 @@ fn main() {
             commands::read_status,
             commands::start_sync,
             commands::extension_status,
+            commands::enable_finder_extension,
+            commands::disable_finder_extension,
+            commands::full_disk_access_status,
             commands::open_url,
         ])
         .manage(commands::MonitorStatusCache::default())
@@ -56,7 +68,7 @@ fn main() {
                 .map(|meta| meta.file_type().is_symlink())
                 .unwrap_or(false);
             if host_status_is_symlink {
-                std::thread::spawn(|| {
+                std::thread::spawn(move || {
                     if let Err(error) = commands::restart_monitor_if_installed() {
                         eprintln!("failed to restart monitor after upgrade: {error}");
                     }
