@@ -7,10 +7,18 @@ fn classify_maps_success_to_granted() {
 
 #[test]
 fn classify_maps_permission_denied_to_denied() {
-    // TCC answers EPERM, which std maps to PermissionDenied.
-    let denied = io::Error::from_raw_os_error(1);
-    assert_eq!(denied.kind(), io::ErrorKind::PermissionDenied);
+    let denied = io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
     assert_eq!(classify(Err(denied)), FullDiskAccess::Denied);
+}
+
+// TCC answers EPERM (errno 1), which std maps to PermissionDenied on Unix.
+// Raw OS error 1 means something unrelated on Windows, so this stays Unix-only.
+#[cfg(unix)]
+#[test]
+fn classify_maps_raw_eperm_to_denied() {
+    let eperm = io::Error::from_raw_os_error(1);
+    assert_eq!(eperm.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(classify(Err(eperm)), FullDiskAccess::Denied);
 }
 
 #[test]
