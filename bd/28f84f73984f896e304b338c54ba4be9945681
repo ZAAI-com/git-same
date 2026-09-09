@@ -1,0 +1,23 @@
+.github/workflows/S1-Test-CI.yml
+  s_5a9e4e47ae72fd::t_9f43b39a1b71b6 117,164
+.github/workflows/S2-Release-GitHub.yml
+  s_5a9e4e47ae72fd::t_9f43b39a1b71b6 68,426,505
+crates/git-same-app/ui/pnpm-lock.yaml
+  s_5a9e4e47ae72fd::t_eeedc1c3bab6d4 433-434,449-450,827,835,837,925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "bd28f84f73984f896e304b338c54ba4be9945681",
+  "prompts": {},
+  "sessions": {
+    "s_5a9e4e47ae72fd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08565-fbd2-7eb1-a4ab-d1999c6e68a6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
