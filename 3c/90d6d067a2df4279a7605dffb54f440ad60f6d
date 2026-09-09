@@ -1,0 +1,19 @@
+Cargo.lock
+  s_ee6ae02672c688::t_aeed2783838f8b 86,97,215-220,568,920,1109,1724,1726,2604,2693,3244,3246,3248,3381,3383,3797,3854,4303,4848,4871,5361,5890
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "3c90d6d067a2df4279a7605dffb54f440ad60f6d",
+  "prompts": {},
+  "sessions": {
+    "s_ee6ae02672c688": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "104c4115-ba44-494b-a9a4-cf39fcc15271",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
