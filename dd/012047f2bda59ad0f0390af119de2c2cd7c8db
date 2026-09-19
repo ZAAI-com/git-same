@@ -1,0 +1,29 @@
+Cargo.lock
+  s_8b3b8dadb70262::t_5dd3641991be14 1526,1551,1569
+Cargo.toml
+  s_8b3b8dadb70262::t_d4d0a1cf6db0f3 10
+crates/git-same-app/tauri.conf.json
+  s_8b3b8dadb70262::t_7c391da6a70432 4
+crates/git-same-app/ui/package.json
+  s_8b3b8dadb70262::t_2ea023f61129f9 4
+crates/git-same-cli/Cargo.toml
+  s_8b3b8dadb70262::t_88723415c5e9d6 42
+macos/GitSameBadges/Info.plist
+  s_8b3b8dadb70262::t_253fa9a4619655 20,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dd012047f2bda59ad0f0390af119de2c2cd7c8db",
+  "prompts": {},
+  "sessions": {
+    "s_8b3b8dadb70262": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4261b25e-201a-4209-9ccb-272dc442837a",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
