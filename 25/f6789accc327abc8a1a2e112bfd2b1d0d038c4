@@ -1,0 +1,19 @@
+.github/dependabot.yml
+  s_3bfabf5caac4fe::t_93cdab2f1acc2a 7-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "25f6789accc327abc8a1a2e112bfd2b1d0d038c4",
+  "prompts": {},
+  "sessions": {
+    "s_3bfabf5caac4fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6dbc4471-88e1-413d-ac8a-45cf197fe863",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
