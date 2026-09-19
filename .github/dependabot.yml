@@ -4,6 +4,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # taiki-e/install-action is referenced by its floating @v2 major tag and
+      # ships patch releases almost daily. Without this, Dependabot rewrites
+      # @v2 to a patch pin (@v2.x.y) and reopens that PR every week. Major
+      # bumps still get a PR.
+      - dependency-name: "taiki-e/install-action"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
 
   # Cargo is configured only to record accepted-risk suppressions, not to open
   # version-bump PRs (open-pull-requests-limit: 0 disables version updates; the
