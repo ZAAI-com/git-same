@@ -1,0 +1,19 @@
+crates/git-same-app/ui/pnpm-lock.yaml
+  s_3bfabf5caac4fe::t_bd0782ceea69bb 433-434,449-450,827,835,837,925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "634381563d87aebfb953a0bb6f0f7d760bae5df7",
+  "prompts": {},
+  "sessions": {
+    "s_3bfabf5caac4fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6dbc4471-88e1-413d-ac8a-45cf197fe863",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
