@@ -1,0 +1,19 @@
+toolkit/homebrew/cask.rb.tmpl
+  s_89c12267510b5c::t_3068f4c638d9d7 32-41,44-56,62-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3015507171c59bfc69a43762d12782412cc5ed79",
+  "prompts": {},
+  "sessions": {
+    "s_89c12267510b5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5eae3a53-d68d-4495-a8dd-7d288eaa6155",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
