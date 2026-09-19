@@ -22,10 +22,5 @@
     "svelte-check": "^4.7.1",
     "typescript": "^6.0.3",
     "vite": "^8.1.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

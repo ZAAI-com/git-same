@@ -70,6 +70,7 @@ echo "node: $(node --version)"
 echo ""
 
 # Enable pnpm via Corepack
+UI_DIR="$PROJECT_DIR/crates/git-same-app/ui"
 echo "--- Enabling pnpm (Corepack) ---"
 if ! command -v corepack &> /dev/null; then
     echo "ERROR: Corepack not found. Requires Node.js 16.10+."
@@ -77,16 +78,14 @@ if ! command -v corepack &> /dev/null; then
     exit 1
 fi
 corepack enable pnpm
-echo "pnpm: $(corepack pnpm --version)"
+# Corepack resolves packageManager from its working directory before pnpm handles --dir.
+PNPM_VERSION="$(cd "$UI_DIR" && corepack pnpm --version)"
+echo "pnpm: $PNPM_VERSION"
 echo ""
 
 # Install Tauri app frontend dependencies
 echo "--- Installing Tauri app frontend dependencies ---"
-UI_DIR="$PROJECT_DIR/crates/git-same-app/ui"
-if ! corepack pnpm --dir "$UI_DIR" install --frozen-lockfile; then
-    echo "WARNING: --frozen-lockfile failed, retrying without it."
-    corepack pnpm --dir "$UI_DIR" install
-fi
+(cd "$UI_DIR" && corepack pnpm install --frozen-lockfile)
 echo ""
 
 # Sanity-check Tauri CLI
@@ -94,7 +93,7 @@ echo "--- Checking Tauri CLI ---"
 TAURI_CLI="$UI_DIR/node_modules/.bin/tauri"
 if [ ! -x "$TAURI_CLI" ] || ! "$TAURI_CLI" --version &> /dev/null; then
     echo "ERROR: Tauri CLI not runnable at $TAURI_CLI"
-    echo "Re-run: corepack pnpm --dir $UI_DIR install"
+    echo "Re-run: (cd \"$UI_DIR\" && corepack pnpm install --frozen-lockfile)"
     exit 1
 fi
 echo "tauri: $("$TAURI_CLI" --version)"
