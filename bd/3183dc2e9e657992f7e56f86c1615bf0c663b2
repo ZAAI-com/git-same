@@ -1,0 +1,19 @@
+Cargo.lock
+  s_fda196d722fe94::t_7c6ea6a851dbee 86,97,182,184,192,194,200,215-220,568,920,1109,1721,1723,2460,2462,2601,2690,3241,3243,3245,3378,3380,3794,3799,3801,3851,3862,3864,4300,4845,4868,5358,5887
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bd3183dc2e9e657992f7e56f86c1615bf0c663b2",
+  "prompts": {},
+  "sessions": {
+    "s_fda196d722fe94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a2556101-09cd-4bfc-b191-524dd4aa8a2e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
