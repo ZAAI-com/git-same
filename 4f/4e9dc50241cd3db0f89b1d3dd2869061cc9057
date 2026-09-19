@@ -1,0 +1,19 @@
+crates/git-same-core/src/provider/traits.rs
+  s_fda196d722fe94::t_ae54d46fe34a99 175-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4f4e9dc50241cd3db0f89b1d3dd2869061cc9057",
+  "prompts": {},
+  "sessions": {
+    "s_fda196d722fe94": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a2556101-09cd-4bfc-b191-524dd4aa8a2e",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
