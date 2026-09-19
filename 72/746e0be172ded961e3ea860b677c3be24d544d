@@ -1,0 +1,19 @@
+toolkit/conductor/setup.sh
+  s_df4c825d7aa26c::t_1c0d3c1a05c23b 73,81-83,88,96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "72746e0be172ded961e3ea860b677c3be24d544d",
+  "prompts": {},
+  "sessions": {
+    "s_df4c825d7aa26c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bbda-678d-7bd0-8160-a8d321dccdc6",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
