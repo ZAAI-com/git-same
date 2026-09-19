@@ -1,0 +1,19 @@
+.github/workflows/S2-Release-GitHub.yml
+  s_3bfabf5caac4fe::t_a0bf9310f24bb8 505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a91afcd05a4e6b2e960958cc74e14daf7bcb3f28",
+  "prompts": {},
+  "sessions": {
+    "s_3bfabf5caac4fe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6dbc4471-88e1-413d-ac8a-45cf197fe863",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
