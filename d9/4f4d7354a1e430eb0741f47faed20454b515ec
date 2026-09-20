@@ -1,0 +1,37 @@
+crates/git-same-cli/src/commands/mod.rs
+  s_ab8265d1c2253e::t_e0a3a13a7ddf08 61-65
+docs/README.md
+  s_1be4f4d94c61d7::t_393319bee2d167 237
+  s_1be4f4d94c61d7::t_7d3727a5f1bbd7 236
+crates/git-same-cli/tests/integration_test.rs
+  s_1be4f4d94c61d7::t_3e6f11ef4d9a80 731-758
+crates/git-same-cli/src/cli.rs
+  s_ab8265d1c2253e::t_8e5fc8c9641d20 400-404
+  s_ab8265d1c2253e::t_5fb838259826a7 169-179
+crates/git-same-cli/src/commands/monitor.rs
+  s_ab8265d1c2253e::t_d28427b0929513 55,68,165-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d94f4d7354a1e430eb0741f47faed20454b515ec",
+  "prompts": {},
+  "sessions": {
+    "s_1be4f4d94c61d7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4dad97ed-6785-4cd8-b1a4-4a15f2f5b147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_ab8265d1c2253e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5444a7e2-0cc2-4dfa-b080-9b90a4c9606d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
