@@ -5,6 +5,9 @@ fn render_for(home: &str, bundle: Option<&str>) -> String {
     render(&MonitorAgentPaths::for_home(home), home, bundle)
 }
 
+// The asserted paths are POSIX: `Path::join` uses backslashes on Windows, so
+// the rendered helper path would not match these literals there.
+#[cfg(unix)]
 #[test]
 fn renders_the_managed_helper_invocation() {
     let plist = render_for("/Users/ada", None);
@@ -28,6 +31,7 @@ fn keep_alive_restarts_only_unsuccessful_exits() {
     assert!(plist.contains("<key>RunAtLoad</key>\n    <true/>"));
 }
 
+#[cfg(unix)]
 #[test]
 fn every_substituted_path_is_escaped() {
     let plist = render_for("/Volumes/R&D <x>/Ada \"A\" O'Neil", None);
