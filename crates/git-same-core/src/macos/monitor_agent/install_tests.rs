@@ -1,5 +1,5 @@
 use super::*;
-use crate::macos::monitor_agent::fake::FakeSystem;
+use crate::macos::monitor_agent::fake::{FakeCodesign, FakeSystem};
 use crate::macos::monitor_agent::record::OwnerKind;
 
 struct Env {
@@ -250,4 +250,82 @@ fn remove_installation_keeps_locks_logs_and_unrelated_files() {
     assert!(env.paths.control_lock.exists());
     assert!(env.paths.stderr_log.exists());
     assert!(unrelated.exists());
+}
+
+// ------------------------------------------------- signature verification
+//
+// Without a scripted `codesign` every test binary is unsigned, so
+// `verify_signature` returns early and none of these three checks runs.
+
+#[test]
+fn a_signed_source_whose_copy_keeps_its_identity_is_accepted() {
+    let env = env();
+    env.system
+        .with(|s| s.codesign = Some(FakeCodesign::signed("57KL6Y7V32")));
+
+    Installer::new(&env.system, &env.paths)
+        .stage(env.source.clone())
+        .unwrap();
+}
+
+#[test]
+fn a_copy_that_lost_the_app_group_entitlement_is_rejected() {
+    let env = env();
+    env.system.with(|s| {
+        s.codesign = Some(FakeCodesign {
+            team: "57KL6Y7V32".to_string(),
+            // Only the source carries it; the staged copy does not.
+            app_group: vec![env.source.copy_from.display().to_string()],
+            ..FakeCodesign::default()
+        })
+    });
+
+    let err = Installer::new(&env.system, &env.paths)
+        .stage(env.source.clone())
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("app-group entitlement"),
+        "got: {err}"
+    );
+    assert_eq!(leftovers(&env), Vec::<String>::new(), "staged copy swept");
+}
+
+/// A `codesign` that cannot read entitlements used to report "no app group",
+/// which silently skipped the check and shipped a helper that cannot write
+/// the group container.
+#[test]
+fn an_unreadable_entitlement_blob_is_rejected_rather_than_assumed_empty() {
+    let env = env();
+    env.system.with(|s| {
+        s.codesign = Some(FakeCodesign {
+            team: "57KL6Y7V32".to_string(),
+            entitlements_fail: vec![String::new()],
+            ..FakeCodesign::default()
+        })
+    });
+
+    let err = Installer::new(&env.system, &env.paths)
+        .stage(env.source.clone())
+        .unwrap_err();
+
+    assert!(err.to_string().contains("codesign"), "got: {err}");
+}
+
+#[test]
+fn a_copy_whose_signature_does_not_verify_is_rejected() {
+    let env = env();
+    env.system.with(|s| {
+        s.codesign = Some(FakeCodesign {
+            team: "57KL6Y7V32".to_string(),
+            verify_fails: vec![String::new()],
+            ..FakeCodesign::default()
+        })
+    });
+
+    let err = Installer::new(&env.system, &env.paths)
+        .stage(env.source.clone())
+        .unwrap_err();
+
+    assert!(err.to_string().contains("code signature"), "got: {err}");
 }

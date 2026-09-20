@@ -361,6 +361,7 @@ fn changed_owner_source_updates_the_helper_with_one_restart() {
 #[test]
 fn stop_persists_disables_and_stops() {
     let env = env();
+    env.write_config("[monitor]\nautostart = true\n");
     env.controller().ensure_running().unwrap();
 
     let status = env.controller().stop().unwrap();
@@ -969,4 +970,80 @@ fn inspect_modifies_nothing() {
     assert!(!env.paths.config.exists());
     assert!(env.system.mutating_calls().is_empty());
     let _ = identity(1, MonitorMode::Managed);
+}
+
+/// The cask's uninstall stanza invokes the retained tool by absolute path.
+/// Deleting it before the replacement copy succeeded left `brew uninstall`
+/// impossible without `--force`.
+#[test]
+fn a_failed_retain_keeps_the_previously_retained_service_tool() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    env.controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .unwrap();
+    let retained = std::fs::read(&tool).unwrap();
+
+    env.system
+        .with(|s| s.fail_copy_to = Some("git-same-service-tool".to_string()));
+    assert!(env
+        .controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .is_err());
+
+    assert_eq!(
+        std::fs::read(&tool).unwrap(),
+        retained,
+        "the working uninstall tool must survive a failed upgrade"
+    );
+    let leftovers: Vec<_> = std::fs::read_dir(tool.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(crate::fsutil::TEMP_SUFFIX))
+        .collect();
+    assert!(leftovers.is_empty(), "temp copy swept: {leftovers:?}");
+}
+
+/// Start refuses while a hand-started monitor runs. It must refuse without
+/// having already flipped the persistent preference a Stop had set.
+#[test]
+fn a_refused_start_does_not_reverse_a_persistent_stop() {
+    let env = env();
+    env.write_config("[monitor]\nautostart = false\n");
+    env.system.set_foreground_monitor(4242);
+
+    let err = env.controller().start().unwrap_err();
+
+    assert!(matches!(err, MonitorAgentError::ForegroundActive { .. }));
+    assert!(
+        !read_monitor_autostart(&env.paths.config).unwrap(),
+        "the preference must still say stopped"
+    );
+    assert!(env.system.mutating_calls().is_empty());
+}
+
+/// An SSH session while the console user is logged in: the GUI domain is
+/// unreachable, so `bootout` is skipped. Stop used to spin for the exit
+/// timeout and then report failure with the monitor still running, and
+/// Uninstall went on to delete the helper from under the live process.
+#[test]
+fn stop_signals_a_managed_monitor_when_the_gui_domain_is_unreachable() {
+    let env = env();
+    env.write_config("[monitor]\nautostart = true\n");
+    env.controller().ensure_running().unwrap();
+    let pid = env.system.with(|s| s.active.as_ref().unwrap().pid);
+    env.system.with(|s| {
+        s.gui = false;
+        s.calls.clear();
+    });
+    env.system.set_managed_monitor(pid);
+
+    let status = env.controller().stop().unwrap();
+
+    assert!(env
+        .system
+        .with(|s| s.calls.iter().any(|c| c == &format!("terminate {pid}"))));
+    assert!(env.system.with(|s| s.active.is_none()));
+    assert!(!status.running);
+    assert!(!read_monitor_autostart(&env.paths.config).unwrap());
 }

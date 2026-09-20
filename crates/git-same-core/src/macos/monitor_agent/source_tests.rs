@@ -223,3 +223,39 @@ fn automatic_recovery_never_installs_a_dev_build() {
         Selection::Install(caller)
     );
 }
+
+/// An explicit Start may record a cargo `target/` build as the source. From
+/// then on, automatic recovery must not keep reinstalling it: `source_changed`
+/// is true after every rebuild, so the monitor would restart on each one, and
+/// the recorded path is trusted forever by launchd at login.
+#[test]
+fn automatic_recovery_never_reinstalls_a_recorded_dev_build() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target");
+    std::fs::create_dir_all(target.join("release")).unwrap();
+    std::fs::write(target.join("CACHEDIR.TAG"), b"").unwrap();
+    let binary = target.join("release").join("git-same");
+    std::fs::write(&binary, b"dev build").unwrap();
+    let record = record(OwnerKind::Cli, &binary, &binary);
+
+    // Helper present, source rebuilt.
+    assert_eq!(
+        select(Some(&record), true, None, false, |_| true),
+        Selection::Keep
+    );
+    // Helper gone: repairing from a dev build is still refused.
+    assert!(matches!(
+        select(Some(&record), false, None, false, |_| true),
+        Selection::Unavailable(_)
+    ));
+
+    // An explicit command may still do both.
+    assert!(matches!(
+        select(Some(&record), true, None, true, |_| true),
+        Selection::Install(_)
+    ));
+    assert!(matches!(
+        select(Some(&record), false, None, true, |_| true),
+        Selection::Install(_)
+    ));
+}

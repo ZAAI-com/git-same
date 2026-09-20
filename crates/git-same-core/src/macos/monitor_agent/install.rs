@@ -148,6 +148,12 @@ impl<'a> Installer<'a> {
             .map(str::to_string))
     }
 
+    /// Only ever asked about a binary already known to carry a team
+    /// signature, so a failed `codesign` is a real problem and not "no
+    /// entitlements". Reporting `false` there would silently skip the
+    /// app-group check and ship a helper that cannot write the group
+    /// container. Which stream carries the entitlements depends on the
+    /// `codesign` version, so both are searched.
     fn has_app_group(&self, path: &Path) -> Result<bool, MonitorAgentError> {
         let arg = path.display().to_string();
         let output = self.system.run(
@@ -155,7 +161,13 @@ impl<'a> Installer<'a> {
             &["-d", "--entitlements", "-", "--xml", &arg],
             CODESIGN_TIMEOUT,
         )?;
-        Ok(output.stdout.contains(APP_GROUP_ID))
+        if !output.success() {
+            return Err(invalid(
+                path,
+                "its entitlements could not be read by codesign",
+            ));
+        }
+        Ok(output.stdout.contains(APP_GROUP_ID) || output.stderr.contains(APP_GROUP_ID))
     }
 
     /// Saves rollback copies and the transaction record, then replaces the

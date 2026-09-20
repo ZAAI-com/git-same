@@ -140,11 +140,16 @@ pub fn select(
     allow_dev_source: bool,
     source_changed: impl Fn(&InstallRecord) -> bool,
 ) -> Selection {
-    let caller_usable =
-        caller.is_some_and(|caller| allow_dev_source || !is_dev_build(&caller.copy_from));
+    let usable = |source: &HelperSource| allow_dev_source || !is_dev_build(&source.copy_from);
+    let caller_usable = caller.is_some_and(usable);
 
     if let Some(record) = existing {
         let recorded_source = recorded_as_source(record);
+        // The recorded source gets the same dev-build test as the caller. It
+        // was written by an explicit Start, which may point at a cargo
+        // `target/` build; automatic recovery must not then reinstall and
+        // restart the monitor after every rebuild.
+        let recorded_usable = usable(&recorded_source) && recorded_source.copy_from.exists();
 
         // A standalone owner yields to the app's signed bundled helper.
         if let Some(caller) = caller {
@@ -155,13 +160,13 @@ pub fn select(
         if helper_intact {
             // Update only from the owner's own source; a different caller
             // never replaces a healthy helper.
-            if source_changed(record) && recorded_source.copy_from.exists() {
+            if source_changed(record) && recorded_usable {
                 return Selection::Install(recorded_source);
             }
             return Selection::Keep;
         }
         // Helper missing: repair from the recorded owner when possible.
-        if recorded_source.copy_from.exists() {
+        if recorded_usable {
             return Selection::Install(recorded_source);
         }
     }

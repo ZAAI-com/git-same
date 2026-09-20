@@ -208,14 +208,16 @@ impl Controller {
         let _lock = self.lock(Wait::UpTo(EXPLICIT_WAIT))?;
         self.installer().recover_interrupted()?;
 
-        set_monitor_autostart(&self.paths.config, true)
-            .map_err(|e| MonitorAgentError::Configuration(e.to_string()))?;
+        // Refusals come first: a Start that cannot proceed must not have
+        // already reversed the user's persistent Stop on its way out.
         if let Some(active) = self.system.active_monitor(&self.paths.ipc) {
             if active.mode == MonitorMode::Foreground {
                 // Never silently kill a monitor the user started by hand.
                 return Err(MonitorAgentError::ForegroundActive { pid: active.pid });
             }
         }
+        set_monitor_autostart(&self.paths.config, true)
+            .map_err(|e| MonitorAgentError::Configuration(e.to_string()))?;
         self.launchd().enable(LABEL)?;
         self.bring_up(Intent::Explicit, restart)?;
         self.inspect()
@@ -479,14 +481,22 @@ impl Controller {
         let launchd = self.launchd();
         // Disable before stopping so KeepAlive cannot bring it back.
         launchd.disable(LABEL)?;
-        if launchd.gui_session_available()? {
+        let booted_out = launchd.gui_session_available()?;
+        if booted_out {
             launchd.bootout(LABEL)?;
         }
         if let Some(active) = self.system.active_monitor(&self.paths.ipc) {
-            if active.mode == MonitorMode::Foreground {
-                self.system.terminate(active.pid).map_err(|e| {
-                    MonitorAgentError::io("Failed to stop the foreground monitor", e)
-                })?;
+            // A foreground monitor was never launchd's to boot out. A managed
+            // one is, unless there is no GUI domain to reach (an SSH session
+            // while the console user is logged in) -- then a signal is the only
+            // way to stop it, and `disable` above keeps KeepAlive from
+            // reviving it. Without this, Stop reported a timeout and left the
+            // monitor running, and Uninstall deleted the helper under it.
+            let signal_needed = active.mode == MonitorMode::Foreground || !booted_out;
+            if signal_needed {
+                self.system
+                    .terminate(active.pid)
+                    .map_err(|e| MonitorAgentError::io("Failed to stop the monitor", e))?;
             }
             self.wait_for_any_exit()?;
         }
@@ -538,18 +548,24 @@ impl Controller {
         final_app_path: &Path,
         retained_tool: &Path,
     ) -> Result<MonitorAgentStatus> {
-        let _ = std::fs::remove_file(retained_tool);
-        self.system
-            .copy_executable(staged_executable, retained_tool)
-            .map_err(|e| {
-                MonitorAgentError::io(
-                    format!(
-                        "Failed to retain the service tool at '{}'",
-                        retained_tool.display()
-                    ),
-                    e,
-                )
-            })?;
+        // Replace through a temp sibling: deleting first would leave the
+        // cask's uninstall stanza with no executable if the copy then failed,
+        // and `brew uninstall` would be impossible without `--force`.
+        let staged_tool = crate::fsutil::temp_sibling(retained_tool);
+        let retain = self
+            .system
+            .copy_executable(staged_executable, &staged_tool)
+            .and_then(|()| std::fs::rename(&staged_tool, retained_tool));
+        if let Err(e) = retain {
+            let _ = std::fs::remove_file(&staged_tool);
+            return Err(MonitorAgentError::io(
+                format!(
+                    "Failed to retain the service tool at '{}'",
+                    retained_tool.display()
+                ),
+                e,
+            ));
+        }
 
         let _lock = self.lock(Wait::UpTo(EXPLICIT_WAIT))?;
         self.installer().recover_interrupted()?;

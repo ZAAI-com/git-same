@@ -29,7 +29,66 @@ pub struct FakeState {
     pub corrupt_copies: bool,
     /// launchd accepts the job but its process never appears.
     pub jobs_never_start: bool,
+    /// Scripted `codesign`. `None` keeps the default: every binary is
+    /// unsigned, which is true of test binaries and short-circuits
+    /// `verify_signature` before it can check anything.
+    pub codesign: Option<FakeCodesign>,
     pub slept: Duration,
+}
+
+/// Enough of `codesign` to exercise the helper verification path, which is
+/// otherwise dead code under test.
+#[derive(Debug, Clone, Default)]
+pub struct FakeCodesign {
+    pub team: String,
+    /// Path substrings whose binaries carry the app-group entitlement.
+    pub app_group: Vec<String>,
+    /// Path substrings whose `--verify --strict` fails.
+    pub verify_fails: Vec<String>,
+    /// Path substrings whose entitlement read fails outright.
+    pub entitlements_fail: Vec<String>,
+}
+
+impl FakeCodesign {
+    /// A correctly signed helper carrying the app group.
+    pub fn signed(team: &str) -> Self {
+        Self {
+            team: team.to_string(),
+            app_group: vec![String::new()],
+            ..Self::default()
+        }
+    }
+
+    fn matches(patterns: &[String], path: &str) -> bool {
+        patterns.iter().any(|p| path.contains(p.as_str()))
+    }
+
+    fn respond(&self, args: &[&str]) -> CommandOutput {
+        let path = args[args.len() - 1];
+        if args[0] == "-dv" {
+            return CommandOutput {
+                code: Some(0),
+                stdout: String::new(),
+                stderr: format!("TeamIdentifier={}\n", self.team),
+            };
+        }
+        if args[0] == "--verify" {
+            return if Self::matches(&self.verify_fails, path) {
+                fail(1, "invalid signature")
+            } else {
+                ok("")
+            };
+        }
+        // -d --entitlements - --xml
+        if Self::matches(&self.entitlements_fail, path) {
+            return fail(1, "cannot read entitlements");
+        }
+        if Self::matches(&self.app_group, path) {
+            ok(format!("<string>{}</string>", crate::ipc::APP_GROUP_ID))
+        } else {
+            ok("")
+        }
+    }
 }
 
 pub struct FakeSystem {
@@ -68,6 +127,17 @@ impl FakeSystem {
 
     pub fn set_foreground_monitor(&self, pid: u32) {
         self.with(|s| s.active = Some(identity(pid, MonitorMode::Foreground)));
+    }
+
+    /// A managed monitor that launchd started before the GUI domain became
+    /// unreachable -- the state an SSH session sees while the console user is
+    /// still logged in. `spawn` cannot produce it, because it requires `gui`.
+    pub fn set_managed_monitor(&self, pid: u32) {
+        self.with(|s| {
+            s.loaded.insert(super::LABEL.to_string());
+            s.pids.insert(super::LABEL.to_string(), pid);
+            s.active = Some(identity(pid, MonitorMode::Managed));
+        });
     }
 }
 
@@ -215,8 +285,11 @@ impl System for FakeSystem {
         state.calls.push(format!("{name} {}", args.join(" ")));
         Ok(match name {
             "launchctl" => state.launchctl(args),
-            // Test binaries are unsigned.
-            "codesign" => fail(1, "code object is not signed at all"),
+            "codesign" => match state.codesign.clone() {
+                Some(codesign) => codesign.respond(args),
+                // Test binaries are unsigned.
+                None => fail(1, "code object is not signed at all"),
+            },
             _ => ok(""),
         })
     }
