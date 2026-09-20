@@ -43,6 +43,9 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSData", "NSString"] }
 objc2-app-kit = { version = "0.3", features = ["NSImage", "NSWorkspace"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true }
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 mockito = { workspace = true }

@@ -35,18 +35,25 @@ pub fn temp_sibling(path: &Path) -> PathBuf {
 /// and the monitor's install transaction depends on the relative order of two
 /// renames surviving a crash.
 pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
-    let parent = path.parent();
+    let path = resolve_symlink_target(path)?;
+    let path = path.as_path();
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty());
     if let Some(parent) = parent {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path);
+    let existing_permissions = std::fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.permissions());
     let result = (|| {
         let mut file = std::fs::File::create(&temp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
-        set_mode(&temp, mode)?;
-        std::fs::rename(&temp, path)
+        set_permissions(&temp, mode, existing_permissions)?;
+        replace_file(&temp, path)
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&temp);
@@ -54,6 +61,37 @@ pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Re
     }
     sync_dir(parent);
     result
+}
+
+/// Follows an existing symlink chain without canonicalising ordinary path
+/// components. Atomic replacement must target the file behind a config-file
+/// symlink, not replace the symlink itself.
+fn resolve_symlink_target(path: &Path) -> std::io::Result<PathBuf> {
+    let mut current = path.to_path_buf();
+    for _ in 0..40 {
+        let metadata = match std::fs::symlink_metadata(&current) {
+            Ok(metadata) => metadata,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current),
+            Err(e) => return Err(e),
+        };
+        if !metadata.file_type().is_symlink() {
+            return Ok(current);
+        }
+        let target = std::fs::read_link(&current)?;
+        current = if target.is_absolute() {
+            target
+        } else {
+            current
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."))
+                .join(target)
+        };
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "too many symbolic links while resolving atomic-write target",
+    ))
 }
 
 /// Best-effort durability for a directory entry created by `rename`.
@@ -69,17 +107,62 @@ fn sync_dir(parent: Option<&Path>) {
 }
 
 #[cfg(unix)]
-fn set_mode(path: &Path, mode: Option<u32>) -> std::io::Result<()> {
+fn set_permissions(
+    path: &Path,
+    mode: Option<u32>,
+    existing: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    match mode {
-        Some(mode) => std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)),
-        None => Ok(()),
+    match (mode, existing) {
+        (Some(mode), _) => std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)),
+        (None, Some(permissions)) => std::fs::set_permissions(path, permissions),
+        (None, None) => Ok(()),
     }
 }
 
 #[cfg(not(unix))]
-fn set_mode(_path: &Path, _mode: Option<u32>) -> std::io::Result<()> {
+fn set_permissions(
+    _path: &Path,
+    _mode: Option<u32>,
+    _existing: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+fn replace_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let wide = |path: &Path| {
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>()
+    };
+    let from = wide(from);
+    let to = wide(to);
+    // SAFETY: both buffers are NUL-terminated UTF-16 paths and remain alive
+    // for the duration of the call.
+    if unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    } != 0
+    {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 #[cfg(test)]

@@ -10,6 +10,19 @@ fn atomic_write_creates_parents_and_replaces_content() {
 }
 
 #[test]
+fn atomic_write_accepts_a_bare_relative_filename() {
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = CWD_LOCK.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let previous = std::env::current_dir().unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+    let result = atomic_write(Path::new("file.json"), b"one", None);
+    std::env::set_current_dir(previous).unwrap();
+    result.unwrap();
+    assert_eq!(std::fs::read(dir.path().join("file.json")).unwrap(), b"one");
+}
+
+#[test]
 fn atomic_write_leaves_no_temp_files() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file.toml");
@@ -42,16 +55,59 @@ fn atomic_write_applies_mode() {
     assert_eq!(mode, 0o644);
 }
 
+#[cfg(unix)]
 #[test]
-fn atomic_write_succeeds_when_the_parent_cannot_be_synced() {
-    // `sync_dir` is best-effort: a filesystem that refuses to open a directory
-    // must not fail a write whose data already landed.
+fn atomic_write_preserves_existing_mode_when_unspecified() {
+    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("file.json");
-    atomic_write(&path, b"{}", None).unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "old").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    atomic_write(&path, b"new", None).unwrap();
+    assert_eq!(
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_write_preserves_relative_symlink() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("real.toml");
+    let link = dir.path().join("config.toml");
+    std::fs::write(&target, "old").unwrap();
+    symlink("real.toml", &link).unwrap();
+    atomic_write(&link, b"new", None).unwrap();
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "new");
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_write_preserves_absolute_symlink() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("real.toml");
+    let link = dir.path().join("config.toml");
+    std::fs::write(&target, "old").unwrap();
+    symlink(&target, &link).unwrap();
+    atomic_write(&link, b"new", None).unwrap();
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(target).unwrap(), "new");
+}
+
+#[test]
+fn sync_dir_ignores_missing_directories() {
     sync_dir(Some(std::path::Path::new(
         "/nonexistent-directory-for-tests",
     )));
     sync_dir(None);
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
 }
