@@ -536,7 +536,12 @@ fn nudge_monitor_refresh() {
     if std::env::var_os("GIT_SAME_CONFIG_DIR").is_some() {
         return;
     }
-    #[cfg(unix)]
+    spawn_refresh_all();
+}
+
+/// The monitor is reachable over a Unix socket only.
+#[cfg(unix)]
+fn spawn_refresh_all() {
     tauri::async_runtime::spawn(async {
         let Ok(ipc) = IpcConfig::default_path() else {
             return;
@@ -546,6 +551,10 @@ fn nudge_monitor_refresh() {
             .await;
     });
 }
+
+/// No socket on this platform: nothing to nudge.
+#[cfg(not(unix))]
+fn spawn_refresh_all() {}
 
 #[tauri::command]
 pub async fn discover_provider_orgs(

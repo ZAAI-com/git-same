@@ -58,6 +58,9 @@ fn a_matching_name_in_another_directory_is_ignored() {
     );
 }
 
+// Symlinked homes are a Unix concern, and `std::os::unix` does not exist
+// on Windows.
+#[cfg(unix)]
 #[test]
 fn a_symlinked_home_still_matches() {
     // FSEvents reports the resolved path while `IpcConfig.dir` keeps the
