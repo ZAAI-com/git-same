@@ -1,0 +1,21 @@
+.gitattributes
+  s_07d2d8a1a7f101::t_8a21874f93cbd4 1-4
+crates/git-same-core/src/macos/monitor_agent/plist_tests.rs
+  s_07d2d8a1a7f101::t_8a21874f93cbd4 8-10,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "531319d2ed1b48ddade3addf279ae8e1820fc961",
+  "prompts": {},
+  "sessions": {
+    "s_07d2d8a1a7f101": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8062e6ec-dd9c-480a-beaf-60b4ada4c085",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
