@@ -1,0 +1,34 @@
+crates/git-same-cli/src/commands/refresh.rs
+  s_463afe401e0e52::t_585b7b0dcca7cc 31,48-59
+crates/git-same-cli/src/commands/auto_monitor.rs
+  s_463afe401e0e52::t_e88bea035c8219 79-81
+crates/git-same-cli/src/commands/mod.rs
+  s_463afe401e0e52::t_4d1734debd0dda 121
+crates/git-same-core/src/config/edit_tests.rs
+  s_463afe401e0e52::t_df388b2057f938 25-31
+  s_463afe401e0e52::t_0dddc88e7319bb 24
+crates/git-same-cli/src/commands/refresh_tests.rs
+  s_463afe401e0e52::t_608aabc6da3727 46-67
+crates/git-same-cli/src/cli_tests.rs
+  s_463afe401e0e52::t_97ef634a130f99 339-342
+  s_463afe401e0e52::t_0c2481fac9e3fa 314-338,343-345
+crates/git-same-core/src/config/edit.rs
+  s_463afe401e0e52::t_df388b2057f938 21,24-26
+  s_463afe401e0e52::t_97ef634a130f99 27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d932a3a05a81ea2d5f4b247618464125590d77c0",
+  "prompts": {},
+  "sessions": {
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
