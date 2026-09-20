@@ -165,6 +165,14 @@ if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt
 fi
 export GIT_SAME_APP_PORT="$APP_PORT"
 
+# Dev builds must never manage the developer's live monitor LaunchAgent: the
+# helper would be copied from this disposable worktree. Opt in deliberately
+# with GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART=1 when testing the lifecycle.
+if [ "${GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART:-0}" != "1" ]; then
+    export GIT_SAME_DISABLE_MONITOR_AUTOSTART=1
+    echo "Automatic monitor management is suppressed for this dev app launch."
+fi
+
 TAURI_DEV_CONFIG="$(mktemp -t git-same-tauri-dev.XXXXXX.json)"
 trap 'rm -f "$TAURI_DEV_CONFIG"' EXIT
 cat > "$TAURI_DEV_CONFIG" <<EOF

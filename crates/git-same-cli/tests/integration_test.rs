@@ -9,8 +9,16 @@ fn git_same_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_git-same"))
 }
 
-fn command_with_temp_env(home: &Path) -> Command {
+/// Spawn the CLI with automatic monitor management suppressed, so routine
+/// tests can never install, start, or stop the developer's live LaunchAgent.
+fn cli() -> Command {
     let mut cmd = Command::new(git_same_binary());
+    cmd.env("GIT_SAME_DISABLE_MONITOR_AUTOSTART", "1");
+    cmd
+}
+
+fn command_with_temp_env(home: &Path) -> Command {
+    let mut cmd = cli();
     let config_dir = home.join(".config").join("git-same");
     cmd.env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
@@ -120,7 +128,7 @@ fn assert_banner_branding(stdout: &str) {
 
 #[test]
 fn test_help_command() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("--help")
         .output()
         .expect("Failed to execute git-same");
@@ -138,7 +146,7 @@ fn test_help_command() {
 
 #[test]
 fn test_reset_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["reset", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -151,7 +159,7 @@ fn test_reset_help() {
 
 #[test]
 fn test_version_command() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("--version")
         .output()
         .expect("Failed to execute git-same");
@@ -163,7 +171,7 @@ fn test_version_command() {
 
 #[test]
 fn test_clone_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("clone")
         .output()
         .expect("Failed to execute git-same");
@@ -179,7 +187,7 @@ fn test_clone_subcommand_removed() {
 
 #[test]
 fn test_fetch_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("fetch")
         .output()
         .expect("Failed to execute git-same");
@@ -195,7 +203,7 @@ fn test_fetch_subcommand_removed() {
 
 #[test]
 fn test_pull_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("pull")
         .output()
         .expect("Failed to execute git-same");
@@ -211,7 +219,7 @@ fn test_pull_subcommand_removed() {
 
 #[test]
 fn test_status_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["status", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -225,7 +233,7 @@ fn test_status_help() {
 
 #[test]
 fn test_init_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -238,7 +246,7 @@ fn test_init_help() {
 
 #[test]
 fn test_global_verbose_flag() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-v", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -248,7 +256,7 @@ fn test_global_verbose_flag() {
 
 #[test]
 fn test_global_quiet_flag() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-q", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -263,7 +271,7 @@ fn test_init_creates_config() {
     let temp = TempDir::new().expect("Failed to create temp dir");
     let config_path = temp.path().join("gisa.config.toml");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to execute git-same");
@@ -287,7 +295,7 @@ fn test_init_force_overwrites() {
     std::fs::write(&config_path, "# existing").expect("Failed to write");
 
     // Init without force should fail
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to execute git-same");
@@ -298,7 +306,7 @@ fn test_init_force_overwrites() {
     );
 
     // Init with force should succeed
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap(), "--force"])
         .output()
         .expect("Failed to execute git-same");
@@ -321,12 +329,12 @@ fn test_status_nonexistent_workspace() {
     let config_path = temp.path().join("config.toml");
 
     // Create a valid config so the test reaches workspace resolution
-    Command::new(git_same_binary())
+    cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to run init");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args([
             "-C",
             config_path.to_str().unwrap(),
@@ -352,7 +360,7 @@ fn test_status_nonexistent_workspace() {
 
 #[test]
 fn test_sync_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["sync", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -367,7 +375,7 @@ fn test_sync_help() {
 
 #[test]
 fn test_setup_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["setup", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -379,7 +387,7 @@ fn test_setup_help() {
 
 #[test]
 fn test_workspace_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["workspace", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -398,12 +406,12 @@ fn test_workspace_list() {
     let config_path = temp.path().join("config.toml");
 
     // Create a minimal valid config so the test doesn't depend on local config
-    Command::new(git_same_binary())
+    cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to run init");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-C", config_path.to_str().unwrap(), "workspace", "list"])
         .output()
         .expect("Failed to execute git-same");
@@ -571,7 +579,7 @@ fn test_missing_config_suggests_init() {
     let nonexistent = temp.path().join("nonexistent-gisa-config.toml");
     let path_str = nonexistent.to_str().expect("Path is valid UTF-8");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-C", path_str, "sync"])
         .output()
         .expect("Failed to execute git-same");
