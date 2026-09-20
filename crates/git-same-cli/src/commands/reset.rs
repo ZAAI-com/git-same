@@ -47,13 +47,13 @@ impl ResetTarget {
 
 /// Run the reset command.
 ///
-/// `before_config_removal` runs once the scope is confirmed and includes the
+/// `before_config_removal` must succeed once the confirmed scope includes the
 /// global configuration. Workspace-only resets never call it, so they keep
 /// the monitoring preference.
 pub async fn run(
     args: &ResetArgs,
     output: &Output,
-    before_config_removal: &(dyn Fn() + Sync),
+    before_config_removal: &(dyn Fn() -> Result<()> + Sync),
 ) -> Result<()> {
     let target = discover_targets()?;
 
@@ -65,8 +65,12 @@ pub async fn run(
     // --force: delete everything, no prompts
     if args.force {
         display_detailed_targets(&ResetScope::Everything, &target, output);
-        before_config_removal();
-        execute_reset(&ResetScope::Everything, &target, output)?;
+        execute_reset_with_precondition(
+            &ResetScope::Everything,
+            &target,
+            output,
+            before_config_removal,
+        )?;
         nudge_daemon_refresh().await;
         return Ok(());
     }
@@ -80,12 +84,21 @@ pub async fn run(
         return Ok(());
     }
 
-    if matches!(scope, ResetScope::Everything | ResetScope::ConfigOnly) {
-        before_config_removal();
-    }
-    execute_reset(&scope, &target, output)?;
+    execute_reset_with_precondition(&scope, &target, output, before_config_removal)?;
     nudge_daemon_refresh().await;
     Ok(())
+}
+
+fn execute_reset_with_precondition(
+    scope: &ResetScope,
+    target: &ResetTarget,
+    output: &Output,
+    before_config_removal: &(dyn Fn() -> Result<()> + Sync),
+) -> Result<()> {
+    if matches!(scope, ResetScope::Everything | ResetScope::ConfigOnly) {
+        before_config_removal()?;
+    }
+    execute_reset(scope, target, output)
 }
 
 #[cfg(unix)]

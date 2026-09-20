@@ -335,26 +335,33 @@ impl Controller {
         let gui = launchd.gui_session_available()?;
         let was_loaded = gui && launchd.service(LABEL)?.loaded;
 
-        let result = self.replace_and_start(&staged, gui, was_loaded, start_if_possible);
+        let result = self
+            .replace_and_start(&staged, gui, was_loaded, start_if_possible)
+            .and_then(|()| installer.commit(&staged, &self.version));
         let Err(original) = result else {
-            return installer.commit(&staged, &self.version);
+            return Ok(());
         };
 
-        // Restore files first, then the service state that was live before.
-        let mut rollback = installer.rollback().err().map(|e| e.to_string());
+        // Stop any replacement job before restoring its files. This also
+        // unloads a first-install job whose startup or record commit failed.
+        let mut rollback_failures = Vec::new();
+        if gui {
+            if let Err(e) = launchd.bootout(LABEL) {
+                rollback_failures.push(format!("could not unload the replacement service: {e}"));
+            }
+        }
+        if let Err(e) = installer.rollback() {
+            rollback_failures.push(e.to_string());
+        }
+        // Restore the service state that was live before the transaction.
         if was_loaded && self.paths.launch_agent.exists() {
-            let _ = launchd.bootout(LABEL);
             if let Err(e) = launchd.bootstrap(LABEL, &self.paths.launch_agent) {
-                let message = format!("could not restart the previous service: {e}");
-                rollback = Some(match rollback {
-                    Some(previous) => format!("{previous}; {message}"),
-                    None => message,
-                });
+                rollback_failures.push(format!("could not restart the previous service: {e}"));
             }
         }
         Err(MonitorAgentError::Transaction {
             original: original.to_string(),
-            rollback,
+            rollback: (!rollback_failures.is_empty()).then(|| rollback_failures.join("; ")),
         })
     }
 

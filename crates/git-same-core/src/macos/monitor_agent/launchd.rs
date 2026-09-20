@@ -113,10 +113,13 @@ impl<'a> Launchd<'a> {
     pub fn enable(&self, label: &str) -> Result<(), MonitorAgentError> {
         let output = self.run(&["enable", &self.target(label)])?;
         if output.success() {
-            Ok(())
-        } else {
-            Err(failure("enable", &output))
+            return Ok(());
         }
+        let user_target = format!("{}/{label}", self.user.user_domain());
+        if self.run(&["enable", &user_target])?.success() {
+            return Ok(());
+        }
+        Err(failure("enable", &output))
     }
 
     /// Persists the disabled state. Without a GUI session the GUI domain is

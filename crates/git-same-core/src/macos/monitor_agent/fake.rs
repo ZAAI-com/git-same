@@ -188,6 +188,9 @@ impl FakeState {
                 ok("")
             }
             "enable" => {
+                if args[1].starts_with("gui/") && !self.gui {
+                    return fail(113, "Could not find domain");
+                }
                 self.disabled.remove(&label_of(args[1]));
                 ok("")
             }

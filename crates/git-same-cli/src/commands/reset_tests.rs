@@ -108,6 +108,30 @@ fn test_display_detailed_targets_config_only() {
     display_detailed_targets(&ResetScope::ConfigOnly, &target, &output);
 }
 
+#[test]
+fn failed_precondition_keeps_the_global_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "concurrency = 4\n").unwrap();
+    let target = ResetTarget {
+        config_dir: dir.path().to_path_buf(),
+        config_file: Some(config.clone()),
+        workspaces: Vec::new(),
+    };
+    let output = Output::new(git_same_core::output::Verbosity::Quiet, false);
+
+    let error = execute_reset_with_precondition(&ResetScope::ConfigOnly, &target, &output, &|| {
+        Err(AppError::config("monitor did not stop"))
+    })
+    .unwrap_err();
+
+    assert!(error.to_string().contains("monitor did not stop"));
+    assert_eq!(
+        std::fs::read_to_string(config).unwrap(),
+        "concurrency = 4\n"
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn test_remove_workspace_dir_clears_folder_icon() {

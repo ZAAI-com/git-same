@@ -107,16 +107,15 @@ async fn dispatch(command: &Command, config_path: Option<&Path>, output: &Output
 /// Deleting the global configuration would also delete the stop preference,
 /// so monitoring is stopped persistently (in launchd) first. Skipped without
 /// complaint when this is not the real user's default environment.
-fn stop_monitor_before_reset() {
+fn stop_monitor_before_reset() -> Result<()> {
     use git_same_core::macos::monitor_agent;
     if monitor_agent::autostart_suppressed() {
-        return;
+        return Ok(());
     }
     if let Ok(controller) = monitor_agent::controller_for_current_user(false) {
-        if let Err(error) = controller.stop() {
-            tracing::debug!(%error, "Could not stop the monitor before reset");
-        }
+        controller.stop()?;
     }
+    Ok(())
 }
 
 /// Load configuration from the given path or default location.

@@ -423,6 +423,30 @@ fn start_reenables_after_a_stop() {
 }
 
 #[test]
+fn headless_start_enables_for_the_next_login() {
+    let env = env();
+    env.write_config("[monitor]\nautostart = false\n");
+    env.system.with(|s| {
+        s.gui = false;
+        s.disabled.insert(LABEL.to_string());
+    });
+
+    let status = env.controller().start().unwrap();
+
+    assert_eq!(status.state, MonitorAgentState::Deferred);
+    assert!(status.installed && status.autostart && !status.launchd_disabled);
+    assert!(!status.loaded && !status.running);
+    assert!(read_monitor_autostart(&env.paths.config).unwrap());
+    assert_eq!(
+        env.system.mutating_calls(),
+        vec![
+            format!("launchctl enable gui/501/{LABEL}"),
+            format!("launchctl enable user/501/{LABEL}"),
+        ]
+    );
+}
+
+#[test]
 fn start_on_a_healthy_monitor_keeps_its_pid() {
     let env = env();
     env.controller().start().unwrap();
@@ -596,6 +620,27 @@ fn start_that_launchd_never_honours_is_reported_with_the_log_path() {
         !env.paths.helper.exists(),
         "failed first install is rolled back"
     );
+    assert!(!env.system.with(|s| s.loaded.contains(LABEL)));
+}
+
+#[cfg(unix)]
+#[test]
+fn install_record_failure_unloads_and_rolls_back_a_first_install() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let env = env();
+    let mut caller = env.caller.clone();
+    caller.owner_path = PathBuf::from(std::ffi::OsString::from_vec(vec![b'/', b'x', 0xff]));
+
+    let error = env.controller_for(Some(caller)).start().unwrap_err();
+
+    assert!(error.to_string().contains("install record"), "{error}");
+    assert!(!env.system.with(|s| s.loaded.contains(LABEL)));
+    assert!(env.system.with(|s| s.active.is_none()));
+    assert!(!env.paths.helper.exists());
+    assert!(!env.paths.launch_agent.exists());
+    assert!(!env.paths.install_record.exists());
+    assert!(!env.paths.transaction_record.exists());
 }
 
 #[test]
