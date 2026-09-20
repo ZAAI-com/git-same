@@ -63,22 +63,31 @@ impl LiveConfig {
             return false;
         };
         let stamp = file_stamp(path);
-        {
-            let mut known = self.stamp.lock().unwrap_or_else(|e| e.into_inner());
-            if *known == stamp {
+        if *self.stamp.lock().unwrap_or_else(|e| e.into_inner()) == stamp {
+            return false;
+        }
+        let loaded = match std::fs::read_to_string(path) {
+            Ok(content) => Config::parse(&content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+            Err(e) => {
+                // Do not adopt the stamp after an I/O failure: restored
+                // readability must retry even when mtime and length are the
+                // same as the failed attempt.
+                warn!(error = %e, "Configuration reload failed; keeping the previous configuration");
                 return false;
             }
-            // Remember the stamp even when the load below fails, so a broken
-            // file is reported once instead of on every scan.
-            *known = stamp;
-        }
-        match Config::load_from(path) {
+        };
+        match loaded {
             Ok(config) => {
+                *self.stamp.lock().unwrap_or_else(|e| e.into_inner()) = stamp;
                 *self.current.lock().unwrap_or_else(|e| e.into_inner()) = Arc::new(config);
                 info!(path = %path.display(), "Configuration reloaded");
                 true
             }
             Err(e) => {
+                // Remember parse/validation failures so one unchanged typo is
+                // logged once rather than on every full scan.
+                *self.stamp.lock().unwrap_or_else(|e| e.into_inner()) = stamp;
                 warn!(error = %e, "Configuration reload failed; keeping the previous configuration");
                 false
             }

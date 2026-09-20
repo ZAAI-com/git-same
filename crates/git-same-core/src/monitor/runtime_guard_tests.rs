@@ -45,6 +45,21 @@ fn second_acquire_reports_the_holder() {
 }
 
 #[test]
+fn final_retry_acquires_a_lock_released_at_the_contention_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = ipc(&dir);
+    let first = RuntimeGuard::acquire(&ipc, MonitorMode::Managed).unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(450));
+        drop(first);
+    });
+    let second = RuntimeGuard::acquire(&ipc, MonitorMode::Foreground)
+        .expect("final post-backoff attempt should acquire the released lock");
+    assert_eq!(second.identity().mode, MonitorMode::Foreground);
+    release.join().unwrap();
+}
+
+#[test]
 fn lock_is_reusable_after_release() {
     let dir = tempfile::tempdir().unwrap();
     let ipc = ipc(&dir);
@@ -87,14 +102,56 @@ fn reused_pid_with_different_start_identity_is_rejected() {
     assert_eq!(identity_matches_live_process(&identity), expected);
 }
 
+#[cfg(unix)]
 #[test]
 fn dead_pid_is_rejected() {
+    let mut child = std::process::Command::new("/bin/sh")
+        .args(["-c", "exit 0"])
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    child.wait().unwrap();
     let identity = RuntimeIdentity {
-        pid: u32::MAX,
+        pid,
         start_identity: None,
         executable: PathBuf::new(),
         mode: MonitorMode::Foreground,
         started_at: String::new(),
     };
     assert!(!identity_matches_live_process(&identity));
+}
+
+#[test]
+fn held_lock_without_identity_is_not_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = ipc(&dir);
+    let _guard = RuntimeGuard::acquire(&ipc, MonitorMode::Managed).unwrap();
+    std::fs::remove_file(ipc.runtime_identity_path()).unwrap();
+    assert_eq!(
+        runtime_monitor_state(&ipc),
+        RuntimeMonitorState::HeldUnknown
+    );
+}
+
+#[test]
+fn stale_status_with_reused_pid_is_not_current_for_a_new_guard() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = ipc(&dir);
+    std::fs::create_dir_all(&ipc.dir).unwrap();
+    crate::ipc::StatusFileWriter::new(ipc.status_file_path())
+        .write(&crate::types::FinderStatus::new(
+            std::process::id(),
+            "old".to_string(),
+        ))
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let guard = RuntimeGuard::acquire(&ipc, MonitorMode::Managed).unwrap();
+    assert!(!scan_complete(&ipc, guard.identity()));
+    crate::ipc::StatusFileWriter::new(ipc.status_file_path())
+        .write(&crate::types::FinderStatus::new(
+            std::process::id(),
+            "new".to_string(),
+        ))
+        .unwrap();
+    assert!(scan_complete(&ipc, guard.identity()));
 }

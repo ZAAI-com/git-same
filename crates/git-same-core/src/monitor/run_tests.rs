@@ -28,14 +28,18 @@ async fn managed_startup_exits_successfully_when_the_ipc_directory_is_unusable()
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, b"not a directory").unwrap();
 
-    let result = run_with(
-        &Config::default(),
-        &Output::quiet(),
-        options(blocker.join("group-container")),
-        context(MonitorMode::Managed),
-        std::future::pending::<()>(),
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        run_with(
+            &Config::default(),
+            &Output::quiet(),
+            options(blocker.join("group-container")),
+            context(MonitorMode::Managed),
+            std::future::pending::<()>(),
+        ),
     )
-    .await;
+    .await
+    .expect("managed startup must not enter the monitor loop");
 
     assert!(
         result.is_ok(),
@@ -50,14 +54,18 @@ async fn foreground_startup_reports_an_unusable_ipc_directory() {
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, b"not a directory").unwrap();
 
-    let result = run_with(
-        &Config::default(),
-        &Output::quiet(),
-        options(blocker.join("group-container")),
-        context(MonitorMode::Foreground),
-        std::future::pending::<()>(),
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        run_with(
+            &Config::default(),
+            &Output::quiet(),
+            options(blocker.join("group-container")),
+            context(MonitorMode::Foreground),
+            std::future::pending::<()>(),
+        ),
     )
-    .await;
+    .await
+    .expect("foreground startup must not enter the monitor loop");
 
     assert!(result.is_err());
 }
@@ -71,17 +79,44 @@ async fn managed_startup_exits_successfully_when_the_status_file_cannot_be_writt
     std::fs::create_dir_all(&ipc_dir).unwrap();
     std::fs::create_dir_all(ipc_at(ipc_dir.clone()).status_file_path()).unwrap();
 
-    let result = run_with(
-        &Config::default(),
-        &Output::quiet(),
-        options(ipc_dir),
-        context(MonitorMode::Managed),
-        std::future::pending::<()>(),
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        run_with(
+            &Config::default(),
+            &Output::quiet(),
+            options(ipc_dir),
+            context(MonitorMode::Managed),
+            std::future::pending::<()>(),
+        ),
     )
-    .await;
+    .await
+    .expect("managed startup must not enter the monitor loop");
 
     assert!(
         result.is_ok(),
         "managed helper must not ask to be restarted"
     );
+}
+
+#[tokio::test]
+async fn managed_startup_exits_successfully_when_runtime_lock_is_unusable() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc_dir = dir.path().join("group-container");
+    let ipc = ipc_at(ipc_dir.clone());
+    std::fs::create_dir_all(ipc.runtime_lock_path()).unwrap();
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        run_with(
+            &Config::default(),
+            &Output::quiet(),
+            options(ipc_dir),
+            context(MonitorMode::Managed),
+            std::future::pending::<()>(),
+        ),
+    )
+    .await
+    .expect("managed startup must not enter the monitor loop");
+
+    assert!(result.is_ok(), "managed helper must not restart-loop");
 }

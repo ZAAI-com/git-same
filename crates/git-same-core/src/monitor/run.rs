@@ -121,9 +121,12 @@ where
             .into());
         }
         Err(AcquireError::Io(e)) => {
-            return Err(
-                MonitorAgentError::io("Failed to acquire the monitor runtime lock", e).into(),
-            );
+            let error = MonitorAgentError::io("Failed to acquire the monitor runtime lock", e);
+            if managed {
+                error!(error = %error, "Cannot use the runtime lock; not starting");
+                return Ok(());
+            }
+            return Err(error.into());
         }
     };
 

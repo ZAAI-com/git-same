@@ -57,6 +57,17 @@ pub fn terminate(_pid: u32) -> std::io::Result<()> {
     ))
 }
 
+/// Revalidates the recorded process generation immediately before signalling.
+pub fn terminate_identity(identity: &super::runtime_guard::RuntimeIdentity) -> std::io::Result<()> {
+    if !super::runtime_guard::identity_matches_live_process(identity) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "monitor process identity is no longer active",
+        ));
+    }
+    terminate(identity.pid)
+}
+
 /// Returns an opaque token identifying when `pid` started, if obtainable.
 #[cfg(target_os = "macos")]
 pub fn start_identity(pid: u32) -> Option<String> {

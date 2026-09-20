@@ -42,6 +42,17 @@ pub struct RuntimeIdentity {
     pub started_at: String,
 }
 
+/// Observable state of the runtime lock and identity record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeMonitorState {
+    Stopped,
+    /// The exclusive lock is held while its identity is absent, unreadable,
+    /// or temporarily unverifiable. This is a running/starting monitor, never
+    /// evidence that the service is stopped.
+    HeldUnknown,
+    Active(RuntimeIdentity),
+}
+
 /// Why the runtime lock could not be acquired.
 #[derive(Debug)]
 pub enum AcquireError {
@@ -93,7 +104,17 @@ impl RuntimeGuard {
                 Err(TryLockError::WouldBlock) => {
                     attempt += 1;
                     if attempt >= ACQUIRE_ATTEMPTS {
-                        return Err(AcquireError::Held(read_identity(ipc)));
+                        // Give a holder that released at the retry boundary one
+                        // final acquisition attempt before launchd is told a
+                        // competing monitor still exists.
+                        std::thread::sleep(ACQUIRE_BACKOFF);
+                        match lock.try_lock() {
+                            Ok(()) => break,
+                            Err(TryLockError::WouldBlock) => {
+                                return Err(AcquireError::Held(read_identity(ipc)))
+                            }
+                            Err(TryLockError::Error(e)) => return Err(AcquireError::Io(e)),
+                        }
                     }
                     std::thread::sleep(ACQUIRE_BACKOFF);
                 }
@@ -164,11 +185,50 @@ pub fn read_identity(ipc: &IpcConfig) -> Option<RuntimeIdentity> {
 /// Requires all of: the runtime lock is held, the record parses, the PID is
 /// alive, and the start identity matches when both sides know it.
 pub fn active_monitor(ipc: &IpcConfig) -> Option<RuntimeIdentity> {
-    if !lock_is_held(ipc) {
-        return None;
+    match runtime_monitor_state(ipc) {
+        RuntimeMonitorState::Active(identity) => Some(identity),
+        RuntimeMonitorState::Stopped | RuntimeMonitorState::HeldUnknown => None,
     }
-    let identity = read_identity(ipc)?;
-    identity_matches_live_process(&identity).then_some(identity)
+}
+
+/// Probes the lock without collapsing an unreadable identity into Stopped.
+pub fn runtime_monitor_state(ipc: &IpcConfig) -> RuntimeMonitorState {
+    if !lock_is_held(ipc) {
+        return RuntimeMonitorState::Stopped;
+    }
+    let Some(identity) = read_identity(ipc) else {
+        return RuntimeMonitorState::HeldUnknown;
+    };
+    if identity_matches_live_process(&identity) {
+        RuntimeMonitorState::Active(identity)
+    } else {
+        RuntimeMonitorState::HeldUnknown
+    }
+}
+
+/// Whether `status.json` was written by this runtime-lock generation.
+pub fn scan_complete(ipc: &IpcConfig, identity: &RuntimeIdentity) -> bool {
+    let status_path = ipc.status_file_path();
+    if !crate::ipc::StatusFileWriter::new(status_path.clone())
+        .read()
+        .is_ok_and(|status| status.daemon_pid == identity.pid)
+    {
+        return false;
+    }
+    let Some(status_modified) = std::fs::metadata(status_path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+    else {
+        return false;
+    };
+    let Some(identity_modified) = std::fs::metadata(ipc.runtime_identity_path())
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+    else {
+        // Scripted users may supply an identity without the on-disk guard.
+        return true;
+    };
+    status_modified >= identity_modified
 }
 
 /// Returns `true` when `identity` describes the process currently at its PID.

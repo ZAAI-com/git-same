@@ -61,6 +61,23 @@ fn malformed_reload_keeps_previous_config_and_reports_once() {
     assert!(!live.reload_if_changed());
 }
 
+#[cfg(unix)]
+#[test]
+fn transient_read_failure_retries_the_same_file_stamp() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    write(&path, "workspaces = [\"~/one\"]\n");
+    let live = LiveConfig::new(Config::load_from(&path).unwrap(), Some(path.clone()));
+    write(&path, "workspaces = [\"~/one\", \"~/two\"]\n");
+    let permissions = std::fs::metadata(&path).unwrap().permissions();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+    assert!(!live.reload_if_changed());
+    std::fs::set_permissions(&path, permissions).unwrap();
+    assert!(live.reload_if_changed());
+    assert_eq!(live.snapshot().workspaces.len(), 2);
+}
+
 /// The caller loads the config, then hands it to `LiveConfig`. A write landing
 /// in that gap must not be adopted silently: the snapshot would stay old while
 /// the stamp went new, and `reload_if_changed` would never fire again.
