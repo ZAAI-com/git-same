@@ -1,0 +1,25 @@
+.github/workflows/S1-Test-CI.yml
+  s_463afe401e0e52::t_a16011afb6ff07 301-303
+toolkit/packaging/macos/check-entitlements-parity.sh
+  s_463afe401e0e52::t_a16011afb6ff07 88-93
+.github/workflows/S2-Release-GitHub.yml
+  s_463afe401e0e52::t_a16011afb6ff07 373-381
+toolkit/conductor/archive.sh
+  s_463afe401e0e52::t_a16011afb6ff07 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "051a500d67a6583dfc381994c409df8ddc3571f7",
+  "prompts": {},
+  "sessions": {
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
