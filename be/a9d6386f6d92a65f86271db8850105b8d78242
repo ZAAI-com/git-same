@@ -1,0 +1,38 @@
+crates/git-same-core/src/macos/monitor_agent/install.rs
+  s_ab8265d1c2253e::t_a79eb48de9b3b6 151-156,164-170
+crates/git-same-core/src/macos/monitor_agent/source_tests.rs
+  s_ab8265d1c2253e::t_fba758e4534495 226-261
+crates/git-same-core/src/macos/monitor_agent/fake.rs
+  s_ab8265d1c2253e::t_8e2c2402ae0312 87
+  s_ab8265d1c2253e::t_b18780b640d39a 32-35,39-86,88-93,131-141,288-292
+crates/git-same-core/src/macos/monitor_agent/controller_tests.rs
+  s_ab8265d1c2253e::t_875caf60f58888 1018-1019,1048
+  s_ab8265d1c2253e::t_93dfdad86eeea6 974-1017,1020-1031,1033-1047,1049
+  s_ab8265d1c2253e::t_24cba171032ff4 364,1032
+crates/git-same-core/src/macos/monitor_agent/install_tests.rs
+  s_ab8265d1c2253e::t_19c53bcb993971 291
+  s_ab8265d1c2253e::t_dc3a59aca46770 2,254-290,292-331
+crates/git-same-core/src/macos/monitor_agent/source.rs
+  s_ab8265d1c2253e::t_39202b6a6c4f30 163,169
+  s_ab8265d1c2253e::t_750ef9fb58f51c 143-144,148-152
+crates/git-same-core/src/macos/monitor_agent/controller.rs
+  s_ab8265d1c2253e::t_b043937f2b8644 211-212,219-220
+  s_ab8265d1c2253e::t_7f59171cc9c72f 551-568
+  s_ab8265d1c2253e::t_658a40362961af 484-485,489-499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bea9d6386f6d92a65f86271db8850105b8d78242",
+  "prompts": {},
+  "sessions": {
+    "s_ab8265d1c2253e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5444a7e2-0cc2-4dfa-b080-9b90a4c9606d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
