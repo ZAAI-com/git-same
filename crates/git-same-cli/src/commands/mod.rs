@@ -58,6 +58,11 @@ pub async fn run_command(
         quiet,
     };
     if timing == HookTiming::Before {
+        // Every command with a "before" hook needs a configuration. Validate
+        // it first: installing and starting the background service and *then*
+        // failing with "No configuration found. Run 'gisa init'." leaves a
+        // fresh machine running a service the user never asked for.
+        load_config(config_path)?;
         auto_monitor::ensure(false, hook_output).await;
     }
 

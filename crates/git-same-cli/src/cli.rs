@@ -166,7 +166,17 @@ Examples:
   gisa monitor --status            Show the monitor state, PID, and last scan
   gisa monitor --start             Enable and start the background monitor (macOS)
   gisa monitor --stop              Stop monitoring until the next --start
-  gisa monitor --uninstall         Stop and remove the background monitor (macOS)"
+  gisa monitor --uninstall         Stop and remove the background monitor (macOS)
+
+Scripting:
+  gisa --json monitor --status     One JSON object; .state is the machine-readable
+                                   state (running, starting, stopped, disabled,
+                                   deferred, not_installed, failed, unsupported).
+                                   The exit code reports whether the query
+                                   succeeded, not whether the monitor is healthy.
+
+Control modes always print their answer, including under --quiet: a command
+asked to report on or change the service has to say what it did."
     )]
     Monitor(MonitorArgs),
 
@@ -387,6 +397,11 @@ pub struct MonitorArgs {
     pub remove_agent: bool,
 
     /// Private: final location of Git-Same.app.
+    ///
+    /// No `requires`: clap cannot express "one of --install-agent or
+    /// --remove-agent", and both of those already require this flag, so the
+    /// dependency that matters is enforced. A stray --app-path on a
+    /// foreground run is a hidden flag being ignored.
     #[arg(long, hide = true, value_name = "PATH")]
     pub app_path: Option<PathBuf>,
 

@@ -233,6 +233,8 @@ After that, the app and those same CLI commands check on it and start it again i
 
 **Recovery.** `gisa monitor --status` shows the state and any error detail. `gisa monitor --start` repairs a missing helper or LaunchAgent; an interrupted install is rolled back automatically by the next command. `gisa monitor --uninstall` removes the helper and LaunchAgent but keeps repositories, configuration, and logs. If `brew uninstall --cask git-same` fails because its Caskroom directory was deleted by hand, run `brew uninstall --force --cask git-same` and then `gisa monitor --uninstall`.
 
+**A failed `--start` leaves monitoring off.** `--stop` is remembered twice, as `[monitor] autostart = false` and as a disabled launchd service, and a `--start` that fails does not put either half back. Refused because a foreground `gisa monitor` is already running, both halves of the stop survive untouched. Failing later, on a helper that cannot be copied or signed or on a launchd error, it can leave the two halves disagreeing. In every case monitoring is still not running, and it stays off across logins and restarts until a `--start` succeeds. Run `gisa monitor --status` for the reason, fix it, and run `gisa monitor --start` again until `--status` reports `running` or `starting`.
+
 ### `git-same refresh`
 
 Ask the running monitor to rewrite Finder/app status immediately:

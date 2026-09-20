@@ -52,6 +52,7 @@ pub async fn run_control(
 
 /// Owned copy of the control flags, movable into a blocking task.
 struct ControlArgs {
+    agent_protocol_version: bool,
     start: bool,
     stop: bool,
     uninstall: bool,
@@ -64,6 +65,7 @@ struct ControlArgs {
 impl From<&MonitorArgs> for ControlArgs {
     fn from(args: &MonitorArgs) -> Self {
         Self {
+            agent_protocol_version: args.agent_protocol_version,
             start: args.start,
             stop: args.stop,
             uninstall: args.uninstall,
@@ -160,6 +162,18 @@ fn state_name(state: MonitorAgentState) -> String {
 }
 
 fn control(args: &ControlArgs, config_override: bool) -> Result<Report> {
+    // `main.rs` answers this one before logging, the banner, and any config
+    // access, which is what makes it side-effect-free for the cask's
+    // compatibility probe. The branch is repeated here so the guarantee does
+    // not depend on that early return staying where it is: without it, the
+    // fallthrough below would run `inspect()` and two `launchctl` calls.
+    if args.agent_protocol_version {
+        return Ok(Report {
+            headline: monitor_agent::PACKAGING_PROTOCOL_VERSION.to_string(),
+            status: None,
+            data: None,
+        });
+    }
     if args.install_agent {
         return install_agent(args, config_override);
     }

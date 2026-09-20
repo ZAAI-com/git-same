@@ -728,6 +728,34 @@ fn test_monitor_status_json_is_a_single_json_object() {
     assert!(value["state"].is_string());
 }
 
+/// `gisa refresh` has a "before" monitor hook. The hook must run after the
+/// configuration is validated: installing and starting a background service
+/// and *then* failing with "No configuration found" leaves a fresh machine
+/// running a service the user never asked for.
+///
+/// What this can assert is the observable half. The hook itself is
+/// unreachable from here by construction: `run_cli_with_env` sets
+/// `GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, and `UserContext::resolve` refuses
+/// the redirected HOME anyway. The ordering itself is held by `run_command`.
+#[test]
+fn test_refresh_without_a_config_fails_before_doing_anything() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["refresh"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stderr.contains("configuration") || stdout.contains("configuration"),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(!default_config_path(temp.path()).exists());
+    assert!(
+        !temp.path().join("Library").exists(),
+        "nothing may be installed before the config is validated"
+    );
+}
+
 /// The test environment redirects HOME and the config directory, so explicit
 /// service controls must refuse instead of touching the real launchd domain.
 #[cfg(target_os = "macos")]
