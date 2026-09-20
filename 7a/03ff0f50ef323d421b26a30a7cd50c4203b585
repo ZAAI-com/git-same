@@ -1,0 +1,25 @@
+.claude/CLAUDE.md
+  s_7c790b14a3bc6d::t_41a2ff3dfd73cb 46,52-53,93-94,97
+docs/DEVELOPMENT.md
+  s_7c790b14a3bc6d::t_0fe2b6ad59639b 44-52,80,149-154,157-158,160-162
+docs/README.md
+  s_7c790b14a3bc6d::t_17f19c20d6458b 35,193,199-204,207-234,279,281-282
+docs/plans/reliable-monitor-startup.md
+  s_7c790b14a3bc6d::t_2e28fe9133be40 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7a03ff0f50ef323d421b26a30a7cd50c4203b585",
+  "prompts": {},
+  "sessions": {
+    "s_7c790b14a3bc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d42238-6b51-4397-820d-f2f6d964c946",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
