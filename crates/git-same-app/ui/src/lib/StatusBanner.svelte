@@ -196,6 +196,10 @@
 
   button {
     margin-left: auto;
+    /* A long detail line must squeeze the text, not the control: without
+       these the label wraps mid-word ("Rest art"). */
+    flex: none;
+    white-space: nowrap;
     padding: 6px 12px;
     border-radius: 6px;
     border: 1px solid var(--line);

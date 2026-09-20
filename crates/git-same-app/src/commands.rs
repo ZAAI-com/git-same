@@ -404,10 +404,19 @@ pub async fn check_requirements() -> Result<Vec<RequirementCheckDto>, String> {
     Ok(checks)
 }
 
+/// How long a cached status is served before the service is inspected again.
+///
+/// The cache is refreshed by lifecycle operations and by the file watcher, so
+/// it is normally current. The TTL is the backstop for the case where the
+/// watcher never fires (a watch that failed to register, an event the
+/// platform did not deliver): without it a dead status is served for the rest
+/// of the session.
+const MONITOR_STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Last known service status. Returned by `monitor_status`, so a fetch made
 /// after subscribing can never disagree with an event emitted earlier.
 #[derive(Default)]
-pub struct MonitorStatusCache(std::sync::Mutex<Option<MonitorAgentStatus>>);
+pub struct MonitorStatusCache(std::sync::Mutex<Option<(MonitorAgentStatus, std::time::Instant)>>);
 
 /// Event carrying a [`MonitorAgentStatus`] after every lifecycle operation
 /// and whenever the monitor's runtime files change.
@@ -417,7 +426,8 @@ pub const MONITOR_AGENT_UPDATED: &str = "monitor-agent-updated";
 pub(crate) fn publish_monitor_status(app: &tauri::AppHandle, status: &MonitorAgentStatus) {
     use tauri::Manager;
     if let Some(cache) = app.try_state::<MonitorStatusCache>() {
-        *cache.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(status.clone());
+        *cache.0.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((status.clone(), std::time::Instant::now()));
     }
     let _ = app.emit(MONITOR_AGENT_UPDATED, status);
 }
@@ -466,8 +476,8 @@ pub async fn monitor_status(
 ) -> Result<MonitorLaunchAgentStatusDto, String> {
     let cached = cache.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
     match cached {
-        Some(status) => Ok(status),
-        None => run_monitor_operation(app, monitor_launch_agent_status_inner).await,
+        Some((status, at)) if at.elapsed() < MONITOR_STATUS_TTL => Ok(status),
+        _ => run_monitor_operation(app, monitor_launch_agent_status_inner).await,
     }
 }
 
@@ -659,8 +669,29 @@ pub fn extension_status() -> Result<ExtensionStatus, String> {
     }
 }
 
+/// Schemes the frontend is allowed to hand to `open`.
+///
+/// The UI only ever sends the two System Settings panes; `https:` is here so
+/// a documentation link does not need a second command. Anything else,
+/// including a bare path, a `file:` URL, or a string starting with `-` that
+/// `open` would read as a flag, is refused.
+const OPENABLE_SCHEMES: [&str; 2] = ["https://", "x-apple.systempreferences:"];
+
+fn is_openable(url: &str) -> bool {
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    OPENABLE_SCHEMES
+        .iter()
+        .any(|scheme| lower.starts_with(scheme) && url.len() > scheme.len())
+}
+
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    if !is_openable(&url) {
+        return Err(format!("refusing to open unsupported URL: {url}"));
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("/usr/bin/open")
@@ -671,7 +702,6 @@ pub fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = url;
         Err("open_url is only implemented on macOS".to_string())
     }
 }

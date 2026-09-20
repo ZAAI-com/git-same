@@ -1,5 +1,6 @@
 import { derived, get, writable } from 'svelte/store';
 import { runMonitorAction } from './monitor';
+import { createStatusSequencer } from '../lib/monitorPresentation';
 import {
   checkRequirements,
   deleteWorkspace,
@@ -58,8 +59,17 @@ export const currentWorkspace = derived(
   },
 );
 
+/**
+ * Orders fetched snapshots against pushed `status-updated` events. The app
+ * subscribes before it fetches, so the monitor's first scan can land while a
+ * `readStatus()` is still in flight; without this the older, usually empty
+ * fetch result overwrites it.
+ */
+const snapshotSequencer = createStatusSequencer<StatusSnapshot | null>();
+
 export async function refresh(): Promise<void> {
   errorMessage.set('');
+  const token = snapshotSequencer.beginFetch();
   const [workspaceList, status, ext, config] = await Promise.all([
     listWorkspaces().catch((err) => {
       errorMessage.set(String(err));
@@ -73,7 +83,8 @@ export async function refresh(): Promise<void> {
     readAppConfig().catch(() => null),
   ]);
   workspaces.set(workspaceList);
-  snapshot.set(status);
+  const accepted = snapshotSequencer.acceptFetch(token, status);
+  if (accepted !== undefined) snapshot.set(accepted);
   extensionStatus.set(ext);
   appConfig.set(config);
   reconcileSelectedWorkspace(workspaceList);
@@ -158,8 +169,10 @@ export async function startSyncCurrent(): Promise<void> {
     skipped: 0,
   });
   try {
+    const syncToken = snapshotSequencer.beginFetch();
     const next = await startSync(workspace.id);
-    snapshot.set(next);
+    const acceptedSync = snapshotSequencer.acceptFetch(syncToken, next);
+    if (acceptedSync !== undefined) snapshot.set(acceptedSync);
     await refresh();
     await loadCurrentWorkspaceStructure();
   } catch (err) {
@@ -193,7 +206,7 @@ export async function loadCurrentWorkspaceStructure(): Promise<void> {
 
 export async function subscribePush(): Promise<() => void> {
   const unsubscribeStatus = await onStatusUpdated((next) => {
-    snapshot.set(next);
+    snapshot.set(snapshotSequencer.acceptEvent(next));
   });
   const unsubscribeProgress = await onSyncProgress((payload) => {
     syncProgress.update((current) => reduceSyncProgress(current, payload));
@@ -272,6 +285,11 @@ function progressMessage(event: ProgressEvent): string {
       return `Sync failed: ${event.repo_name}`;
     case 'sync_skipped':
       return `Skipped sync: ${event.repo_name}`;
+    default:
+      // Progress events come from the backend, which can be a different
+      // version than this bundle. Falling off the end would return
+      // `undefined` against a `string` return type.
+      return 'Working';
   }
 }
 

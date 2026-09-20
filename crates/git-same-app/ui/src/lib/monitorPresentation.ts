@@ -30,6 +30,25 @@ const UNKNOWN: MonitorPresentation = {
   banner: false,
 };
 
+/**
+ * A state this build does not know about. The DTO crosses an IPC boundary to
+ * a helper that can be a different version than the app, so the TypeScript
+ * union is a description of what we expect, not a guarantee. Without this the
+ * switch below falls off the end and returns `undefined` while typed
+ * non-nullable, and `MonitorPanel` throws on `view.title` and blanks the page.
+ */
+const UNRECOGNIZED: MonitorPresentation = {
+  tone: 'warning',
+  title: 'Monitor state not recognized',
+  detail:
+    'The background monitor reported a state this version of the app does not know. ' +
+    'The app and the helper are probably different versions. Restarting the monitor ' +
+    'usually reinstalls a matching helper.',
+  actions: ['restart'],
+  healthy: false,
+  banner: true,
+};
+
 export function presentMonitor(status: MonitorAgentStatusDto | null): MonitorPresentation {
   if (!status) return UNKNOWN;
 
@@ -121,6 +140,8 @@ export function presentMonitor(status: MonitorAgentStatusDto | null): MonitorPre
         healthy: false,
         banner: false,
       };
+    default:
+      return UNRECOGNIZED;
   }
 }
 

@@ -52,6 +52,19 @@ describe('presentMonitor', () => {
     }
   });
 
+  it('falls back to a usable view for a state this build does not know', () => {
+    // The helper can be a newer version than the app, so the TS union is a
+    // description, not a guarantee. Falling off the switch used to return
+    // undefined and blank the page on `view.title`.
+    const view = presentMonitor(status('teleporting' as MonitorAgentState));
+
+    expect(view).toBeDefined();
+    expect(view.title).not.toBe('');
+    expect(view.healthy).toBe(false);
+    expect(view.tone).toBe('warning');
+    expect(view.actions).toEqual(['restart']);
+  });
+
   it('shows a long first scan as starting, never as broken', () => {
     const view = presentMonitor(status('starting', { pid: 4242 }));
     expect(view.title).toBe('Monitor is starting; initial scan in progress');

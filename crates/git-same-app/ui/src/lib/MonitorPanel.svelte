@@ -86,4 +86,40 @@
     gap: 8px;
     flex: none;
   }
+
+  /* Svelte scopes styles per component, so the identical rules in
+     StatusBanner and Settings do not reach these buttons. Without them the
+     Start/Stop/Restart controls render as raw OS buttons directly below a
+     fully styled banner. */
+  .actions button {
+    white-space: nowrap;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-alt);
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+  }
+
+  .actions button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+
+  .actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .actions button.primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+  }
 </style>

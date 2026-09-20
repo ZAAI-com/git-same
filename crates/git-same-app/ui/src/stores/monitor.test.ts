@@ -103,4 +103,29 @@ describe('monitor store', () => {
     expect(get(store.monitorStatus)?.state).toBe('running');
     expect(get(store.monitorBusy)).toBe(false);
   });
+
+  it('keeps the action error while reloading after that action failed', async () => {
+    const store = await freshStore();
+    api.startMonitor.mockRejectedValue('A foreground monitor (PID 9) is running');
+    api.monitorStatus.mockResolvedValue(make('running'));
+
+    await store.runMonitorAction('start');
+
+    // The recovery fetch succeeding says nothing about why Start failed.
+    expect(get(store.monitorError)).toContain('foreground monitor');
+  });
+
+  it('clears a stale error once a later fetch succeeds', async () => {
+    const store = await freshStore();
+    api.startMonitor.mockRejectedValue('A foreground monitor (PID 9) is running');
+    api.monitorStatus.mockResolvedValue(make('running'));
+
+    await store.runMonitorAction('start');
+    expect(get(store.monitorError)).not.toBe('');
+
+    await store.loadMonitorStatus();
+
+    expect(get(store.monitorError)).toBe('');
+    expect(get(store.monitorStatus)?.state).toBe('running');
+  });
 });

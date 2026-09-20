@@ -530,3 +530,42 @@ fn saving_settings_never_replaces_a_malformed_config() {
     assert!(result.is_err());
     assert_eq!(std::fs::read_to_string(&form.config_path).unwrap(), broken);
 }
+
+#[test]
+fn open_url_accepts_the_urls_the_ui_actually_sends() {
+    for url in [
+        "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+        "https://github.com/zaai-com/git-same",
+    ] {
+        assert!(is_openable(url), "{url}");
+    }
+}
+
+#[test]
+fn open_url_refuses_anything_else() {
+    for url in [
+        // `open` would read this as a flag.
+        "-a/Applications/Calculator.app",
+        // Launches a local file rather than a settings pane.
+        "file:///Applications/Calculator.app",
+        "/Applications/Calculator.app",
+        "http://example.com",
+        // Scheme present but nothing to open.
+        "https://",
+        "x-apple.systempreferences:",
+        "",
+        // Whitespace would let a crafted string carry a second argument.
+        "https://example.com /Applications/Calculator.app",
+    ] {
+        assert!(!is_openable(url), "{url}");
+    }
+}
+
+#[test]
+fn open_url_scheme_match_is_case_insensitive() {
+    assert!(is_openable("HTTPS://example.com"));
+    assert!(is_openable(
+        "X-Apple.SystemPreferences:com.apple.LoginItems-Settings.extension"
+    ));
+}

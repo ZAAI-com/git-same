@@ -31,11 +31,21 @@ export async function subscribeMonitor(): Promise<() => void> {
   });
 }
 
-export async function loadMonitorStatus(): Promise<void> {
+/**
+ * `preserveError` is for the recovery fetch inside a failed lifecycle action:
+ * that fetch succeeding says nothing about why the action failed, and
+ * clearing there would swallow the reason the user needs. Every other
+ * successful fetch clears the message, so a failure stops being rendered
+ * under a green title for the rest of the session.
+ */
+export async function loadMonitorStatus(
+  { preserveError = false }: { preserveError?: boolean } = {},
+): Promise<void> {
   const token = sequencer.beginFetch();
   try {
     const fetched = sequencer.acceptFetch(token, await fetchMonitorStatus());
     if (fetched) monitorStatus.set(fetched);
+    if (!preserveError) monitorError.set('');
   } catch (err) {
     monitorError.set(String(err));
   }
@@ -59,7 +69,7 @@ export async function runMonitorAction(action: MonitorAction): Promise<void> {
     monitorStatus.set(sequencer.acceptEvent(await OPERATIONS[action]()));
   } catch (err) {
     monitorError.set(String(err));
-    await loadMonitorStatus();
+    await loadMonitorStatus({ preserveError: true });
   } finally {
     inFlight = false;
     monitorBusy.set(false);
