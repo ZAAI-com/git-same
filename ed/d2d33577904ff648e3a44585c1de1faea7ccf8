@@ -1,0 +1,40 @@
+crates/git-same-core/src/monitor/runtime_guard_tests.rs
+  s_463afe401e0e52::t_97ef634a130f99 130-133
+  s_463afe401e0e52::t_b76b46e4c7f620 47-61,105,108-113,115,123-129,134-157
+crates/git-same-core/src/monitor/process.rs
+  s_463afe401e0e52::t_97ef634a130f99 61
+  s_463afe401e0e52::t_fee5b478c92716 60,62-70
+crates/git-same-core/src/monitor/live_config.rs
+  s_463afe401e0e52::t_df388b2057f938 66-76,79-80,82,88-90
+crates/git-same-core/src/monitor/runtime_guard.rs
+  s_463afe401e0e52::t_fee5b478c92716 45-55,107-117,188-195,197-205,207
+  s_463afe401e0e52::t_585b7b0dcca7cc 209-211,218-231
+  s_463afe401e0e52::t_4a5588f3cbca08 212-217
+  s_463afe401e0e52::t_953bb32b1b5956 208
+crates/git-same-core/src/monitor/run_tests.rs
+  s_463afe401e0e52::t_97ef634a130f99 31-39,57-65,82-90
+  s_463afe401e0e52::t_b76b46e4c7f620 41-42,67-68,92-93
+  s_463afe401e0e52::t_0b05fab4d2ce7b 100-121
+  s_463afe401e0e52::t_964b04393bee67 122
+crates/git-same-core/src/monitor/run.rs
+  s_463afe401e0e52::t_8aa02a43db4ea1 124-129
+crates/git-same-core/src/monitor/live_config_tests.rs
+  s_463afe401e0e52::t_a2aa9ae41293f9 64-70,73-77,79-80
+  s_463afe401e0e52::t_db945419313b40 71-72,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "edd2d33577904ff648e3a44585c1de1faea7ccf8",
+  "prompts": {},
+  "sessions": {
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
