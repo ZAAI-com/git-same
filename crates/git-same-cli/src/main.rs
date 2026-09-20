@@ -28,10 +28,21 @@ fn init_logging() {
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    // Initialize logging early
-    init_logging();
-
     let cli = Cli::parse_args();
+
+    // Packaging compatibility probe: prints only the version. Answered
+    // before logging, banners, configuration access, or automatic recovery.
+    if let Some(git_same::cli::Command::Monitor(args)) = &cli.command {
+        if args.agent_protocol_version {
+            println!(
+                "{}",
+                git_same_core::macos::monitor_agent::PACKAGING_PROTOCOL_VERSION
+            );
+            return ExitCode::SUCCESS;
+        }
+    }
+
+    init_logging();
     debug!(command = ?cli.command, "Parsed CLI arguments");
 
     match cli.command {
@@ -100,6 +111,17 @@ async fn main() -> ExitCode {
 
                 match config {
                     Ok(config) => {
+                        // Before the terminal UI takes over the screen.
+                        if cli.config.is_none() {
+                            git_same::commands::auto_monitor::ensure(
+                                false,
+                                git_same::commands::auto_monitor::HookOutput {
+                                    json: cli.is_json(),
+                                    quiet: cli.is_quiet(),
+                                },
+                            )
+                            .await;
+                        }
                         match git_same::app::tui::run_tui(config, config_was_created).await {
                             Ok(()) => ExitCode::SUCCESS,
                             Err(e) => {

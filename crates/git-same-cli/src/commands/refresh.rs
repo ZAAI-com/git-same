@@ -18,19 +18,19 @@ pub async fn run(args: &RefreshArgs, _config: &Config, output: &Output) -> Resul
 async fn run_impl(args: &RefreshArgs, output: &Output) -> Result<()> {
     use git_same_core::ipc::IpcConfig;
 
-    let cfg = IpcConfig::default_path()?;
-    run_with_socket_path(args, output, cfg.socket_path()).await
+    run_with_ipc(args, output, &IpcConfig::default_path()?).await
 }
 
 #[cfg(unix)]
-async fn run_with_socket_path(
+async fn run_with_ipc(
     args: &RefreshArgs,
     output: &Output,
-    socket_path: std::path::PathBuf,
+    ipc: &git_same_core::ipc::IpcConfig,
 ) -> Result<()> {
     use git_same_core::ipc::UnixSocketClient;
+    use git_same_core::monitor::runtime_guard;
 
-    let client = UnixSocketClient::new(socket_path);
+    let client = UnixSocketClient::new(ipc.socket_path());
 
     let response = match args.path.as_deref() {
         Some(p) => client.refresh(p).await,
@@ -42,10 +42,18 @@ async fn run_with_socket_path(
             output.success("Monitor refreshed");
             Ok(())
         }
-        Err(e) => {
-            output.error("Monitor not reachable. Start it with `gisa monitor`.");
-            Err(e)
+        // The socket is bound only after the first scan. A verified monitor
+        // without a socket is starting, not unreachable, and its first scan
+        // is the refresh that was asked for.
+        Err(_) if runtime_guard::active_monitor(ipc).is_some() => {
+            if !output.is_json() {
+                println!("Monitor is starting; initial scan in progress. Status will be current when it completes.");
+            }
+            Ok(())
         }
+        Err(e) => Err(git_same_core::errors::AppError::config(format!(
+            "Monitor not reachable ({e}). Start it with `gisa monitor --start` or run `gisa monitor`."
+        ))),
     }
 }
 

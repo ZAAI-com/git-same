@@ -156,6 +156,15 @@ impl Controller {
             .map(|status| status.timestamp)
     }
 
+    /// Whether the managed helper may run: `monitor.autostart` is on and
+    /// launchd has not disabled the service. The helper checks this before
+    /// its first side effect and exits successfully when it is off.
+    pub fn monitoring_enabled(&self) -> Result<bool> {
+        let autostart = read_monitor_autostart(&self.paths.config)
+            .map_err(|e| MonitorAgentError::Configuration(e.to_string()))?;
+        Ok(autostart && !self.launchd().is_disabled(LABEL)?)
+    }
+
     // ------------------------------------------------------------------
     // ensure / start / restart
     // ------------------------------------------------------------------

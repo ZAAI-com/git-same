@@ -687,3 +687,75 @@ fn test_banner_source_no_legacy_version_subheadline() {
         "Found legacy versioned subheadline text in banner.rs"
     );
 }
+
+#[test]
+fn test_agent_protocol_version_prints_only_the_version() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--agent-protocol-version"]);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "1\n");
+    assert!(output.stderr.is_empty(), "no logging or warnings");
+    assert!(
+        !default_config_path(temp.path()).exists(),
+        "the probe must have no side effects"
+    );
+}
+
+#[test]
+fn test_monitor_status_works_without_any_configuration() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--quiet", "monitor", "--status"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stdout: {stdout}");
+    assert!(
+        stdout.contains("Monitor is not running"),
+        "stdout: {stdout}"
+    );
+    assert!(!default_config_path(temp.path()).exists());
+}
+
+#[test]
+fn test_monitor_status_json_is_a_single_json_object() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--json", "monitor", "--status"]);
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout must be exactly one JSON value");
+    assert_eq!(value["running"], false);
+    assert!(value["state"].is_string());
+}
+
+/// The test environment redirects HOME and the config directory, so explicit
+/// service controls must refuse instead of touching the real launchd domain.
+#[cfg(target_os = "macos")]
+#[test]
+fn test_monitor_start_refuses_a_redirected_environment() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--json", "monitor", "--start"]);
+
+    assert_eq!(output.status.code(), Some(8));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["error"]
+        .as_str()
+        .unwrap()
+        .contains("Refusing to manage the monitor service"));
+    assert!(!temp.path().join("Library").exists());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn test_monitor_start_is_unsupported_off_macos() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--start"]);
+    assert_eq!(output.status.code(), Some(10));
+}
+
+#[test]
+fn test_monitor_conflicting_modes_are_rejected() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--start", "--stop"]);
+    assert!(!output.status.success());
+}

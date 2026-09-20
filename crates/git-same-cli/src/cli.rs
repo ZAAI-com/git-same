@@ -155,15 +155,18 @@ Examples:
         alias = "daemon",
         long_about = "Run the git-same monitor: a long-running process that scans \
             workspace repositories, computes Finder badge colors, and writes status \
-            to ~/.config/git-same/finder/status.json. It also listens on a Unix socket \
+            for the Finder extension. On macOS a background copy is installed and \
+            started automatically; --start, --stop, --status, and --uninstall control it. It also listens on a Unix socket \
             for refresh requests from the macOS Finder Sync extension. The `daemon` \
             alias is kept for backward compatibility and may be removed in 4.0.",
         after_help = "\
 Examples:
   gisa monitor                     Start the monitor in the foreground
   gisa monitor --interval 60       Poll every 60 seconds
-  gisa monitor --status            Check if the monitor is running
-  gisa monitor --stop              Stop a running monitor"
+  gisa monitor --status            Show the monitor state, PID, and last scan
+  gisa monitor --start             Enable and start the background monitor (macOS)
+  gisa monitor --stop              Stop monitoring until the next --start
+  gisa monitor --uninstall         Stop and remove the background monitor (macOS)"
     )]
     Monitor(MonitorArgs),
 
@@ -321,23 +324,97 @@ pub struct ResetArgs {
 }
 
 /// Arguments for the monitor command
-#[derive(Args, Debug)]
+///
+/// Exactly one mode per invocation: a managed control (`--start`, `--stop`,
+/// `--status`, `--uninstall`), a private packaging mode, or foreground
+/// execution (the default when no control flag is given).
+#[derive(Args, Debug, Default)]
+#[command(group(
+    clap::ArgGroup::new("mode")
+        .args([
+            "foreground",
+            "start",
+            "stop",
+            "status",
+            "uninstall",
+            "install_agent",
+            "remove_agent",
+            "agent_protocol_version",
+        ])
+        .multiple(false)
+))]
 pub struct MonitorArgs {
-    /// Run in foreground (legacy flag; the monitor always runs in the foreground today)
+    /// Run in the foreground (the default when no other mode is given)
     #[arg(long)]
     pub foreground: bool,
 
-    /// Polling interval in seconds (overrides the value from config.toml)
-    #[arg(long)]
+    /// Full-scan interval in seconds for foreground runs (overrides config.toml)
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "start", "stop", "status", "uninstall",
+            "install_agent", "remove_agent", "agent_protocol_version", "managed",
+        ]
+    )]
     pub interval: Option<u64>,
 
-    /// Stop a running monitor
+    /// Enable and start the background monitor (macOS)
+    #[arg(long)]
+    pub start: bool,
+
+    /// Stop monitoring and keep it stopped until the next --start
     #[arg(long)]
     pub stop: bool,
 
-    /// Show monitor status (running, PID, last scan)
+    /// Show monitor status (state, PID, last scan)
     #[arg(long)]
     pub status: bool,
+
+    /// Stop monitoring and remove the background monitor installation (macOS)
+    #[arg(long)]
+    pub uninstall: bool,
+
+    /// Private: run as the launchd-managed helper.
+    #[arg(long, hide = true, requires = "foreground")]
+    pub managed: bool,
+
+    /// Private: install the helper from a staged Homebrew cask bundle.
+    #[arg(long, hide = true, requires_all = ["app_path", "installer_copy"])]
+    pub install_agent: bool,
+
+    /// Private: remove the helper owned by the cask at --app-path.
+    #[arg(long, hide = true, requires = "app_path")]
+    pub remove_agent: bool,
+
+    /// Private: final location of Git-Same.app.
+    #[arg(long, hide = true, value_name = "PATH")]
+    pub app_path: Option<PathBuf>,
+
+    /// Private: where to retain a copy of the installer for later removal.
+    #[arg(long, hide = true, value_name = "PATH", requires = "install_agent")]
+    pub installer_copy: Option<PathBuf>,
+
+    /// Private: print the packaging protocol version and exit.
+    #[arg(long, hide = true)]
+    pub agent_protocol_version: bool,
+}
+
+impl MonitorArgs {
+    /// A control or packaging mode, as opposed to running the monitor loop.
+    pub fn is_control(&self) -> bool {
+        self.start
+            || self.stop
+            || self.status
+            || self.uninstall
+            || self.install_agent
+            || self.remove_agent
+            || self.agent_protocol_version
+    }
+
+    /// Modes invoked by launchd or Homebrew rather than by a person.
+    pub fn is_private(&self) -> bool {
+        self.managed || self.install_agent || self.remove_agent || self.agent_protocol_version
+    }
 }
 
 /// Arguments for the refresh command

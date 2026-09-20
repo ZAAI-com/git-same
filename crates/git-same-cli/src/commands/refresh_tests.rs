@@ -12,8 +12,10 @@ async fn refresh_with_no_monitor_returns_error_on_unix() {
     #[cfg(unix)]
     {
         let temp = tempfile::tempdir().expect("tempdir");
-        let socket_path = temp.path().join("missing-monitor.sock");
-        let res = run_with_socket_path(&args, &output, socket_path).await;
+        let ipc = git_same_core::ipc::IpcConfig {
+            dir: temp.path().join("ipc"),
+        };
+        let res = run_with_ipc(&args, &output, &ipc).await;
         assert!(res.is_err(), "expected error when monitor is not running");
     }
     #[cfg(not(unix))]
@@ -22,4 +24,22 @@ async fn refresh_with_no_monitor_returns_error_on_unix() {
         let res = run(&args, &cfg, &output).await;
         assert!(res.is_ok(), "non-unix fallback should succeed");
     }
+}
+
+/// A monitor that holds the runtime lock but has not bound its socket yet is
+/// still scanning: that is not "unreachable" and must not fail the command.
+#[cfg(unix)]
+#[tokio::test]
+async fn refresh_during_the_initial_scan_succeeds() {
+    use git_same_core::monitor::runtime_guard::{MonitorMode, RuntimeGuard};
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let ipc = git_same_core::ipc::IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    let _starting = RuntimeGuard::acquire(&ipc, MonitorMode::Managed).expect("runtime lock");
+
+    let args = RefreshArgs { path: None };
+    let output = Output::new(Verbosity::Quiet, true);
+    assert!(run_with_ipc(&args, &output, &ipc).await.is_ok());
 }
