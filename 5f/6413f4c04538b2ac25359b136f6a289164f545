@@ -1,0 +1,50 @@
+crates/git-same-app/ui/src/lib/StatusBanner.svelte
+  s_1be4f4d94c61d7::t_1d0baf40a61855 199-202
+crates/git-same-app/src/commands_tests.rs
+  s_1be4f4d94c61d7::t_c352ab97fe756c 533-571
+crates/git-same-app/src/status_stream_tests.rs
+  s_1be4f4d94c61d7::t_416f8101a4e34a 9-12,16,24,31,41,47-96,101-141
+  s_1be4f4d94c61d7::t_e751197a8a6df2 97-100
+crates/git-same-app/src/status_stream.rs
+  s_1be4f4d94c61d7::t_3355b38eec0f49 30,32
+  s_1be4f4d94c61d7::t_e751197a8a6df2 93
+  s_1be4f4d94c61d7::t_352cfe3038fb5a 14-15,19-24,27-29,40-92,94-140,168-172,174,177-190,195
+crates/git-same-app/ui/src/stores/monitor.ts
+  s_1be4f4d94c61d7::t_2c004a64c97f7c 34-43,48,72
+crates/git-same-app/ui/src/lib/monitorPresentation.ts
+  s_1be4f4d94c61d7::t_47dfa929dd3ee6 33-51,143-144
+crates/git-same-app/src/commands.rs
+  s_1be4f4d94c61d7::t_0b89f7fa05caaa 407-415,419,429-430,479-480,672-689,692-694
+crates/git-same-app/ui/src/stores/status.test.ts
+  s_1be4f4d94c61d7::t_82efbf89debd21 25-31
+  s_1be4f4d94c61d7::t_3c0df732f7079c 1-24,32-99
+crates/git-same-app/ui/src/stores/status.ts
+  s_1be4f4d94c61d7::t_76d5c2722c8edd 3,62-69,72,86-87,172,174-175,209,288-292
+crates/git-same-app/ui/src/lib/monitorPresentation.test.ts
+  s_1be4f4d94c61d7::t_866280dd6b9181 55-67
+crates/git-same-app/ui/src/lib/MonitorPanel.svelte
+  s_1be4f4d94c61d7::t_240088433349ec 89-94,96-124
+  s_1be4f4d94c61d7::t_1d0baf40a61855 95
+crates/git-same-app/ui/src/stores/monitor.test.ts
+  s_1be4f4d94c61d7::t_08f3554424d92a 106-130
+crates/git-same-app/Cargo.toml
+  s_1be4f4d94c61d7::t_0cfe5fa8eb4a7c 31-33
+Cargo.lock
+  s_1be4f4d94c61d7::t_f02211e4850780 1629
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5f6413f4c04538b2ac25359b136f6a289164f545",
+  "prompts": {},
+  "sessions": {
+    "s_1be4f4d94c61d7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4dad97ed-6785-4cd8-b1a4-4a15f2f5b147",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
