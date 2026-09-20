@@ -118,7 +118,7 @@ fn stop_monitor_before_reset() -> Result<()> {
         return Ok(());
     }
     if let Ok(controller) = monitor_agent::controller_for_current_user(false) {
-        controller.stop()?;
+        controller.stop_before_config_removal()?;
     }
     Ok(())
 }

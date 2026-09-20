@@ -28,7 +28,7 @@ async fn run_with_ipc(
     ipc: &git_same_core::ipc::IpcConfig,
 ) -> Result<()> {
     use git_same_core::ipc::UnixSocketClient;
-    use git_same_core::monitor::runtime_guard;
+    use git_same_core::monitor::runtime_guard::{self, RuntimeMonitorState};
 
     let client = UnixSocketClient::new(ipc.socket_path());
 
@@ -45,10 +45,18 @@ async fn run_with_ipc(
         // The socket is bound only after the first scan. A verified monitor
         // without a socket is starting, not unreachable, and its first scan
         // is the refresh that was asked for.
-        Err(_) if runtime_guard::active_monitor(ipc).is_some() => {
-            if !output.is_json() {
-                println!("Monitor is starting; initial scan in progress. Status will be current when it completes.");
-            }
+        Err(_)
+            if matches!(
+                runtime_guard::runtime_monitor_state(ipc),
+                RuntimeMonitorState::HeldUnknown
+            )
+                || matches!(
+                    runtime_guard::runtime_monitor_state(ipc),
+                    RuntimeMonitorState::Active(ref identity)
+                        if !runtime_guard::scan_complete(ipc, identity)
+                ) =>
+        {
+            output.plain("Monitor is starting; initial scan in progress. Status will be current when it completes.");
             Ok(())
         }
         Err(e) => Err(git_same_core::errors::AppError::config(format!(

@@ -18,11 +18,15 @@ pub fn read_monitor_autostart(path: &Path) -> Result<bool, AppError> {
         return Ok(true);
     }
     let doc = load_document(path)?;
-    Ok(doc
+    let Some(value) = doc
         .get("monitor")
         .and_then(|monitor| monitor.get("autostart"))
-        .and_then(Item::as_bool)
-        .unwrap_or(true))
+    else {
+        return Ok(true);
+    };
+    value
+        .as_bool()
+        .ok_or_else(|| AppError::config("Config key 'monitor.autostart' must be a boolean"))
 }
 
 /// Persists `monitor.autostart`, changing nothing else in the file.

@@ -22,6 +22,14 @@ fn explicit_false_is_read_back() {
 }
 
 #[test]
+fn present_non_boolean_autostart_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(&dir, "[monitor]\nautostart = \"yes\"\n");
+    let error = read_monitor_autostart(&path).unwrap_err().to_string();
+    assert!(error.contains("must be a boolean"));
+}
+
+#[test]
 fn set_autostart_preserves_comments_and_unrelated_keys() {
     let dir = tempfile::tempdir().unwrap();
     let original = "# my notes\nconcurrency = 7 # tuned\n\n[ui]\ncustom_folder_icon = false\n\n[monitor]\n# cadence\nfullscan_interval_secs = 45\n";

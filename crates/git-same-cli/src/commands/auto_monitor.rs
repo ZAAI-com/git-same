@@ -76,6 +76,9 @@ pub async fn ensure(config_override: bool, output: HookOutput) {
 #[cfg(unix)]
 pub async fn request_refresh() {
     use git_same_core::ipc::{IpcConfig, UnixSocketClient};
+    if monitor_agent::autostart_suppressed() {
+        return;
+    }
     let Ok(ipc) = IpcConfig::default_path() else {
         return;
     };

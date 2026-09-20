@@ -43,3 +43,25 @@ async fn refresh_during_the_initial_scan_succeeds() {
     let output = Output::new(Verbosity::Quiet, true);
     assert!(run_with_ipc(&args, &output, &ipc).await.is_ok());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn refresh_fails_when_a_scanned_monitor_has_no_socket() {
+    use git_same_core::monitor::runtime_guard::{MonitorMode, RuntimeGuard};
+    use git_same_core::types::FinderStatus;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let ipc = git_same_core::ipc::IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    let running = RuntimeGuard::acquire(&ipc, MonitorMode::Managed).expect("runtime lock");
+    git_same_core::ipc::StatusFileWriter::new(ipc.status_file_path())
+        .write(&FinderStatus::new(
+            running.identity().pid,
+            chrono::Utc::now().to_rfc3339(),
+        ))
+        .unwrap();
+
+    let args = RefreshArgs { path: None };
+    assert!(run_with_ipc(&args, &Output::quiet(), &ipc).await.is_err());
+}
