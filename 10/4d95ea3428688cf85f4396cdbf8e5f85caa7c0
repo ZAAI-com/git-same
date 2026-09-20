@@ -1,0 +1,22 @@
+crates/git-same-app/src/commands.rs
+  s_07d2d8a1a7f101::t_0797660dc8cd74 539-544,555-557
+  s_07d2d8a1a7f101::t_1f100febe3a048 558
+crates/git-same-app/src/status_stream_tests.rs
+  s_07d2d8a1a7f101::t_0797660dc8cd74 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "104d95ea3428688cf85f4396cdbf8e5f85caa7c0",
+  "prompts": {},
+  "sessions": {
+    "s_07d2d8a1a7f101": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8062e6ec-dd9c-480a-beaf-60b4ada4c085",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
