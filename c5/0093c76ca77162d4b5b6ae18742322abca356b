@@ -1,0 +1,146 @@
+crates/git-same-core/src/config/parser.rs
+  s_7c790b14a3bc6d::t_66d419cc1d5765 59-62,69,433-436,445
+crates/git-same-core/src/monitor/run.rs
+  s_7c790b14a3bc6d::t_36aa786d5afa5a 9-13,17,22-23,40-42,54-68,70-72,74-92,100,104-119,127,133,136-141,143-153,175-176,183-184,187-189,192-195,201,203-223,226-227,229-258,261-279,281-282,286,290-357
+  s_7c790b14a3bc6d::t_97ee63329572a0 358
+crates/git-same-core/src/macos/monitor_agent/source_tests.rs
+  s_7c790b14a3bc6d::t_ba73ab67de64fc 132,146,162,175,190,203,218,222
+  s_7c790b14a3bc6d::t_8473ca353165d3 1-131,133-145,147-161,163-174,176-189,191-202,204-217,219-221,223-225
+crates/git-same-core/src/errors/monitor_agent_tests.rs
+  s_7c790b14a3bc6d::t_44bd045824860c 1-46
+crates/git-same-core/src/monitor/runtime_guard.rs
+  s_7c790b14a3bc6d::t_ebdf7746c24820 1-192
+crates/git-same-core/src/macos/monitor_agent/record_tests.rs
+  s_7c790b14a3bc6d::t_b4188166bb8d04 1-73
+crates/git-same-core/src/macos/monitor_agent/status.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 114
+  s_7c790b14a3bc6d::t_782fa26b27b641 1-113,115-163
+crates/git-same-core/assets/com.zaai.git-same.monitor.plist
+  s_7c790b14a3bc6d::t_c5c0b3746c8570 1-40
+crates/git-same-core/src/ipc/mod.rs
+  s_7c790b14a3bc6d::t_ebdf7746c24820 96-107
+  s_7c790b14a3bc6d::t_043dca3269d8e7 43
+crates/git-same-core/src/macos/monitor_agent/install_tests.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 4
+  s_7c790b14a3bc6d::t_56e96dd23083de 1-3,5-253
+toolkit/packaging/macos/build-app-bundle.sh
+  s_7c790b14a3bc6d::t_493f25bf3dcf33 79
+crates/git-same-core/src/lib.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 19
+crates/git-same-core/src/monitor/socket_handler.rs
+  s_7c790b14a3bc6d::t_36aa786d5afa5a 11,22-25,28-29,50-53,55
+crates/git-same-core/src/macos/monitor_agent/launchd_tests.rs
+  s_7c790b14a3bc6d::t_3be8b5559365a3 1-55
+crates/git-same-core/src/config/mod.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 13
+crates/git-same-core/Cargo.toml
+  s_7c790b14a3bc6d::t_66d419cc1d5765 35-39
+crates/git-same-core/src/macos/monitor_agent/record.rs
+  s_7c790b14a3bc6d::t_b4188166bb8d04 1-113
+crates/git-same-core/src/monitor/process.rs
+  s_7c790b14a3bc6d::t_bbb6c995bccde2 1-83,88-111
+  s_7c790b14a3bc6d::t_ebdf7746c24820 84-87
+crates/git-same-core/src/macos/monitor_agent/status_tests.rs
+  s_7c790b14a3bc6d::t_782fa26b27b641 1-111
+crates/git-same-core/src/monitor/process_tests.rs
+  s_7c790b14a3bc6d::t_bbb6c995bccde2 1-38
+crates/git-same-core/src/macos/monitor_agent/context_tests.rs
+  s_7c790b14a3bc6d::t_a0394949cf5745 1-73
+crates/git-same-core/src/monitor/live_config.rs
+  s_7c790b14a3bc6d::t_1d8ba7a30e83eb 1-83
+crates/git-same-core/src/errors/mod.rs
+  s_7c790b14a3bc6d::t_44bd045824860c 20,25
+crates/git-same-core/src/macos/monitor_agent/plist_tests.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 53-57
+  s_7c790b14a3bc6d::t_c5c0b3746c8570 1-52,58-64
+crates/git-same-core/src/macos/monitor_agent/control_lock_tests.rs
+  s_7c790b14a3bc6d::t_782fa26b27b641 1-20,23-34,41-57
+  s_7c790b14a3bc6d::t_66be042aaeb263 21-22,35-40
+Cargo.toml
+  s_7c790b14a3bc6d::t_66d419cc1d5765 43-45
+crates/git-same-core/src/monitor/live_config_tests.rs
+  s_7c790b14a3bc6d::t_1d8ba7a30e83eb 1-62
+crates/git-same-core/src/macos/monitor_agent/source.rs
+  s_7c790b14a3bc6d::t_ba73ab67de64fc 133,139,143-144,150-153,169-171
+  s_7c790b14a3bc6d::t_8473ca353165d3 1-75,79-96,98-132,134-138,140-142,145-149,154-168,172-197,199-203
+  s_7c790b14a3bc6d::t_66be042aaeb263 76-78,97,198
+crates/git-same-core/src/macos/monitor_agent/fake.rs
+  s_7c790b14a3bc6d::t_ba73ab67de64fc 235-236
+  s_7c790b14a3bc6d::t_4af29d4deeee15 30-31,106-108,112
+  s_7c790b14a3bc6d::t_66be042aaeb263 1-29,32-105,109-111,113-234,237-252
+crates/git-same-core/src/macos/monitor_agent/mod.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 62
+  s_7c790b14a3bc6d::t_ab4f8758375d8d 1-61,63-70
+crates/git-same-core/src/macos/monitor_agent/control_lock.rs
+  s_7c790b14a3bc6d::t_782fa26b27b641 1-84
+crates/git-same-core/src/macos/mod.rs
+  s_7c790b14a3bc6d::t_ab4f8758375d8d 9
+crates/git-same-core/src/monitor/mod.rs
+  s_7c790b14a3bc6d::t_36aa786d5afa5a 15,23-24
+  s_7c790b14a3bc6d::t_ebdf7746c24820 17,19
+crates/git-same-core/src/errors/app.rs
+  s_7c790b14a3bc6d::t_44bd045824860c 6,39-46,97,118,136
+crates/git-same-core/src/macos/monitor_agent/plist.rs
+  s_7c790b14a3bc6d::t_c5c0b3746c8570 1-46
+crates/git-same-app/src/commands.rs
+  s_7c790b14a3bc6d::t_57170b99ea7f1b 11,14,216-218,523-524,526-530,533,535,539,1042
+crates/git-same-core/src/fsutil.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 1-67
+crates/git-same-core/src/macos/monitor_agent/context.rs
+  s_7c790b14a3bc6d::t_a0394949cf5745 1-189
+crates/git-same-core/src/fsutil_tests.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 1-43
+crates/git-same-core/src/config/edit.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 1-80
+crates/git-same-core/src/api/owner_type_cache.rs
+  s_7c790b14a3bc6d::t_5a1c29844a5f89 71
+crates/git-same-core/src/macos/monitor_agent/system_tests.rs
+  s_7c790b14a3bc6d::t_b4188166bb8d04 1-55
+crates/git-same-core/src/errors/monitor_agent.rs
+  s_7c790b14a3bc6d::t_36aa786d5afa5a 54-57,127-129
+  s_7c790b14a3bc6d::t_44bd045824860c 1-53,58-126,130-143
+crates/git-same-core/src/macos/monitor_agent/system.rs
+  s_7c790b14a3bc6d::t_b4188166bb8d04 1-111,124-153,155-170,172-188
+  s_7c790b14a3bc6d::t_66be042aaeb263 112-123
+  s_7c790b14a3bc6d::t_043dca3269d8e7 154,171
+crates/git-same-core/src/macos/monitor_agent/launchd.rs
+  s_7c790b14a3bc6d::t_3be8b5559365a3 1-121,124-126,128,134-187
+  s_7c790b14a3bc6d::t_66be042aaeb263 122-123,127,129-133
+crates/git-same-core/src/macos/monitor_agent/install.rs
+  s_7c790b14a3bc6d::t_89d1df92332eda 1-112,118-121,126-237,248-339
+  s_7c790b14a3bc6d::t_66be042aaeb263 113-117,122-125,238-247
+crates/git-same-core/src/macos/monitor_agent/controller.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 364-365,471-473
+  s_7c790b14a3bc6d::t_ba73ab67de64fc 230-236
+  s_7c790b14a3bc6d::t_ab4f8758375d8d 1-229,237-363,366-470,474-646
+crates/git-same-core/src/macos/monitor_agent/controller_tests.rs
+  s_7c790b14a3bc6d::t_66be042aaeb263 6
+  s_7c790b14a3bc6d::t_08dd766826e58c 1-5,7-588,590,599-927
+  s_7c790b14a3bc6d::t_4af29d4deeee15 589,591-598
+crates/git-same-app/src/commands_tests.rs
+  s_7c790b14a3bc6d::t_57170b99ea7f1b 109
+crates/git-same-core/src/config/edit_tests.rs
+  s_7c790b14a3bc6d::t_4ca978eef869d7 1-81
+crates/git-same-core/src/monitor/runtime_guard_tests.rs
+  s_7c790b14a3bc6d::t_ebdf7746c24820 1-100
+crates/git-same-core/src/ipc/status_file.rs
+  s_7c790b14a3bc6d::t_5a1c29844a5f89 33,35
+Cargo.lock
+  s_7c790b14a3bc6d::t_24edcd173dac79 1644,1653,1660,5415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c50093c76ca77162d4b5b6ae18742322abca356b",
+  "prompts": {},
+  "sessions": {
+    "s_7c790b14a3bc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d42238-6b51-4397-820d-f2f6d964c946",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
