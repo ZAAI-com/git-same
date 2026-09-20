@@ -1,0 +1,43 @@
+crates/git-same-app/ui/src/stores/monitor.ts
+  s_463afe401e0e52::t_cec8732ff2b98f 50
+crates/git-same-app/ui/src/stores/monitor.test.ts
+  s_463afe401e0e52::t_739c680da9e827 118-128
+crates/git-same-app/ui/src/lib/monitorPresentation.test.ts
+  s_463afe401e0e52::t_739c680da9e827 162-169
+crates/git-same-app/ui/src/lib/monitorPresentation.ts
+  s_463afe401e0e52::t_fb0b102d0a91f1 187,189,192-193
+  s_463afe401e0e52::t_cec8732ff2b98f 185,188
+crates/git-same-app/ui/src/lib/StatusBanner.svelte
+  s_463afe401e0e52::t_cec8732ff2b98f 11,44-45,107-108
+crates/git-same-app/ui/src/lib/MonitorPanel.svelte
+  s_463afe401e0e52::t_cec8732ff2b98f 3-9,34,36-38,73-76,78
+  s_38ddb91f7df0b7::t_a5307acbfa26f9 35
+crates/git-same-app/ui/src/routes/FinderBadges.svelte
+  s_463afe401e0e52::t_cec8732ff2b98f 49-51,71-73
+crates/git-same-app/src/commands.rs
+  s_463afe401e0e52::t_cec8732ff2b98f 419-422,432,444-446,483-487
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "4b86587db7b4ce6459e3b1229afcdc38faf21f27",
+  "prompts": {},
+  "sessions": {
+    "s_38ddb91f7df0b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b63d351-694e-4057-b519-62d837d2b26f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
