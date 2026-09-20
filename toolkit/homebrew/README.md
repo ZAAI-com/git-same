@@ -40,7 +40,7 @@ tarballs for Linux and headless macOS.
 After the GitHub release exists for the new version:
 
 ```sh
-VERSION=3.1.0
+VERSION=3.1.2
 URL_PREFIX="https://github.com/zaai-com/git-same/releases/download/${VERSION}"
 
 # Compute SHAs for the four CLI tarballs used by the formula
@@ -76,3 +76,20 @@ bash toolkit/homebrew/verify-tap.sh \
     --formula-cli /tmp/formula-cli.rb \
     --install-smoke
 ```
+
+## How the cask installs the monitor
+
+The cask uses `installer script:` to run the bundled CLI from the staged app:
+
+```
+Git-Same.app/Contents/Helpers/git-same monitor --install-agent \
+    --app-path <appdir>/Git-Same.app \
+    --installer-copy <staged_path>/git-same-service-tool
+```
+
+- It runs outside the cask sandbox (it has to reach launchd) and before Homebrew moves the app, even though `brew style` requires the stanza to be written after `app`.
+- It copies a separate helper to `~/Library/Application Support/com.zaai.git-same/monitor/`, writes the LaunchAgent, and starts monitoring only when it is enabled. It never calls `launchctl enable`, so `gisa monitor --stop` survives upgrades.
+- It first retains a copy of itself as `git-same-service-tool` in the Caskroom version directory. `uninstall script:` runs that copy with `--remove-agent`, which removes only a monitor owned by this cask and leaves the start/stop preference alone.
+- There is deliberately no `uninstall launchctl:` or `delete:`: both run before the script, probe with sudo, and would bypass the owner check.
+- `brew style` and `brew audit` passing says nothing about whether the monitor installs. S3 checks that the released CLI answers `monitor --agent-protocol-version` with the protocol this template needs, and the release checklist has the real acceptance matrix.
+- Recovery when the Caskroom version directory was deleted by hand: `brew uninstall --force --cask git-same`, then `gisa monitor --uninstall`.

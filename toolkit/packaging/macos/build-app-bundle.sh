@@ -76,7 +76,6 @@ echo "==> Assembling app bundle"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$APP/Contents/PlugIns"
 cp "$ROOT/target/$TARGET/release/git-same-app" "$APP/Contents/MacOS/git-same-app"
 cp "$ROOT/target/$TARGET/release/git-same" "$APP/Contents/Helpers/git-same"
-cp "$ROOT/crates/git-same-core/assets/com.zaai.git-same.monitor.plist" "$APP/Contents/Resources/com.zaai.git-same.monitor.plist"
 cp "$ROOT/crates/git-same-app/icons/icon.icns" "$APP/Contents/Resources/icons.icns"
 chmod +x "$APP/Contents/MacOS/git-same-app" "$APP/Contents/Helpers/git-same"
 

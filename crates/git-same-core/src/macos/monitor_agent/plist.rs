@@ -15,13 +15,14 @@ pub fn render(paths: &MonitorAgentPaths, home: &Path, associated_bundle: Option<
     let associated = associated_bundle
         .map(|bundle| {
             format!(
-                "    <key>AssociatedBundleIdentifiers</key>\n    <array>\n        <string>{}</string>\n    </array>\n",
+                "<key>AssociatedBundleIdentifiers</key>\n    <array>\n        <string>{}</string>\n    </array>",
                 escape_xml(bundle)
             )
         })
         .unwrap_or_default();
     TEMPLATE
-        .replace("__GIT_SAME_ASSOCIATED_BUNDLE__", &associated)
+        // A comment in the template keeps the asset itself valid XML.
+        .replace("<!--__GIT_SAME_ASSOCIATED_BUNDLE__-->", &associated)
         .replace("__GIT_SAME_HELPER__", &escape_path(&paths.helper))
         .replace("__GIT_SAME_HOME__", &escape_path(home))
         .replace("__GIT_SAME_STDOUT__", &escape_path(&paths.stdout_log))

@@ -21,10 +21,6 @@ jobs:
     name: Publish Cask + Formula to Tap
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Get version from tag
         id: version
         run: |
@@ -43,6 +39,24 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
+      # The cask template and the released binaries must come from the same
+      # tag: the template calls the private installer interface of that CLI.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          persist-credentials: false
+
+      - name: Verify tag matches workspace version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION=$(awk -F'"' '/^version *=/ {print $2; exit}' Cargo.toml)
+          if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+            echo "Tag $VERSION does not match workspace version $MANIFEST_VERSION" >&2
+            exit 1
+          fi
+
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,6 +71,35 @@ jobs:
             --pattern "git-same-${VERSION}-x86_64.dmg" \
             --pattern "git-same-${VERSION}-aarch64.dmg" \
             --dir assets
+
+      - name: Verify the bundled CLI speaks the cask's installer protocol
+        # Runs before anything is rendered or pushed. A release that predates
+        # the private installer interface (3.1.1 and older) rejects the flag,
+        # and a cask rendered against it could not install the monitor.
+        env:
+          EXPECTED_PROTOCOL: "1"
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          case "$(uname -m)" in
+            arm64) DMG="assets/git-same-${VERSION}-aarch64.dmg" ;;
+            *)     DMG="assets/git-same-${VERSION}-x86_64.dmg" ;;
+          esac
+          MOUNT="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null
+          trap 'hdiutil detach "$MOUNT" -quiet || true' EXIT
+          CLI="$MOUNT/Git-Same.app/Contents/Helpers/git-same"
+          # The probe prints only the version and has no side effects.
+          if ! ACTUAL="$("$CLI" monitor --agent-protocol-version)"; then
+            echo "ERROR: $DMG does not implement the monitor installer interface." >&2
+            echo "Do not render this cask against releases older than 3.1.2." >&2
+            exit 1
+          fi
+          if [ "$ACTUAL" != "$EXPECTED_PROTOCOL" ]; then
+            echo "ERROR: bundled CLI reports installer protocol '$ACTUAL', the cask template needs '$EXPECTED_PROTOCOL'." >&2
+            exit 1
+          fi
+          echo "OK: bundled CLI reports installer protocol $ACTUAL"
 
       - name: Compute SHA256 hashes
         id: sha

@@ -13,8 +13,9 @@
 # Only darwin targets are accepted; the script signs and notarizes via Apple.
 #
 # --entitlements PATH (optional) is forwarded to codesign as --entitlements.
-# Default toolkit/packaging/darwin-entitlements.plist is empty/hardened-runtime
-# only; non-empty entitlements are needed for the planned Tauri + FinderSync GUI.
+# Default toolkit/packaging/darwin-entitlements.plist grants the shared app
+# group, because a standalone CLI can become the background monitor helper
+# that writes status for the Finder extension.
 #
 # Required env vars (CI provides via GitHub Secrets):
 #   APPLE_DEVELOPER_CERTIFICATE_P12       Base64 .p12 (Developer ID Application)

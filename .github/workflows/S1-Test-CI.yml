@@ -133,8 +133,36 @@ jobs:
       - name: Verify entitlements parity
         run: bash toolkit/packaging/macos/check-entitlements-parity.sh
 
+      - name: Lint property lists
+        # A malformed entitlements plist only fails late at codesign time, and a
+        # malformed LaunchAgent template fails silently on a user's machine.
+        run: |
+          plutil -lint \
+            crates/git-same-core/assets/com.zaai.git-same.monitor.plist \
+            crates/git-same-app/entitlements.plist \
+            toolkit/packaging/darwin-entitlements.plist \
+            macos/GitSameBadges/GitSameBadges.entitlements \
+            macos/GitSameBadges/Info.plist
+
+      - name: Verify core crate package contents
+        # Must run on macOS: only this target compiles the code that embeds the
+        # LaunchAgent template, so only here does packaging prove it ships.
+        run: |
+          cargo package -p git-same-core --allow-dirty
+          CRATE="$(ls target/package/git-same-core-*.crate | head -n 1)"
+          for asset in assets/com.zaai.git-same.monitor.plist assets/workspace-folder.icns; do
+            tar -tzf "$CRATE" | grep -q "/${asset}\$" \
+              || { echo "ERROR: ${asset} missing from ${CRATE}"; exit 1; }
+          done
+
       - name: Install frontend dependencies
         run: pnpm --dir crates/git-same-app/ui install --frozen-lockfile
+
+      - name: Type-check frontend
+        run: pnpm --dir crates/git-same-app/ui check
+
+      - name: Test frontend
+        run: pnpm --dir crates/git-same-app/ui test
 
       - name: Build frontend
         run: pnpm --dir crates/git-same-app/ui build
@@ -267,6 +295,10 @@ jobs:
           # Scripts reference the manifest
           grep -q 'binary-aliases.txt' toolkit/conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
           grep -q 'binary-aliases.txt' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
+
+          # Dev scripts must never manage the developer's live monitor.
+          grep -q 'GIT_SAME_DISABLE_MONITOR_AUTOSTART' toolkit/conductor/run.sh || { echo "ERROR: run.sh no longer suppresses automatic monitor management"; exit 1; }
+          grep -q 'owner-scoped' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost its owner-scoped monitor cleanup"; exit 1; }
 
           echo "All alias drift checks passed."
 

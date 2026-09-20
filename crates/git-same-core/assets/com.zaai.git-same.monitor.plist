@@ -21,7 +21,8 @@
     </dict>
     <key>WorkingDirectory</key>
     <string>__GIT_SAME_HOME__</string>
-__GIT_SAME_ASSOCIATED_BUNDLE__    <key>RunAtLoad</key>
+    <!--__GIT_SAME_ASSOCIATED_BUNDLE__-->
+    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <dict>
