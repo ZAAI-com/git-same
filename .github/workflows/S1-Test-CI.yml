@@ -302,6 +302,45 @@ jobs:
 
           echo "All alias drift checks passed."
 
+      - name: Verify packaging version and protocol drift
+        run: |
+          set -e
+
+          # S3 renders the cask against a hand-copied protocol number. If the
+          # Rust constant moves and the workflow does not, the probe silently
+          # accepts an installer the cask cannot drive.
+          RUST_PROTOCOL="$(sed -nE 's/^pub const PACKAGING_PROTOCOL_VERSION: u32 = ([0-9]+);.*/\1/p' \
+            crates/git-same-core/src/macos/monitor_agent/mod.rs)"
+          if [ -z "$RUST_PROTOCOL" ]; then
+            echo "ERROR: PACKAGING_PROTOCOL_VERSION not found in monitor_agent/mod.rs"; exit 1
+          fi
+          YAML_PROTOCOL="$(sed -nE 's/^[[:space:]]*EXPECTED_PROTOCOL:[[:space:]]*"?([0-9]+)"?[[:space:]]*$/\1/p' \
+            .github/workflows/S3-Publish-Homebrew.yml)"
+          if [ -z "$YAML_PROTOCOL" ]; then
+            echo "ERROR: EXPECTED_PROTOCOL not found in S3-Publish-Homebrew.yml"; exit 1
+          fi
+          if [ "$RUST_PROTOCOL" != "$YAML_PROTOCOL" ]; then
+            echo "ERROR: protocol drift: mod.rs says $RUST_PROTOCOL, S3 expects $YAML_PROTOCOL"
+            exit 1
+          fi
+
+          # The FinderSync extension's Info.plist is hand-maintained and only
+          # plutil-linted, so a release can ship a badge bundle stamped with
+          # the previous version.
+          WORKSPACE_VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' Cargo.toml | head -1)"
+          if [ -z "$WORKSPACE_VERSION" ]; then
+            echo "ERROR: workspace version not found in Cargo.toml"; exit 1
+          fi
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" macos/GitSameBadges/Info.plist)"
+            if [ "$value" != "$WORKSPACE_VERSION" ]; then
+              echo "ERROR: macos/GitSameBadges/Info.plist $key is $value, workspace is $WORKSPACE_VERSION"
+              exit 1
+            fi
+          done
+
+          echo "Packaging version and protocol drift checks passed ($WORKSPACE_VERSION, protocol $RUST_PROTOCOL)."
+
   workflow-secret-safety:
     name: Workflow Secret Safety
     runs-on: macos-latest

@@ -42,9 +42,31 @@ extract_groups() {
     printf '%s\n' "$xml" | grep -oE '<string>[^<]*' | sed 's/<string>//' | sort
 }
 
+# The one group every component must declare. Pinned as a literal because
+# mutual equality alone passes when all three files are changed to the same
+# wrong identifier, or when all three extractions come back empty.
+EXPECTED_GROUP="group.57KL6Y7V32.com.zaai.git-same"
+
 HOST_GROUPS="$(extract_groups "$HOST")"
 EXT_GROUPS="$(extract_groups "$EXT")"
 CLI_GROUPS="$(extract_groups "$CLI")"
+
+for pair in "host:$HOST:$HOST_GROUPS" "ext:$EXT:$EXT_GROUPS" "cli:$CLI:$CLI_GROUPS"; do
+    who="${pair%%:*}"
+    rest="${pair#*:}"
+    file="${rest%%:*}"
+    groups="${rest#*:}"
+    if [ -z "$groups" ]; then
+        echo "ERROR: $who ($file) declares an empty application-groups array" >&2
+        exit 1
+    fi
+    if ! printf '%s\n' "$groups" | grep -Fqx -- "$EXPECTED_GROUP"; then
+        echo "ERROR: $who ($file) does not declare $EXPECTED_GROUP" >&2
+        echo "  found:" >&2
+        printf '    %s\n' "$groups" >&2
+        exit 1
+    fi
+done
 
 if [ "$HOST_GROUPS" != "$EXT_GROUPS" ] || [ "$HOST_GROUPS" != "$CLI_GROUPS" ]; then
     echo "ERROR: application-groups mismatch between host, extension, and CLI." >&2
@@ -60,9 +82,13 @@ if [ "$HOST_GROUPS" != "$EXT_GROUPS" ] || [ "$HOST_GROUPS" != "$CLI_GROUPS" ]; t
     exit 1
 fi
 
-# The entitlement only reaches the CLI if the release workflow passes it.
-if ! grep -q -- "darwin-entitlements.plist" "$RELEASE_WORKFLOW"; then
-    echo "ERROR: $RELEASE_WORKFLOW no longer signs the CLI with darwin-entitlements.plist" >&2
+# The entitlement only reaches the CLI if the release workflow passes it to
+# codesign. Match the flag and the path together: a bare mention of the
+# filename is satisfied by a comment or an unrelated `cat`.
+if ! grep -Eq -- '--entitlements[[:space:]]+[^[:space:]]*darwin-entitlements\.plist' \
+    "$RELEASE_WORKFLOW"; then
+    echo "ERROR: $RELEASE_WORKFLOW no longer passes darwin-entitlements.plist to" >&2
+    echo "       codesign --entitlements when signing the CLI" >&2
     exit 1
 fi
 

@@ -7,6 +7,7 @@ manual `workflow_dispatch` workflows under `.github/workflows/`.
 
 - [ ] Working tree clean on `main`, all PRs merged.
 - [ ] Bump `version` in `Cargo.toml` (and confirm `Cargo.lock` regenerates clean: `cargo build`).
+- [ ] Bump `CFBundleShortVersionString` and `CFBundleVersion` in `macos/GitSameBadges/Info.plist` to the same version (hand-maintained; S1 gates the match, `plutil -lint` does not).
 - [ ] Update `CHANGELOG` / release notes draft if applicable.
 - [ ] Smoke-render the Homebrew artifacts locally:
   ```sh
@@ -67,7 +68,7 @@ After every step check `gisa monitor --status`, `launchctl print gui/$(id -u)/co
 | Fresh signed cask install | Monitor active without opening the app |
 | Upgrade from the 3.1.1 cask | Legacy cleanup, new helper running, no second monitor |
 | Upgrade between new versions | Preference preserved, helper updated |
-| `brew upgrade` reopens the app | PID, `install.json`, and helper hash unchanged |
+| `brew upgrade` of the cask | Homebrew runs the *old* cask's uninstall stanza first, so the helper, plist, and `install.json` are removed and recreated: expect a new monitor PID and a new `install.json`. Required result: monitoring is `running` again once the upgrade returns, the helper reports the new version, and badges refresh within one scan. A brief badge gap during the swap is expected, not a defect. See `docs/plans/monitor-continuity-across-cask-upgrades.md` for the deferred fix |
 | Reinstall while enabled | Exactly one monitor |
 | Reinstall after `gisa monitor --stop` | Helper updated, no monitor started |
 | Custom `--appdir` | `install.json` owner and source paths point at the custom location |
