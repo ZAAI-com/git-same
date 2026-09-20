@@ -41,3 +41,17 @@ fn atomic_write_applies_mode() {
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o644);
 }
+
+#[test]
+fn atomic_write_succeeds_when_the_parent_cannot_be_synced() {
+    // `sync_dir` is best-effort: a filesystem that refuses to open a directory
+    // must not fail a write whose data already landed.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file.json");
+    atomic_write(&path, b"{}", None).unwrap();
+    sync_dir(Some(std::path::Path::new(
+        "/nonexistent-directory-for-tests",
+    )));
+    sync_dir(None);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{}");
+}

@@ -99,7 +99,17 @@ where
     } = opts;
     let managed = context.mode == MonitorMode::Managed;
 
-    ipc_config.ensure_dir()?;
+    // Under launchd a nonzero exit means "restart me"
+    // (`KeepAlive = { SuccessfulExit = false }`, `ThrottleInterval 10`). Every
+    // startup step that a restart cannot fix must therefore exit 0 after one
+    // logged line, or the helper respawns every ten seconds forever.
+    if let Err(e) = ipc_config.ensure_dir() {
+        if managed {
+            error!(error = %e, "Cannot use the IPC directory; not starting");
+            return Ok(());
+        }
+        return Err(e);
+    }
 
     // Before writing status or touching the socket: become the only monitor.
     let _guard = match RuntimeGuard::acquire(&ipc_config, context.mode) {
@@ -142,16 +152,23 @@ where
 
     let initial_status = match scan(&live.snapshot()) {
         Ok(status) => status,
-        // Under launchd a nonzero exit means "restart me": a persistently
-        // failing scan (for example a permission denial) would loop forever.
-        // Stay up with an empty status and let the periodic scan retry.
+        // A persistently failing scan (for example a permission denial) would
+        // loop forever under launchd. Stay up with an empty status and let the
+        // periodic scan retry.
         Err(e) if managed => {
             error!(error = %e, "Initial scan failed; retrying on the next full scan");
             FinderStatus::new(pid, chrono::Utc::now().to_rfc3339())
         }
         Err(e) => return Err(e),
     };
-    status_writer.write(&initial_status)?;
+    if let Err(e) = status_writer.write(&initial_status) {
+        // An unwritable group container is not fixed by respawning.
+        if managed {
+            error!(error = %e, "Cannot write the status file; not starting");
+            return Ok(());
+        }
+        return Err(e);
+    }
     let ambient_count = initial_status
         .repos
         .iter()
@@ -179,7 +196,17 @@ where
     #[cfg(unix)]
     let socket_listener = crate::ipc::UnixSocketListener::new(ipc_config.socket_path());
     #[cfg(unix)]
-    let tokio_listener = socket_listener.bind().await?;
+    let tokio_listener = match socket_listener.bind().await {
+        Ok(listener) => Some(listener),
+        // A socket owned by another uid, or an unwritable container, cannot be
+        // fixed by a restart. Badges read `status.json` and keep working; only
+        // `gisa refresh` and the extension's push requests degrade.
+        Err(e) if managed => {
+            warn!(error = %e, "Could not bind the IPC socket; continuing without it");
+            None
+        }
+        Err(e) => return Err(e),
+    };
     #[cfg(not(unix))]
     let tokio_listener = ();
 
@@ -303,8 +330,13 @@ type Connection = std::io::Result<tokio::net::UnixStream>;
 #[cfg(not(unix))]
 type Connection = std::convert::Infallible;
 
+/// Never resolves when the socket could not be bound, so the rest of the loop
+/// (scans, status writes, filesystem events) runs unchanged.
 #[cfg(unix)]
-async fn next_connection(listener: &tokio::net::UnixListener) -> Connection {
+async fn next_connection(listener: &Option<tokio::net::UnixListener>) -> Connection {
+    let Some(listener) = listener else {
+        return std::future::pending().await;
+    };
     listener.accept().await.map(|(stream, _)| stream)
 }
 
@@ -476,3 +508,7 @@ fn enclosing_repo(path: &Path, watched_roots: &[PathBuf]) -> Option<PathBuf> {
         current = current.parent()?;
     }
 }
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;

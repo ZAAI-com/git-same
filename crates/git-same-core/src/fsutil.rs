@@ -29,8 +29,14 @@ pub fn temp_sibling(path: &Path) -> PathBuf {
 /// Atomically replaces `path` with `bytes`, creating parent directories.
 ///
 /// `mode` sets Unix permission bits on the new file (ignored elsewhere).
+///
+/// The parent directory is synced after the rename. Syncing only the file
+/// makes its *contents* durable; it does not make the rename itself durable,
+/// and the monitor's install transaction depends on the relative order of two
+/// renames surviving a crash.
 pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
+    let parent = path.parent();
+    if let Some(parent) = parent {
         std::fs::create_dir_all(parent)?;
     }
     let temp = temp_sibling(path);
@@ -44,8 +50,22 @@ pub fn atomic_write(path: &Path, bytes: &[u8], mode: Option<u32>) -> std::io::Re
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&temp);
+        return result;
     }
+    sync_dir(parent);
     result
+}
+
+/// Best-effort durability for a directory entry created by `rename`.
+///
+/// A failure here means the rename may not survive a power loss, which is
+/// strictly better than failing a write that already succeeded. Some
+/// filesystems also refuse to open a directory for this purpose at all.
+fn sync_dir(parent: Option<&Path>) {
+    let Some(parent) = parent else { return };
+    if let Ok(dir) = std::fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
 }
 
 #[cfg(unix)]

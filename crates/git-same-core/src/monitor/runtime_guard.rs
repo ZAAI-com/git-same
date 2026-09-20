@@ -4,8 +4,10 @@
 //! initial scan, so at most one monitor ever writes the shared status or owns
 //! the socket. Right after taking the lock the monitor writes a runtime
 //! identity record next to it. Other processes trust a recorded PID only when
-//! the lock is held AND the process start identity still matches: a stale
-//! status-file PID alone never identifies a monitor.
+//! the lock is held AND the process start identity does not contradict it: a
+//! stale status-file PID alone never identifies a monitor. Contradict, not
+//! match -- see [`identity_matches_live_process`] for why an unreadable start
+//! identity has to be permissive.
 //!
 //! The lock file is never removed: deleting it while another process holds
 //! its inode would let two monitors each lock a different file.
@@ -126,6 +128,12 @@ impl RuntimeGuard {
 }
 
 impl Drop for RuntimeGuard {
+    /// Removes the record first, then releases the lock when `_lock` drops.
+    ///
+    /// Not the other way around: releasing first would let a starting monitor
+    /// take the lock and write its own record into the gap, which this drop
+    /// would then delete. The reverse gap ("lock held, no record") is read as
+    /// "a monitor is running, identity unknown", which is the safe answer.
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.identity_path);
     }
@@ -173,7 +181,13 @@ pub fn identity_matches_live_process(identity: &RuntimeIdentity) -> bool {
         process::start_identity(identity.pid),
     ) {
         (Some(recorded), Some(current)) => *recorded == current,
-        // Without start identities on this platform, the held lock is the proof.
+        // Deliberately permissive. The remaining arms are "this platform has
+        // no start identities" and "the PID is alive but its start time could
+        // not be read" (macOS refuses `proc_pidinfo` across uids, and
+        // `is_alive` counts EPERM as alive). Answering `false` there would
+        // declare a live monitor dead on a transient read failure; the second
+        // monitor that followed would lose the lock race and exit 0, which
+        // launchd does not retry. The held lock is the proof instead.
         _ => true,
     }
 }

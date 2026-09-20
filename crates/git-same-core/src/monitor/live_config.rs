@@ -26,8 +26,21 @@ pub struct LiveConfig {
 
 impl LiveConfig {
     /// Wraps `config`, reloading from `path` when one is given.
+    ///
+    /// The caller loaded `config` at some earlier moment, so stamping the file
+    /// now would adopt a stamp that is newer than the snapshot: a write landing
+    /// in between would be invisible forever, and "I registered a workspace"
+    /// would never reach the monitor. The stamp is therefore taken *before*
+    /// re-reading, and the fresh read wins when it succeeds. Erring the other
+    /// way is safe: a stamp older than the snapshot costs one redundant reload.
     pub fn new(config: Config, path: Option<PathBuf>) -> Self {
         let stamp = path.as_deref().and_then(file_stamp);
+        let config = match path.as_deref() {
+            // A file that no longer parses is not a reason to refuse to start;
+            // the caller's already-validated copy stands in.
+            Some(path) => Config::load_from(path).unwrap_or(config),
+            None => config,
+        };
         Self {
             current: Arc::new(Mutex::new(Arc::new(config))),
             path,
