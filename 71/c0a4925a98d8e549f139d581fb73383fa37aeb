@@ -1,0 +1,39 @@
+toolkit/homebrew/cask.rb.tmpl
+  s_7c790b14a3bc6d::t_94fa284db13a58 27-45,51-59,69
+toolkit/packaging/darwin-entitlements.plist
+  s_7c790b14a3bc6d::t_94fa284db13a58 5-11
+crates/git-same-core/assets/com.zaai.git-same.monitor.plist
+  s_7c790b14a3bc6d::t_15a4d2a666e5de 24-25
+toolkit/packaging/macos/check-entitlements-parity.sh
+  s_7c790b14a3bc6d::t_94fa284db13a58 2-5,21-22,24,36-42,47,49-50,55-56,63-69
+.github/workflows/S3-Publish-Homebrew.yml
+  s_7c790b14a3bc6d::t_1fc3635c770255 42-59,75-102
+  s_7c790b14a3bc6d::t_065da53e0f708a 103
+toolkit/packaging/darwin-sign-and-notarize.sh
+  s_7c790b14a3bc6d::t_94fa284db13a58 16-18
+crates/git-same-core/src/macos/monitor_agent/plist.rs
+  s_7c790b14a3bc6d::t_15a4d2a666e5de 18,24-25
+.github/workflows/S1-Test-CI.yml
+  s_7c790b14a3bc6d::t_1fc3635c770255 136-157,161-166,299-301
+  s_7c790b14a3bc6d::t_65a3258dbe2220 302
+toolkit/homebrew/README.md
+  s_7c790b14a3bc6d::t_6208de1997a24e 43,79-95
+toolkit/packaging/release-checklist.md
+  s_7c790b14a3bc6d::t_409fa62527db4c 14,34,36-37,58-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "71c0a4925a98d8e549f139d581fb73383fa37aeb",
+  "prompts": {},
+  "sessions": {
+    "s_7c790b14a3bc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d42238-6b51-4397-820d-f2f6d964c946",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
