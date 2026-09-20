@@ -6,14 +6,21 @@
 //! in scan roots without a parent we are subscribed to. The full-scan
 //! cadence is controlled by `Options::interval` (in turn driven by the CLI
 //! `--interval` flag and `config.monitor.fullscan_interval_secs`).
+//!
+//! Startup order matters: the runtime lock is taken before anything is
+//! written or any existing socket is removed, so a second monitor can never
+//! steal the socket or race the status file. The socket is bound only after
+//! the initial scan, so "lock held, socket absent" means "starting".
 
 use crate::api::{AmbientUpgradeCache, OwnerTypeCache, RepoScanService};
 use crate::config::Config;
-use crate::errors::Result;
+use crate::errors::{MonitorAgentError, Result};
 use crate::git::ShellGit;
 use crate::ipc::status_file::ensure_legacy_symlinks;
 use crate::ipc::{IpcConfig, StatusFileWriter};
 use crate::monitor::incremental::rescan_and_merge;
+use crate::monitor::live_config::LiveConfig;
+use crate::monitor::runtime_guard::{AcquireError, MonitorMode, RuntimeGuard};
 use crate::output::Output;
 use crate::types::FinderStatus;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -30,6 +37,9 @@ use super::owner_classifier::spawn_owner_classifier;
 /// single `git commit` fires many .git/ writes) into one repo rescan.
 const FS_EVENT_DEBOUNCE: Duration = Duration::from_millis(750);
 
+/// Lower bound for the full-scan cadence so a zero in config cannot spin.
+const MIN_FULLSCAN_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Options for [`run`].
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -41,8 +51,45 @@ pub struct Options {
     pub ipc_config: IpcConfig,
 }
 
+/// How and from where this monitor process was started.
+///
+/// Kept separate from [`Options`] so that struct's public shape stays stable.
+#[derive(Debug, Clone)]
+pub struct RunContext {
+    /// Managed background service or a user-started foreground monitor.
+    pub mode: MonitorMode,
+    /// File the config was loaded from. When set, the monitor reloads it on
+    /// `REFRESH_ALL` and when it changes on disk.
+    pub config_path: Option<PathBuf>,
+    /// `true` when the cadence came from `--interval`; a reload then never
+    /// replaces it with the value from the file.
+    pub interval_explicit: bool,
+}
+
 /// Run the monitor loop until `shutdown` resolves.
+///
+/// Foreground monitor with a fixed configuration. See [`run_with`] for the
+/// managed service and for configuration reloading.
 pub async fn run<S>(config: &Config, output: &Output, opts: Options, shutdown: S) -> Result<()>
+where
+    S: Future<Output = ()>,
+{
+    let context = RunContext {
+        mode: MonitorMode::Foreground,
+        config_path: None,
+        interval_explicit: true,
+    };
+    run_with(config, output, opts, context, shutdown).await
+}
+
+/// Run the monitor loop with an explicit [`RunContext`].
+pub async fn run_with<S>(
+    config: &Config,
+    output: &Output,
+    opts: Options,
+    context: RunContext,
+    shutdown: S,
+) -> Result<()>
 where
     S: Future<Output = ()>,
 {
@@ -50,8 +97,25 @@ where
         interval,
         ipc_config,
     } = opts;
+    let managed = context.mode == MonitorMode::Managed;
 
     ipc_config.ensure_dir()?;
+
+    // Before writing status or touching the socket: become the only monitor.
+    let _guard = match RuntimeGuard::acquire(&ipc_config, context.mode) {
+        Ok(guard) => guard,
+        Err(AcquireError::Held(holder)) => {
+            return Err(MonitorAgentError::AlreadyRunning {
+                pid: holder.map(|identity| identity.pid),
+            }
+            .into());
+        }
+        Err(AcquireError::Io(e)) => {
+            return Err(
+                MonitorAgentError::io("Failed to acquire the monitor runtime lock", e).into(),
+            );
+        }
+    };
 
     if let Err(e) = ensure_legacy_symlinks(&ipc_config.dir) {
         warn!("Could not refresh legacy IPC symlinks: {}", e);
@@ -60,19 +124,33 @@ where
     info!("Starting git-same monitor");
     output.info("Starting git-same monitor...");
 
+    let live = LiveConfig::new(config.clone(), context.config_path.clone());
     let status_writer = StatusFileWriter::new(ipc_config.status_file_path());
     let git = ShellGit::new();
 
     let owner_types = OwnerTypeCache::load(OwnerTypeCache::default_path(&ipc_config.dir));
     let ambient_upgrades = AmbientUpgradeCache::new();
-    let service = RepoScanService::new(&git, config)
-        .with_owner_types(owner_types.clone())
-        .with_ambient_upgrades(ambient_upgrades.clone());
-    spawn_owner_classifier(config.clone(), owner_types);
+    spawn_owner_classifier(config.clone(), owner_types.clone());
 
     let pid = std::process::id();
+    let scan = |config: &Config| {
+        RepoScanService::new(&git, config)
+            .with_owner_types(owner_types.clone())
+            .with_ambient_upgrades(ambient_upgrades.clone())
+            .scan_all(pid)
+    };
 
-    let initial_status = service.scan_all(pid)?;
+    let initial_status = match scan(&live.snapshot()) {
+        Ok(status) => status,
+        // Under launchd a nonzero exit means "restart me": a persistently
+        // failing scan (for example a permission denial) would loop forever.
+        // Stay up with an empty status and let the periodic scan retry.
+        Err(e) if managed => {
+            error!(error = %e, "Initial scan failed; retrying on the next full scan");
+            FinderStatus::new(pid, chrono::Utc::now().to_rfc3339())
+        }
+        Err(e) => return Err(e),
+    };
     status_writer.write(&initial_status)?;
     let ambient_count = initial_status
         .repos
@@ -94,121 +172,188 @@ where
         ipc_config.status_file_path().display()
     ));
 
-    let watched_roots = collect_watched_roots(config, &initial_status);
-    reapply_workspace_folder_icons(config, &initial_status);
+    reapply_workspace_folder_icons(&live.snapshot(), &initial_status);
+    let mut watched_roots = collect_watched_roots(&live.snapshot(), &initial_status);
     let shared_status = Arc::new(Mutex::new(initial_status));
 
     #[cfg(unix)]
     let socket_listener = crate::ipc::UnixSocketListener::new(ipc_config.socket_path());
     #[cfg(unix)]
     let tokio_listener = socket_listener.bind().await?;
+    #[cfg(not(unix))]
+    let tokio_listener = ();
 
     let (fs_tx, mut fs_rx) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
-    let _watcher = match start_filesystem_watcher(&watched_roots, fs_tx) {
-        Ok(watcher) => Some(watcher),
-        Err(e) => {
-            warn!(error = %e, "Filesystem watcher failed to start; monitor will only respond to REFRESH commands");
-            None
-        }
-    };
+    let mut watcher = start_watcher_or_warn(&watched_roots, fs_tx.clone());
+    // Socket tasks report a reload here so the loop can rebuild what it owns.
+    let (reload_tx, mut reload_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     let mut pending: HashSet<PathBuf> = HashSet::new();
+    let mut interval = interval.max(MIN_FULLSCAN_INTERVAL);
+    // A deadline, not a per-iteration sleep: a steady stream of filesystem
+    // events must not postpone the safety-net scan forever.
+    let mut next_full_scan = tokio::time::Instant::now() + interval;
 
     tokio::pin!(shutdown);
 
     loop {
         let debounce_active = !pending.is_empty();
+        let mut config_changed = false;
 
-        #[cfg(unix)]
-        {
-            tokio::select! {
-                _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
-                    flush_pending(&service, &shared_status, &status_writer, &ambient_upgrades, &mut pending);
-                },
-                _ = tokio::time::sleep(interval) => {
-                    debug!("Safety-net full scan");
-                    match service.scan_all(pid) {
-                        Ok(new_status) => {
-                            reapply_workspace_folder_icons(config, &new_status);
-                            let mut status = shared_status.lock().expect("status mutex poisoned");
-                            *status = new_status;
-                            if let Err(e) = status_writer.write(&status) {
-                                error!(error = %e, "Failed to write status file after full scan");
-                            } else {
-                                debug!(repos = status.repos.len(), "Full scan complete");
-                            }
-                        }
-                        Err(e) => {
-                            error!(error = %e, "Full scan failed");
-                        }
-                    }
-                },
-                Some(repo_path) = fs_rx.recv() => {
-                    pending.insert(repo_path);
-                },
-                result = tokio_listener.accept() => {
-                    match result {
-                        Ok((stream, _)) => {
-                            let config_clone = config.clone();
-                            let writer_path = status_writer.path().to_path_buf();
-                            let owner_clone = service.owner_types_clone();
-                            let ambient_clone = service.ambient_upgrades_clone();
-                            let status_clone = shared_status.clone();
-                            tokio::spawn(async move {
-                                super::socket_handler::handle_socket_connection(
-                                    stream,
-                                    &config_clone,
-                                    pid,
-                                    &writer_path,
-                                    status_clone,
-                                    owner_clone,
-                                    ambient_clone,
-                                ).await;
-                            });
-                        }
-                        Err(e) => {
-                            warn!(error = %e, "Failed to accept socket connection");
-                        }
-                    }
-                },
-                _ = &mut shutdown => {
-                    info!("Monitor shutting down");
-                    output.info("Monitor shutting down...");
-                    socket_listener.cleanup();
-                    break;
-                },
-            }
-        }
-
-        #[cfg(not(unix))]
-        {
-            tokio::select! {
-                _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
-                    flush_pending(&service, &shared_status, &status_writer, &ambient_upgrades, &mut pending);
-                },
-                _ = tokio::time::sleep(interval) => {
-                    debug!("Safety-net full scan");
-                    if let Ok(new_status) = service.scan_all(pid) {
-                        reapply_workspace_folder_icons(config, &new_status);
+        tokio::select! {
+            _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
+                let config = live.snapshot();
+                let service = RepoScanService::new(&git, &config)
+                    .with_owner_types(owner_types.clone())
+                    .with_ambient_upgrades(ambient_upgrades.clone());
+                flush_pending(&service, &shared_status, &status_writer, &ambient_upgrades, &mut pending);
+            },
+            _ = tokio::time::sleep_until(next_full_scan) => {
+                debug!("Safety-net full scan");
+                config_changed = live.reload_if_changed();
+                let config = live.snapshot();
+                match scan(&config) {
+                    Ok(new_status) => {
+                        reapply_workspace_folder_icons(&config, &new_status);
                         let mut status = shared_status.lock().expect("status mutex poisoned");
                         *status = new_status;
-                        let _ = status_writer.write(&status);
+                        if let Err(e) = status_writer.write(&status) {
+                            error!(error = %e, "Failed to write status file after full scan");
+                        } else {
+                            debug!(repos = status.repos.len(), "Full scan complete");
+                        }
                     }
-                },
-                Some(repo_path) = fs_rx.recv() => {
-                    pending.insert(repo_path);
-                },
-                _ = &mut shutdown => {
-                    info!("Monitor shutting down");
-                    output.info("Monitor shutting down...");
-                    break;
-                },
+                    Err(e) => {
+                        error!(error = %e, "Full scan failed");
+                    }
+                }
+                next_full_scan = tokio::time::Instant::now() + interval;
+            },
+            Some(repo_path) = fs_rx.recv() => {
+                pending.insert(repo_path);
+            },
+            Some(()) = reload_rx.recv() => {
+                config_changed = true;
+            },
+            connection = next_connection(&tokio_listener) => {
+                serve_connection(
+                    connection,
+                    ConnectionState {
+                        live: live.clone(),
+                        reload_tx: reload_tx.clone(),
+                        pid,
+                        status_path: status_writer.path().to_path_buf(),
+                        shared_status: shared_status.clone(),
+                        owner_types: owner_types.clone(),
+                        ambient_upgrades: ambient_upgrades.clone(),
+                    },
+                );
+            },
+            _ = &mut shutdown => {
+                info!("Monitor shutting down");
+                output.info("Monitor shutting down...");
+                #[cfg(unix)]
+                socket_listener.cleanup();
+                break;
+            },
+        }
+
+        if config_changed {
+            let config = live.snapshot();
+            let status = shared_status.lock().expect("status mutex poisoned").clone();
+            let roots = collect_watched_roots(&config, &status);
+            if roots != watched_roots {
+                info!(
+                    roots = roots.len(),
+                    "Watched roots changed; restarting the filesystem watcher"
+                );
+                watched_roots = roots;
+                watcher = start_watcher_or_warn(&watched_roots, fs_tx.clone());
             }
+            if !context.interval_explicit {
+                let configured = Duration::from_secs(config.monitor.fullscan_interval_secs)
+                    .max(MIN_FULLSCAN_INTERVAL);
+                if configured != interval {
+                    interval = configured;
+                    next_full_scan = tokio::time::Instant::now() + interval;
+                }
+            }
+            // Cheap when nothing is missing: the classifier returns early.
+            spawn_owner_classifier((*config).clone(), owner_types.clone());
         }
     }
 
-    let _ = ambient_upgrades;
+    drop(watcher);
     Ok(())
+}
+
+/// Everything a socket task needs, cloned out of the loop.
+struct ConnectionState {
+    live: LiveConfig,
+    reload_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    pid: u32,
+    status_path: PathBuf,
+    shared_status: Arc<Mutex<FinderStatus>>,
+    owner_types: OwnerTypeCache,
+    ambient_upgrades: AmbientUpgradeCache,
+}
+
+#[cfg(unix)]
+type Connection = std::io::Result<tokio::net::UnixStream>;
+#[cfg(not(unix))]
+type Connection = std::convert::Infallible;
+
+#[cfg(unix)]
+async fn next_connection(listener: &tokio::net::UnixListener) -> Connection {
+    listener.accept().await.map(|(stream, _)| stream)
+}
+
+/// No socket on this platform: never resolves.
+#[cfg(not(unix))]
+async fn next_connection(_listener: &()) -> Connection {
+    std::future::pending().await
+}
+
+#[cfg(unix)]
+fn serve_connection(connection: Connection, state: ConnectionState) {
+    let stream = match connection {
+        Ok(stream) => stream,
+        Err(e) => {
+            warn!(error = %e, "Failed to accept socket connection");
+            return;
+        }
+    };
+    tokio::spawn(async move {
+        super::socket_handler::handle_socket_connection(
+            stream,
+            &state.live,
+            &state.reload_tx,
+            state.pid,
+            &state.status_path,
+            state.shared_status,
+            Some(state.owner_types),
+            Some(state.ambient_upgrades),
+        )
+        .await;
+    });
+}
+
+#[cfg(not(unix))]
+fn serve_connection(connection: Connection, _state: ConnectionState) {
+    match connection {}
+}
+
+fn start_watcher_or_warn(
+    roots: &[PathBuf],
+    tx: tokio::sync::mpsc::UnboundedSender<PathBuf>,
+) -> Option<RecommendedWatcher> {
+    match start_filesystem_watcher(roots, tx) {
+        Ok(watcher) => Some(watcher),
+        Err(e) => {
+            warn!(error = %e, "Filesystem watcher failed to start; monitor will only respond to REFRESH commands");
+            None
+        }
+    }
 }
 
 fn flush_pending(

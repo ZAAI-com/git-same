@@ -40,6 +40,9 @@ tokio-test = "0.4"
 mockito = "1"
 tempfile = "3"
 notify = "8"
+sha2 = "0.10"
+toml_edit = "0.25"
+libc = "0.2"
 
 [profile.release]
 strip = true

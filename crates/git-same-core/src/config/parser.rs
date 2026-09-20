@@ -56,12 +56,17 @@ pub struct MonitorConfig {
     /// Seconds between full rescans. The CLI flag `--interval` overrides this.
     #[serde(default = "default_fullscan_interval_secs")]
     pub fullscan_interval_secs: u64,
+    /// Whether the managed background monitor may start automatically.
+    /// `gisa monitor --stop` persists `false`; `--start` persists `true`.
+    #[serde(default = "default_true")]
+    pub autostart: bool,
 }
 
 impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
             fullscan_interval_secs: default_fullscan_interval_secs(),
+            autostart: true,
         }
     }
 }
@@ -425,6 +430,10 @@ exclude_dirs = [
 ]
 
 [monitor]
+# Start the background monitor automatically (at login, after installs, and
+# when the app or CLI notices it stopped). `gisa monitor --stop` sets this to
+# false; `gisa monitor --start` sets it back to true.
+autostart = true
 # Seconds between full rescans by the background monitor. The CLI flag
 # `gisa monitor --interval N` overrides this when set explicitly.
 fullscan_interval_secs = 30
@@ -433,7 +442,7 @@ fullscan_interval_secs = 30
 # Paint the Git-Same logo onto each workspace root folder so Finder shows it
 # in the sidebar, column, list, icon, and Get Info views (similar to how
 # Synology Drive marks its synced folders). Stripped automatically on
-# `gisa reset`. macOS only — the flag is parsed but ignored on Linux/Windows.
+# `gisa reset`. macOS only: the flag is parsed but ignored on Linux/Windows.
 custom_folder_icon = true
 "#
     }

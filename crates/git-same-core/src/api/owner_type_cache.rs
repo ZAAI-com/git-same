@@ -64,16 +64,11 @@ impl OwnerTypeCache {
     }
 
     fn persist(&self) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let snapshot: HashMap<String, OwnerType> =
             self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        let tmp = self.path.with_extension("json.tmp");
         let data = serde_json::to_vec_pretty(&snapshot)
             .map_err(|e| std::io::Error::other(format!("serialize cache: {e}")))?;
-        std::fs::write(&tmp, data)?;
-        std::fs::rename(&tmp, &self.path)?;
+        crate::fsutil::atomic_write(&self.path, &data, None)?;
         Ok(())
     }
 

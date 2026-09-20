@@ -10,6 +10,7 @@
 //! concurrency = 4
 //! ```
 
+pub mod edit;
 mod parser;
 mod provider_config;
 pub mod workspace;

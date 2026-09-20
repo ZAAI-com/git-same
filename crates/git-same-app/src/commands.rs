@@ -8,9 +8,10 @@ use git_same_core::config::{
 };
 use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
-use git_same_core::errors::AppError;
+use git_same_core::errors::{AppError, MonitorAgentError};
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::macos::folder_icon;
+use git_same_core::macos::monitor_agent::{self, MonitorAgentStatus};
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
 use git_same_core::setup::{authenticate_provider, discover_org_entries};
@@ -20,10 +21,8 @@ use git_same_core::workflows::sync_workspace::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -34,9 +33,6 @@ const DAEMON_STALE_AFTER_SECS: u64 = 90;
 // available on every platform for the colocated parser tests.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.badges";
-const MONITOR_LAUNCH_AGENT_LABEL: &str = "com.zaai.git-same.monitor";
-const MONITOR_LAUNCH_AGENT_FILE: &str = "com.zaai.git-same.monitor.plist";
-const MONITOR_PLIST_TEMPLATE: &str = include_str!("../../../macos/com.zaai.git-same.monitor.plist");
 
 #[cfg(test)]
 #[path = "commands_tests.rs"]
@@ -217,17 +213,9 @@ pub struct ExtensionStatus {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MonitorLaunchAgentStatusDto {
-    pub label: String,
-    pub plist_path: String,
-    pub binary_path: Option<String>,
-    pub installed: bool,
-    pub loaded: bool,
-    pub running: bool,
-    pub state: String,
-    pub message: String,
-}
+/// Service status of the managed monitor. The lifecycle lives in
+/// `git_same_core::macos::monitor_agent`; this crate only adapts it.
+pub type MonitorLaunchAgentStatusDto = MonitorAgentStatus;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncProgressPayload {
@@ -532,239 +520,23 @@ pub fn open_url(url: String) -> Result<(), String> {
     }
 }
 
+/// Off macOS there is no managed service: report that instead of failing so
+/// the requirement checks and the UI can render a definite state.
 fn monitor_launch_agent_status_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    let installed = plist_path.exists();
-    let binary_path = monitor_binary_path().ok();
-    let launchctl = launchctl_print_monitor();
-    let loaded = launchctl
-        .as_ref()
-        .is_ok_and(|output| output.status.success());
-    let stdout = launchctl
-        .as_ref()
-        .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-        .unwrap_or_default();
-    let running = loaded && launchctl_output_has_pid(&stdout);
-    let state = monitor_agent_state(installed, loaded, running);
-    Ok(MonitorLaunchAgentStatusDto {
-        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
-        plist_path: plist_path.display().to_string(),
-        binary_path: binary_path.map(|path| path.display().to_string()),
-        installed,
-        loaded,
-        running,
-        message: monitor_agent_message(&state),
-        state,
-    })
+    match monitor_agent::controller_for_current_user(false) {
+        Ok(controller) => Ok(controller.inspect()?),
+        Err(MonitorAgentError::Unsupported) => Ok(MonitorAgentStatus::unsupported()),
+        Err(error) => Err(error.into()),
+    }
 }
 
+/// Compatibility name: "install" is an explicit Start.
 fn install_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    let binary_path = monitor_binary_path()?;
-    let rendered = render_monitor_plist(&binary_path)?;
-    if let Some(parent) = plist_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            AppError::path(format!(
-                "Failed to create LaunchAgents directory '{}': {error}",
-                parent.display()
-            ))
-        })?;
-    }
-    fs::write(&plist_path, rendered).map_err(|error| {
-        AppError::path(format!(
-            "Failed to write LaunchAgent '{}': {error}",
-            plist_path.display()
-        ))
-    })?;
-    restart_monitor_launch_agent_inner()
+    Ok(monitor_agent::controller_for_current_user(false)?.start()?)
 }
 
 fn restart_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    if !plist_path.exists() {
-        return install_monitor_launch_agent_inner();
-    }
-    let domain = launchctl_domain();
-    let service = format!("{domain}/{MONITOR_LAUNCH_AGENT_LABEL}");
-    let plist_arg = plist_path.display().to_string();
-    let _ = Command::new("/bin/launchctl")
-        .args(["bootout", &domain, &plist_arg])
-        .output();
-    run_launchctl(&["bootstrap", &domain, &plist_arg])?;
-    run_launchctl(&["kickstart", "-k", &service])?;
-    monitor_launch_agent_status_inner()
-}
-
-fn monitor_launch_agent_path() -> Result<PathBuf, AppError> {
-    let home = env::var_os("HOME")
-        .ok_or_else(|| AppError::config("HOME is not set; cannot resolve LaunchAgents path"))?;
-    Ok(PathBuf::from(home)
-        .join("Library")
-        .join("LaunchAgents")
-        .join(MONITOR_LAUNCH_AGENT_FILE))
-}
-
-fn monitor_binary_path() -> Result<PathBuf, AppError> {
-    for candidate in monitor_binary_candidates() {
-        if candidate.is_file() && is_executable(&candidate) {
-            return Ok(candidate);
-        }
-    }
-    Err(AppError::config(
-        "Could not find an executable git-same binary for the monitor LaunchAgent",
-    ))
-}
-
-fn monitor_binary_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(exe) = env::current_exe() {
-        if let Some(contents) = exe.ancestors().find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name == "Contents")
-        }) {
-            candidates.push(contents.join("Helpers").join("git-same"));
-        }
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("git-same"));
-        }
-    }
-    if let Some(home) = env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        candidates.push(home.join(".cargo/bin/git-same"));
-        candidates.push(home.join(".cargo/bin/gisa"));
-    }
-    if let Some(path) = find_on_path("git-same") {
-        candidates.push(path);
-    }
-    if let Some(path) = find_on_path("gisa") {
-        candidates.push(path);
-    }
-    dedupe_paths(candidates)
-}
-
-fn render_monitor_plist(binary_path: &Path) -> Result<String, AppError> {
-    if !binary_path.is_file() || !is_executable(binary_path) {
-        return Err(AppError::config(format!(
-            "Monitor binary is not executable: {}",
-            binary_path.display()
-        )));
-    }
-    Ok(MONITOR_PLIST_TEMPLATE.replace(
-        "__GIT_SAME_MONITOR_BINARY__",
-        &escape_xml(&binary_path.display().to_string()),
-    ))
-}
-
-fn escape_xml(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn is_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path)
-            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
-}
-
-fn find_on_path(binary: &str) -> Option<PathBuf> {
-    let paths = env::var_os("PATH")?;
-    env::split_paths(&paths)
-        .map(|dir| dir.join(binary))
-        .find(|path| path.is_file() && is_executable(path))
-}
-
-fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut deduped = Vec::new();
-    for path in paths {
-        if !deduped.iter().any(|existing| existing == &path) {
-            deduped.push(path);
-        }
-    }
-    deduped
-}
-
-fn launchctl_print_monitor() -> std::io::Result<std::process::Output> {
-    Command::new("/bin/launchctl")
-        .args([
-            "print",
-            &format!("{}/{}", launchctl_domain(), MONITOR_LAUNCH_AGENT_LABEL),
-        ])
-        .output()
-}
-
-fn run_launchctl(args: &[&str]) -> Result<(), AppError> {
-    let output = Command::new("/bin/launchctl")
-        .args(args)
-        .output()
-        .map_err(|error| AppError::config(format!("launchctl failed to start: {error}")))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Err(AppError::config(format!(
-        "launchctl {} failed: {}{}",
-        args.join(" "),
-        stdout,
-        stderr
-    )))
-}
-
-fn launchctl_domain() -> String {
-    let uid = Command::new("/usr/bin/id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|output| output.status.success().then_some(output.stdout))
-        .and_then(|stdout| String::from_utf8(stdout).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "0".to_string());
-    format!("gui/{uid}")
-}
-
-fn launchctl_output_has_pid(output: &str) -> bool {
-    output.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with("pid = ") || trimmed.starts_with("pid =")
-    })
-}
-
-fn monitor_agent_state(installed: bool, loaded: bool, running: bool) -> String {
-    if !installed {
-        "missing_plist"
-    } else if !loaded {
-        "not_loaded"
-    } else if !running {
-        "not_running"
-    } else {
-        "running"
-    }
-    .to_string()
-}
-
-fn monitor_agent_message(state: &str) -> String {
-    match state {
-        "missing_plist" => "LaunchAgent plist is missing".to_string(),
-        "not_loaded" => "LaunchAgent is installed but not loaded".to_string(),
-        "not_running" => "LaunchAgent is loaded but the monitor is not running".to_string(),
-        "running" => "Monitor LaunchAgent is running".to_string(),
-        _ => "Unknown monitor LaunchAgent state".to_string(),
-    }
+    Ok(monitor_agent::controller_for_current_user(false)?.restart()?)
 }
 
 // `pluginkit -m -v -i <id>` prints one line per plugin matching the id, or
@@ -1267,7 +1039,7 @@ fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError
     let monitor_alive = if writer.exists() {
         writer
             .read()
-            .map(|status| is_process_alive(status.daemon_pid))
+            .map(|status| git_same_core::monitor::process::is_alive(status.daemon_pid))
             .unwrap_or(false)
     } else {
         false
@@ -1366,33 +1138,6 @@ fn clean_string_list(values: Vec<String>) -> Vec<String> {
 fn system_time_to_rfc3339(time: SystemTime) -> String {
     let datetime: chrono::DateTime<chrono::Utc> = time.into();
     datetime.to_rfc3339()
-}
-
-fn is_process_alive(pid: u32) -> bool {
-    // A live process has a positive PID that fits in pid_t (i32). Reject 0 and
-    // anything above i32::MAX: u32::MAX would reach `kill` as -1 and be treated
-    // as a process-group/broadcast target, returning success on Linux and
-    // falsely reporting the monitor alive.
-    if pid == 0 || pid > i32::MAX as u32 {
-        return false;
-    }
-
-    #[cfg(unix)]
-    {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        true
-    }
 }
 
 fn error_string(error: impl std::fmt::Display) -> String {

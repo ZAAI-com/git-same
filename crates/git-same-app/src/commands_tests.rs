@@ -103,57 +103,10 @@ fn workspace_input(root: &std::path::Path) -> WorkspaceInput {
 }
 
 #[test]
-fn render_monitor_plist_replaces_binary_placeholder() {
-    let temp = TestDir::new("monitor-plist");
-    let binary = temp.path().join("git-same");
-    std::fs::write(&binary, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&binary, permissions).unwrap();
-    }
-
-    let rendered = render_monitor_plist(&binary).unwrap();
-
-    assert!(rendered.contains(&binary.display().to_string()));
-    assert!(!rendered.contains("__GIT_SAME_MONITOR_BINARY__"));
-    assert!(rendered.contains("com.zaai.git-same.monitor"));
-}
-
-// Executability is a Unix permission concept; is_executable() treats every
-// existing file as runnable on non-Unix, so this rejection only applies there.
-#[cfg(unix)]
-#[test]
-fn render_monitor_plist_rejects_non_executable_binary() {
-    let temp = TestDir::new("monitor-plist-invalid");
-    let binary = temp.path().join("git-same");
-    std::fs::write(&binary, "").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o644);
-        std::fs::set_permissions(&binary, permissions).unwrap();
-    }
-
-    let error = render_monitor_plist(&binary).unwrap_err().to_string();
-
-    assert!(error.contains("not executable"));
-}
-
-#[test]
 fn monitor_requirement_message_distinguishes_missing_plist() {
     let agent = MonitorLaunchAgentStatusDto {
-        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
         plist_path: "/tmp/missing.plist".to_string(),
-        binary_path: None,
-        installed: false,
-        loaded: false,
-        running: false,
-        state: "missing_plist".to_string(),
-        message: "LaunchAgent plist is missing".to_string(),
+        ..MonitorAgentStatus::unsupported()
     };
 
     assert_eq!(

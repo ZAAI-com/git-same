@@ -16,6 +16,7 @@ pub mod config;
 pub mod discovery;
 pub mod domain;
 pub mod errors;
+pub mod fsutil;
 pub mod git;
 #[deprecated(
     since = "3.2.0",

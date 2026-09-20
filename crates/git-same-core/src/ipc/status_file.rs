@@ -30,33 +30,9 @@ impl StatusFileWriter {
         let json = serde_json::to_string_pretty(status)
             .map_err(|e| AppError::config(format!("Failed to serialize finder status: {}", e)))?;
 
-        let temp_path = self.path.with_extension("json.tmp");
-
-        // Ensure parent directory exists
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::path(format!(
-                    "Failed to create directory '{}': {}",
-                    parent.display(),
-                    e
-                ))
-            })?;
-        }
-
-        // Write to temp file
-        std::fs::write(&temp_path, &json).map_err(|e| {
+        crate::fsutil::atomic_write(&self.path, json.as_bytes(), None).map_err(|e| {
             AppError::path(format!(
-                "Failed to write temp status file '{}': {}",
-                temp_path.display(),
-                e
-            ))
-        })?;
-
-        // Atomic rename
-        std::fs::rename(&temp_path, &self.path).map_err(|e| {
-            AppError::path(format!(
-                "Failed to rename '{}' → '{}': {}",
-                temp_path.display(),
+                "Failed to write status file '{}': {}",
                 self.path.display(),
                 e
             ))

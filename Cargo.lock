@@ -1641,6 +1641,7 @@ dependencies = [
  "directories",
  "futures",
  "indicatif",
+ "libc",
  "mockito",
  "notify",
  "objc2",
@@ -1649,12 +1650,14 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "shellexpand",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-test",
  "toml 1.1.6+spec-1.1.0",
+ "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
 ]
@@ -5409,6 +5412,7 @@ dependencies = [
  "indexmap 2.14.2",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.4",
 ]
 
