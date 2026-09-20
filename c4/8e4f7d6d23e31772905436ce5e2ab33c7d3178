@@ -1,0 +1,32 @@
+crates/git-same-core/src/fsutil.rs
+  s_463afe401e0e52::t_97ef634a130f99 40-42
+  s_463afe401e0e52::t_7b5936c13fb3fa 38-39,47-49,55-56,66-91,93-96,110-114,116-119,124-128,132-166
+  s_463afe401e0e52::t_706ba7955aa306 92
+  s_463afe401e0e52::t_1300c82837c311 167
+Cargo.toml
+  s_463afe401e0e52::t_7b5936c13fb3fa 46
+crates/git-same-core/Cargo.toml
+  s_463afe401e0e52::t_7b5936c13fb3fa 46-48
+crates/git-same-core/src/fsutil_tests.rs
+  s_463afe401e0e52::t_7b5936c13fb3fa 12-13,16-24,58-66,71-73,75-76,78-82,87-99,104-108
+  s_463afe401e0e52::t_00c046beec9a87 14-15
+  s_463afe401e0e52::t_97ef634a130f99 67-70,83-86,100-103
+Cargo.lock
+  s_463afe401e0e52::t_a7158e182b87a2 1664
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c48e4f7d6d23e31772905436ce5e2ab33c7d3178",
+  "prompts": {},
+  "sessions": {
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
