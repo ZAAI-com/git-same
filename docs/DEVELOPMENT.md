@@ -41,6 +41,15 @@ include_forks = false
 
 # Filter by organizations (empty = all)
 orgs = []
+
+[monitor]
+# Start the background monitor automatically (macOS). `gisa monitor --stop`
+# sets this to false and `gisa monitor --start` back to true; edit it through
+# those commands rather than by hand.
+autostart = true
+# Seconds between full rescans. `gisa monitor --interval N` overrides it for
+# a foreground run. A running monitor picks up changes without a restart.
+fullscan_interval_secs = 30
 ```
 
 Provider and workspace-specific settings are stored inside each workspace at
@@ -68,7 +77,7 @@ cargo build --workspace
 cargo build --release --workspace
 ```
 
-The repository is a Cargo workspace with two member crates: `git-same-core` (engine library, `crates/git-same-core/`) and `git-same` (the CLI binary + TUI, `crates/git-same-cli/` on disk). The release binary is output at the workspace level: `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
+The repository is a Cargo workspace with three member crates: `git-same-core` (engine library, `crates/git-same-core/`), `git-same` (the CLI binary + TUI, `crates/git-same-cli/` on disk), and `git-same-app` (the Tauri desktop app, `crates/git-same-app/`). The release binary is output at the workspace level: `target/release/git-same` (or `target/debug/git-same`). Alias symlinks are created by the install scripts, not by Cargo.
 
 ## Running the macOS App in development
 
@@ -137,9 +146,20 @@ cargo build --release
 cargo clean && cargo build --release
 ```
 
+## Developing without touching your own monitor
+
+Routine tests can never reach launchd: the lifecycle controller runs against a scripted fake, explicit controls refuse a redirected `HOME`, `GIT_SAME_CONFIG_DIR`, or `--config`, CLI integration tests set `GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, and automatic hooks live only in the command dispatcher, which no unit test calls. Automatic recovery also refuses to install a binary from a cargo `target/` directory.
+
+`toolkit/conductor/run.sh` exports `GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, so the dev app never manages your real monitor. To exercise the lifecycle deliberately, set `GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART=1` or run `gisa monitor --start` from the dev build; `archive.sh` then removes only a monitor that was installed from that worktree. Real launchd and Homebrew scenarios belong in a disposable macOS account or VM (see `toolkit/packaging/release-checklist.md`, section 8).
+
 ## Uninstalling
 
+On macOS, remove the background monitor first. Package managers do not do it for you: `cargo uninstall` (or `brew uninstall git-same-cli`) only deletes the CLI, while the monitor is an independent helper copy that keeps running.
+
 ```bash
+# macOS: stop and remove the background monitor (keeps repos, config, logs)
+gisa monitor --uninstall
+
 # Remove binaries
 cargo uninstall git-same
 

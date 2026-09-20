@@ -32,7 +32,7 @@ Mirror your GitHub org structure to the local filesystem: parallel clone, increm
 +--------------------------------------+------------+------------------------------------+
 ```
 
-One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes. On macOS, the cask also installs `Git-Same.app`, FinderSync badges, and a monitor LaunchAgent so workspace status is visible in Finder.
+One command discovers every repo across your GitHub orgs and mirrors them locally, cloning new repos in parallel, fetching updates for existing ones, and skipping repos with uncommitted changes. On macOS, the cask also installs `Git-Same.app`, FinderSync badges, and a background monitor (started during installation) so workspace status is visible in Finder.
 
 ## Installation
 
@@ -190,19 +190,48 @@ git-same reset [-f | --force]
 
 ### `git-same monitor`
 
-Run the status monitor used by the macOS Finder extension and app:
+Run, control, or inspect the status monitor used by the macOS Finder extension and app:
 
 ```bash
 git-same monitor [OPTIONS]
 
 Options:
-      --foreground       Legacy flag; the monitor runs in the foreground today
-      --interval <SECS>  Polling interval, overriding config.toml
-      --status           Show monitor status
-      --stop             Stop a running monitor
+      --status           Show state, PID, and last scan (works without a config)
+      --start            Enable and start the background monitor (macOS)
+      --stop             Stop monitoring and keep it stopped until the next --start
+      --uninstall        Stop and remove the background monitor (macOS)
+      --foreground       Run in the foreground (the default without a control flag)
+      --interval <SECS>  Foreground full-scan interval, overriding config.toml
 ```
 
-The Homebrew cask installs a LaunchAgent that runs the monitor for you. Non-cask installs can run `git-same monitor` directly when Finder badge or app status updates are needed. The older `daemon` subcommand remains as a compatibility alias.
+The control flags are mutually exclusive, and `--interval` applies only to foreground runs. `--config` is rejected for the control flags: the background monitor always uses the default configuration. The older `daemon` subcommand remains as a compatibility alias.
+
+**The background monitor on macOS.** Monitoring runs as a separate helper under a per-user LaunchAgent, independent of `Git-Same.app`: closing the app does not stop it, and it starts again at every login.
+
+| Install method | When the monitor is set up |
+|---|---|
+| Homebrew cask | During `brew install` / `brew upgrade`, without opening the app |
+| App from the DMG | On first launch of `Git-Same.app` |
+| Homebrew formula, `cargo install`, downloaded CLI | On the first `gisa sync`, `gisa refresh`, `gisa init`, `gisa setup`, `gisa scan --register`, or TUI launch |
+
+After that, the app and those same CLI commands check on it and start it again if it stopped unexpectedly. A healthy monitor is never restarted. Read-only commands (`status`, `workspace`, `scan` without `--register`, `sync --dry-run`) and anything run with `--config` never touch the service. Set `GIT_SAME_DISABLE_MONITOR_AUTOSTART=1` to suppress this automatic management entirely; explicit `--start` / `--stop` still work.
+
+**Stop means stop.** `gisa monitor --stop` (or Stop in the app) is remembered as `[monitor] autostart = false` and in launchd. App launches, CLI use, upgrades, logins, and restarts all leave monitoring off until you run `gisa monitor --start` or press Start. Saving settings in the app never changes this. `gisa reset` of the global configuration stops monitoring first.
+
+**The first scan.** While the monitor performs its initial scan, `--status` and the app report `starting`. Large workspaces can take a few minutes; nothing restarts it meanwhile, and `gisa refresh` reports that the initial scan is in progress instead of failing. Finder badges additionally need the Git-Same Badges extension enabled, and show current data once that first scan completes.
+
+**Where things live.**
+
+| What | Path |
+|---|---|
+| Helper and install record | `~/Library/Application Support/com.zaai.git-same/monitor/` |
+| LaunchAgent | `~/Library/LaunchAgents/com.zaai.git-same.monitor.plist` |
+| Logs | `~/Library/Logs/git-same/monitor.log` and `monitor.err.log` |
+| Status and socket | `~/Library/Group Containers/group.57KL6Y7V32.com.zaai.git-same/` |
+
+**Headless sessions.** Over SSH with no desktop login, the monitor is installed and reported as `deferred`; it starts at the next login. `gisa monitor` in the foreground works without a desktop session. Linux and Windows have no background service: run `gisa monitor` yourself.
+
+**Recovery.** `gisa monitor --status` shows the state and any error detail. `gisa monitor --start` repairs a missing helper or LaunchAgent; an interrupted install is rolled back automatically by the next command. `gisa monitor --uninstall` removes the helper and LaunchAgent but keeps repositories, configuration, and logs. If `brew uninstall --cask git-same` fails because its Caskroom directory was deleted by hand, run `brew uninstall --force --cask git-same` and then `gisa monitor --uninstall`.
 
 ### `git-same refresh`
 
@@ -247,9 +276,10 @@ The cask installs `Git-Same.app`, the CLI aliases, a FinderSync badge extension,
 Useful checks:
 
 ```bash
-gisa monitor --status   # Check whether the monitor is running
+gisa monitor --status   # State, PID, last scan, and any error detail
 gisa refresh            # Force an immediate status refresh
-gisa monitor --stop     # Stop a running monitor
+gisa monitor --start    # Start (or repair) the background monitor
+gisa monitor --stop     # Stop monitoring until the next --start
 ```
 
 If Finder reserves badge space but no Git-Same badges render, check System Settings -> Login Items & Extensions. Google Drive's FinderSync extension can prevent peer badge images from appearing; disabling Google Drive's Finder extension has been the confirmed workaround in affected environments.
