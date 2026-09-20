@@ -1,0 +1,77 @@
+crates/git-same-app/ui/package.json
+  s_7c790b14a3bc6d::t_7767af06758a1b 10-11,25-26
+crates/git-same-app/ui/src/stores/status.ts
+  s_7c790b14a3bc6d::t_7b08403b793815 2,136,138-139,143-144
+crates/git-same-app/ui/src/lib/types.ts
+  s_7c790b14a3bc6d::t_ba827c621fa2e0 37-42
+  s_7c790b14a3bc6d::t_35a4cde172d34e 60-64,118-132,139,141-153
+crates/git-same-app/ui/src/App.svelte
+  s_7c790b14a3bc6d::t_7b08403b793815 7,12,17-18,20-21,32
+crates/git-same-app/src/commands_tests.rs
+  s_7c790b14a3bc6d::t_ceed42ad052086 105-108,110-111,113-116,118-119,121-126,128-129,133-143,145-146,148-170,189,204-206,210,233,257,463-476,483-532
+  s_7c790b14a3bc6d::t_0b909c9e461a1b 144,147,477-482
+crates/git-same-app/src/status_stream.rs
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 1-11,14-15,18-40,57,60,65-100,107-110
+crates/git-same-app/ui/src/stores/monitor.test.ts
+  s_7c790b14a3bc6d::t_7767af06758a1b 1-106
+crates/git-same-app/ui/src/lib/monitorPresentation.test.ts
+  s_7c790b14a3bc6d::t_7767af06758a1b 1-149
+crates/git-same-app/ui/src/lib/StatusBanner.svelte
+  s_7c790b14a3bc6d::t_ffdab8899a228e 11-12,41-44,48,53,55-60,102-117
+crates/git-same-app/ui/src/lib/tauri.ts
+  s_7c790b14a3bc6d::t_ba827c621fa2e0 8,59-74,128-132
+  s_7c790b14a3bc6d::t_ca1573425817d1 133
+crates/git-same-app/ui/src/routes/Dashboard.svelte
+  s_7c790b14a3bc6d::t_f1cd8255d6f185 22-23
+  s_7c790b14a3bc6d::t_ffdab8899a228e 29-30,59
+crates/git-same-app/src/status_stream_tests.rs
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 1-41
+crates/git-same-app/ui/src/routes/FinderBadges.svelte
+  s_7c790b14a3bc6d::t_ffdab8899a228e 11-14,25-31,46-53,64,69,87-88
+crates/git-same-app/ui/src/lib/MonitorPanel.svelte
+  s_7c790b14a3bc6d::t_ba827c621fa2e0 1-89
+crates/git-same-app/ui/src/routes/Requirements.svelte
+  s_7c790b14a3bc6d::t_ffdab8899a228e 4-5,26-28,35,42-50,55
+  s_7c790b14a3bc6d::t_f1cd8255d6f185 3,78,95
+crates/git-same-app/ui/src/routes/Settings.svelte
+  s_7c790b14a3bc6d::t_650dce259c4339 28,74-76,224-228
+crates/git-same-app/src/main.rs
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 17-20,31,36-37,40-46
+  s_7c790b14a3bc6d::t_36e32e13a48d91 47
+crates/git-same-app/ui/src/lib/monitorPresentation.ts
+  s_7c790b14a3bc6d::t_ba827c621fa2e0 1-177
+crates/git-same-core/src/macos/monitor_agent/mod.rs
+  s_7c790b14a3bc6d::t_fb7a88d662a600 71-86
+crates/git-same-app/ui/src/stores/monitor.ts
+  s_7c790b14a3bc6d::t_ba827c621fa2e0 1-67
+crates/git-same-core/src/config/edit_tests.rs
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 140-143
+  s_7c790b14a3bc6d::t_fb7a88d662a600 82-89,95-125,131-139,144
+  s_7c790b14a3bc6d::t_70677b42be21ce 90-94,126-130
+crates/git-same-core/src/config/edit.rs
+  s_7c790b14a3bc6d::t_fb7a88d662a600 38-83,89-93,96-97,113-115
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 84-88
+  s_7c790b14a3bc6d::t_26ca3718b4f257 94-95,98-112
+crates/git-same-app/src/commands.rs
+  s_7c790b14a3bc6d::t_1f68792d50f864 75-76,80-87,117,256-259,261-277,342,359,394-448,450-458,462-466,470-511,516-524,749
+  s_7c790b14a3bc6d::t_843dae84d4c6a2 14,897-899,925,942-950,952-965,967-969,971-972,976-979,982-987,1160-1161,1165-1168,1179,1181
+  s_7c790b14a3bc6d::t_ceed42ad052086 512-515
+crates/git-same-app/ui/pnpm-lock.yaml
+  s_7c790b14a3bc6d::t_013614db5255de 29,41-44,57-212,234-240,348-485,587-592,599-627,637-640,645-656,665-677,689-696,708-714,732-734,812-814,822-824,834-840,865-869,874-876,881-889,907-912,917-928,937-981,1033-1065,1087-1164,1188-1190,1251-1325,1332,1338-1339,1399-1405,1410-1451,1456-1457,1460-1471,1478-1483,1490-1520,1527-1532,1544-1545,1597-1598,1605-1606,1611-1614,1650-1681,1686-1687,1690-1697,1737-1740,1746-1751,1757-1790,1798,1801,1803-1847
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "34b060bd6421b4bb9d6560fff8167aff4b3f49bc",
+  "prompts": {},
+  "sessions": {
+    "s_7c790b14a3bc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d42238-6b51-4397-820d-f2f6d964c946",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
