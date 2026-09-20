@@ -35,6 +35,84 @@ pub fn set_monitor_autostart(path: &Path, autostart: bool) -> Result<(), AppErro
     })
 }
 
+/// Top-level keys the settings form owns.
+const SETTINGS_KEYS: &[&str] = &[
+    "structure",
+    "concurrency",
+    "sync_mode",
+    "default_workspace",
+    "refresh_interval",
+    "workspaces",
+];
+/// Tables the settings form owns entirely.
+const SETTINGS_TABLES: &[&str] = &["clone", "filters", "finder"];
+
+/// Saves the values of a settings form without rewriting the file.
+///
+/// Only keys the form models are touched. Everything else keeps its persisted
+/// value, in particular `monitor.autostart` (so a stale form can never undo
+/// `gisa monitor --stop`) and the whole `[ui]` section, along with comments
+/// and unknown keys.
+pub fn merge_settings(path: &Path, settings: &Config) -> Result<(), AppError> {
+    let rendered = toml::to_string(settings)
+        .map_err(|e| AppError::config(format!("Failed to serialize settings: {e}")))?
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::config(format!("Failed to prepare settings: {e}")))?;
+
+    edit_document(path, |doc| {
+        for key in SETTINGS_KEYS {
+            match rendered.get(key) {
+                Some(item) => set_if_changed(doc.as_table_mut(), key, item),
+                // `None` options are not serialized: the key was cleared.
+                None => {
+                    doc.remove(key);
+                }
+            }
+        }
+        for name in SETTINGS_TABLES {
+            if let Some(source) = rendered.get(name).and_then(Item::as_table) {
+                let target = table_mut(doc, name)?;
+                for (key, item) in source.iter() {
+                    set_if_changed(target, key, item);
+                }
+            }
+        }
+        if let Some(interval) = rendered
+            .get("monitor")
+            .and_then(|monitor| monitor.get("fullscan_interval_secs"))
+        {
+            set_if_changed(
+                table_mut(doc, "monitor")?,
+                "fullscan_interval_secs",
+                interval,
+            );
+        }
+        Ok(())
+    })
+}
+
+/// Leaves an unchanged value alone, and replaces a changed one in place so
+/// the comments attached to its key survive.
+fn set_if_changed(table: &mut Table, key: &str, item: &Item) {
+    let render = |item: &Item| item.to_string().trim().to_string();
+    if table.get(key).map(render) == Some(render(item)) {
+        return;
+    }
+    match (
+        table.get_mut(key).and_then(Item::as_value_mut),
+        item.as_value(),
+    ) {
+        (Some(existing), Some(new)) => {
+            let decor = existing.decor().clone();
+            *existing = new.clone();
+            *existing.decor_mut() = decor;
+        }
+        _ => {
+            table.insert(key, item.clone());
+        }
+    }
+}
+
 /// Applies `edit` to the parsed document and writes it back atomically.
 ///
 /// Shared by every targeted writer so they all get the same guarantees:

@@ -68,3 +68,19 @@ pub fn controller_for_current_user(config_override: bool) -> Result<Controller, 
         caller,
     ))
 }
+
+/// Runs `write` under the control lock, so a preference write can never
+/// interleave with Start, Stop, or an installation. Where the managed
+/// service does not apply (other platforms, redirected environments) there
+/// is nothing to serialize against and `write` simply runs.
+pub fn with_preference_lock<T>(write: impl FnOnce() -> T) -> Result<T, MonitorAgentError> {
+    let Ok(user) = UserContext::resolve(false) else {
+        return Ok(write());
+    };
+    let _lock = control_lock::ControlLock::acquire(
+        &user.paths().control_lock,
+        control_lock::Wait::UpTo(std::time::Duration::from_secs(20)),
+        &RealSystem,
+    )?;
+    Ok(write())
+}

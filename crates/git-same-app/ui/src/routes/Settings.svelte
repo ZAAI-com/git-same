@@ -25,7 +25,7 @@
   let filterOrgsText = '';
   let filterExcludeText = '';
   let workspacesText = '';
-  let showAmbient = true;
+  let showAmbient = false;
   let scanRootsText = '~';
   let finderMaxDepth = 8;
   let finderExcludeText =
@@ -71,7 +71,9 @@
     includeForks = false;
     filterOrgsText = '';
     filterExcludeText = '';
-    showAmbient = true;
+    // Matches the Rust default. Never re-enable ambient scanning with `~` in
+    // scan roots: Finder then stops asking the extension for badges.
+    showAmbient = false;
     scanRootsText = '~';
     finderMaxDepth = 8;
     finderExcludeText =
@@ -219,7 +221,11 @@
         <span>Fullscan interval (seconds)</span>
         <input type="number" min="5" max="3600" bind:value={monitorFullscanInterval} />
       </label>
-      <p class="hint">Restart the monitor on the Requirements screen for changes to take effect.</p>
+      <p class="hint">
+        The running monitor picks up changes on its next full scan; no restart needed.
+        Background monitoring is {$appConfig?.monitor.autostart ? 'on' : 'stopped'}. Use Start
+        and Stop on the Finder Badges screen to change that: saving settings never does.
+      </p>
     </section>
 
     <section class="panel fields">

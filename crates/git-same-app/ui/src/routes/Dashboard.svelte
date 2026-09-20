@@ -19,12 +19,15 @@
     repoName,
     summarize,
   } from '../lib/utils';
+  import { presentMonitor } from '../lib/monitorPresentation';
+  import { monitorStatus } from '../stores/monitor';
   import type { WorkspaceSummary } from '../lib/types';
 
   $: repos = $snapshot?.status?.repos ?? [];
   $: counts = summarize(repos);
   $: highRiskRepos = repos.filter(isHighRiskRepo).slice(0, 8);
-  $: monitorOk = Boolean($snapshot && !$snapshot.stale);
+  $: monitorView = presentMonitor($monitorStatus);
+  $: monitorOk = monitorView.healthy;
   $: extensionOk = Boolean($extensionStatus?.installed && $extensionStatus?.enabled);
 
   function reposFor(workspace: WorkspaceSummary) {
@@ -53,7 +56,7 @@
         {#if monitorOk}<CheckCircle2 size={18} />{:else}<AlertTriangle size={18} />{/if}
       </span>
       <div>
-        <strong>{monitorOk ? 'Monitor running' : 'Monitor needs attention'}</strong>
+        <strong>{monitorView.title}</strong>
         <p>Last scan {relativeTime($snapshot?.updated_at)}</p>
       </div>
     </article>

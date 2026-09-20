@@ -5,6 +5,7 @@ import type {
   AppConfigDto,
   AppConfigInput,
   ExtensionStatus,
+  MonitorAgentStatusDto,
   MonitorLaunchAgentStatusDto,
   ProviderDiscoveryDto,
   RequirementCheckDto,
@@ -53,6 +54,22 @@ export function setDefaultWorkspace(
 
 export function checkRequirements(): Promise<RequirementCheckDto[]> {
   return invoke('check_requirements');
+}
+
+export function monitorStatus(): Promise<MonitorAgentStatusDto> {
+  return invoke('monitor_status');
+}
+
+export function startMonitor(): Promise<MonitorAgentStatusDto> {
+  return invoke('start_monitor');
+}
+
+export function stopMonitor(): Promise<MonitorAgentStatusDto> {
+  return invoke('stop_monitor');
+}
+
+export function restartMonitor(): Promise<MonitorAgentStatusDto> {
+  return invoke('restart_monitor');
 }
 
 export function monitorLaunchAgentStatus(): Promise<MonitorLaunchAgentStatusDto> {
@@ -106,6 +123,12 @@ export async function chooseFolder(defaultPath?: string): Promise<string | null>
 
 export function onStatusUpdated(callback: (snapshot: StatusSnapshot) => void) {
   return listen<StatusSnapshot>('status-updated', (event) => callback(event.payload));
+}
+
+export function onMonitorAgentUpdated(callback: (status: MonitorAgentStatusDto) => void) {
+  return listen<MonitorAgentStatusDto>('monitor-agent-updated', (event) =>
+    callback(event.payload),
+  );
 }
 
 export function onSyncProgress(callback: (payload: SyncProgressPayload) => void) {

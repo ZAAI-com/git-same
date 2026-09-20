@@ -4,11 +4,12 @@
     errorMessage,
     extensionStatus,
     snapshot,
-    installMonitor,
     successMessage,
     syncProgress,
     workspaces,
   } from '../stores/status';
+  import { monitorBusy, monitorStatus, runMonitorAction } from '../stores/monitor';
+  import { actionLabel, presentMonitor, shouldSuggestFullDiskAccess } from './monitorPresentation';
   import { openUrl } from './tauri';
 
   const EXTENSIONS_URL =
@@ -37,20 +38,26 @@
   ]
     .filter(Boolean)
     .join(' · ');
-  $: showStale = !showSuccess && !showError && !showProgress && Boolean($snapshot?.stale);
+  // Service state comes from the monitor status, never from how old the
+  // badge data is: a long first scan is "starting", not "not running".
+  $: monitorView = presentMonitor($monitorStatus);
+  $: showMonitor = !showSuccess && !showError && !showProgress && monitorView.banner;
   $: showAllowExt =
     !showSuccess &&
     !showError &&
-    !showStale &&
+    !showMonitor &&
     Boolean($extensionStatus?.installed && !$extensionStatus?.enabled);
   $: showFda =
     !showSuccess &&
     !showError &&
-    !showStale &&
+    !showMonitor &&
     !showAllowExt &&
-    Boolean($extensionStatus?.enabled) &&
-    $workspaces.length > 0 &&
-    ($snapshot?.status?.repos?.length ?? 0) === 0;
+    shouldSuggestFullDiskAccess({
+      status: $monitorStatus,
+      extensionEnabled: Boolean($extensionStatus?.enabled),
+      workspaceCount: $workspaces.length,
+      repoCount: $snapshot?.status?.repos?.length ?? 0,
+    });
 
   function openExtensions() {
     void openUrl(EXTENSIONS_URL);
@@ -92,11 +99,22 @@
       </div>
     {/if}
   </div>
-{:else if showStale}
-  <div class="banner warning">
-    <AlertTriangle size={18} />
-    <span>Monitor not running. Install or restart it to see repository status.</span>
-    <button type="button" on:click={installMonitor}>Install Monitor</button>
+{:else if showMonitor}
+  <div class="banner {monitorView.tone === 'info' ? 'info' : monitorView.tone === 'error' ? 'error' : 'warning'}">
+    {#if monitorView.tone === 'info'}<Info size={18} />{:else}<AlertTriangle size={18} />{/if}
+    <div class="progress-copy">
+      <span>{monitorView.title}</span>
+      {#if monitorView.detail}<small>{monitorView.detail}</small>{/if}
+    </div>
+    {#if monitorView.actions[0] && monitorView.actions[0] !== 'stop'}
+      <button
+        type="button"
+        disabled={$monitorBusy}
+        on:click={() => runMonitorAction(monitorView.actions[0])}
+      >
+        {actionLabel(monitorView.actions[0], $monitorStatus)}
+      </button>
+    {/if}
   </div>
 {:else if showAllowExt}
   <div class="banner info">

@@ -1,9 +1,9 @@
 import { derived, get, writable } from 'svelte/store';
+import { runMonitorAction } from './monitor';
 import {
   checkRequirements,
   deleteWorkspace,
   ensureConfig,
-  installMonitorLaunchAgent,
   listWorkspaces,
   onStatusUpdated,
   onSyncProgress,
@@ -11,7 +11,6 @@ import {
   readExtensionStatus,
   readStatus,
   readWorkspaceStructure,
-  restartMonitorLaunchAgent,
   saveAppConfig,
   setDefaultWorkspace,
   startSync,
@@ -134,32 +133,15 @@ export async function loadRequirements(): Promise<void> {
   }
 }
 
+/** Compatibility names: the lifecycle lives in `stores/monitor.ts`. */
 export async function installMonitor(): Promise<void> {
-  requirementsLoading.set(true);
-  errorMessage.set('');
-  try {
-    await installMonitorLaunchAgent();
-    successMessage.set('Monitor LaunchAgent installed');
-    await Promise.all([refresh(), loadRequirements()]);
-  } catch (err) {
-    errorMessage.set(String(err));
-  } finally {
-    requirementsLoading.set(false);
-  }
+  await runMonitorAction('start');
+  await loadRequirements();
 }
 
 export async function restartMonitor(): Promise<void> {
-  requirementsLoading.set(true);
-  errorMessage.set('');
-  try {
-    await restartMonitorLaunchAgent();
-    successMessage.set('Monitor LaunchAgent restarted');
-    await Promise.all([refresh(), loadRequirements()]);
-  } catch (err) {
-    errorMessage.set(String(err));
-  } finally {
-    requirementsLoading.set(false);
-  }
+  await runMonitorAction('restart');
+  await loadRequirements();
 }
 
 export async function startSyncCurrent(): Promise<void> {

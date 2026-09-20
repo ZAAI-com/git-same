@@ -79,3 +79,66 @@ fn non_table_monitor_key_is_rejected_without_writing() {
     assert!(set_monitor_autostart(&path, true).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
 }
+
+#[test]
+fn stale_settings_form_cannot_undo_a_stop_or_reset_other_sections() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = "# tuned by hand\nconcurrency = 2\ndefault_workspace = \"~/old\"\n\n[ui]\ncustom_folder_icon = false\n\n[monitor]\n# stopped from the CLI\nautostart = false\nfullscan_interval_secs = 30\n\n[future]\nunknown_key = 1\n";
+    let path = write(&dir, original);
+
+    // The form was loaded before the CLI stop, so it knows nothing of it.
+    let mut form = Config {
+        concurrency: 6,
+        default_workspace: None,
+        ..Config::default()
+    };
+    form.monitor.fullscan_interval_secs = 90;
+    form.finder.show_ambient = false;
+    assert!(form.monitor.autostart, "the form default would re-enable");
+
+    merge_settings(&path, &form).unwrap();
+
+    let saved = Config::load_from(&path).unwrap();
+    assert_eq!(saved.concurrency, 6);
+    assert_eq!(saved.default_workspace, None);
+    assert_eq!(saved.monitor.fullscan_interval_secs, 90);
+    assert!(!saved.monitor.autostart, "CLI stop must survive");
+    assert!(!saved.ui.custom_folder_icon, "[ui] must survive");
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("# tuned by hand"));
+    assert!(text.contains("# stopped from the CLI"));
+    assert!(text.contains("unknown_key = 1"));
+}
+
+#[test]
+fn merge_settings_refuses_a_malformed_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let broken = "concurrency = = 3\n";
+    let path = write(&dir, broken);
+    assert!(merge_settings(&path, &Config::default()).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+}
+
+#[test]
+fn merge_settings_round_trips_every_modeled_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut form = Config {
+        structure: "{provider}/{org}/{repo}".to_string(),
+        workspaces: vec!["~/a".to_string(), "~/b".to_string()],
+        ..Config::default()
+    };
+    form.finder.scan_roots = vec!["~/code".to_string()];
+    form.filters.include_archived = !form.filters.include_archived;
+
+    merge_settings(&path, &form).unwrap();
+
+    let saved = Config::load_from(&path).unwrap();
+    assert_eq!(saved.structure, form.structure);
+    assert_eq!(saved.workspaces, form.workspaces);
+    assert_eq!(saved.finder.scan_roots, form.finder.scan_roots);
+    assert_eq!(
+        saved.filters.include_archived,
+        form.filters.include_archived
+    );
+}

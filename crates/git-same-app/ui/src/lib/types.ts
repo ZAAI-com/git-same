@@ -34,6 +34,12 @@ export interface FinderConfigDto {
 
 export interface MonitorConfigDto {
   fullscan_interval_secs: number;
+  /** Read-only: changed through the monitor Start and Stop controls. */
+  autostart: boolean;
+}
+
+export interface MonitorConfigInput {
+  fullscan_interval_secs: number;
 }
 
 export interface AppConfigDto {
@@ -51,7 +57,11 @@ export interface AppConfigDto {
   monitor: MonitorConfigDto;
 }
 
-export type AppConfigInput = Omit<AppConfigDto, 'config_path' | 'exists'>;
+// `monitor.autostart` is read-only here: it changes only through the monitor
+// Start and Stop controls, so a stale settings form cannot undo a Stop.
+export type AppConfigInput = Omit<AppConfigDto, 'config_path' | 'exists' | 'monitor'> & {
+  monitor: MonitorConfigInput;
+};
 
 export interface WorkspaceProviderDto {
   kind: string;
@@ -105,16 +115,42 @@ export interface RequirementCheckDto {
   critical: boolean;
 }
 
-export interface MonitorLaunchAgentStatusDto {
+// Closed union on purpose: no `| string`, so an unhandled state is a type error.
+export type MonitorAgentState =
+  | 'not_installed'
+  | 'disabled'
+  | 'deferred'
+  | 'starting'
+  | 'running'
+  | 'stopped'
+  | 'failed'
+  | 'unsupported';
+
+export type MonitorMode = 'managed' | 'foreground';
+
+/** Service status of the background monitor. Separate from badge data. */
+export interface MonitorAgentStatusDto {
   label: string;
   plist_path: string;
   binary_path: string | null;
   installed: boolean;
   loaded: boolean;
   running: boolean;
-  state: string;
+  state: MonitorAgentState;
   message: string;
+  pid: number | null;
+  mode: MonitorMode | null;
+  autostart: boolean;
+  launchd_disabled: boolean;
+  helper_version: string | null;
+  source: string | null;
+  owner_kind: 'homebrew_cask' | 'app' | 'cli' | null;
+  last_scan: string | null;
+  detail: string | null;
 }
+
+/** Compatibility name. */
+export type MonitorLaunchAgentStatusDto = MonitorAgentStatusDto;
 
 export interface ProviderOrgDto {
   name: string;
