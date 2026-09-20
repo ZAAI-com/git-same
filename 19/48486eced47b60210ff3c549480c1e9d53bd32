@@ -1,0 +1,19 @@
+crates/git-same-core/src/monitor/run.rs
+  s_07d2d8a1a7f101::t_b76fe0b7695fff 318-320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1948486eced47b60210ff3c549480c1e9d53bd32",
+  "prompts": {},
+  "sessions": {
+    "s_07d2d8a1a7f101": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8062e6ec-dd9c-480a-beaf-60b4ada4c085",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
