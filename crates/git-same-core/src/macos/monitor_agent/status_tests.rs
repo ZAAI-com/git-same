@@ -31,6 +31,15 @@ fn live_process_without_its_own_status_is_starting_not_failed() {
 }
 
 #[test]
+fn held_runtime_with_identity_in_flight_is_starting() {
+    let facts = Facts {
+        runtime_held_unknown: true,
+        ..enabled()
+    };
+    assert_eq!(derive_state(&facts), MonitorAgentState::Starting);
+}
+
+#[test]
 fn live_process_with_its_own_status_is_running() {
     let facts = Facts {
         active: Some(identity(MonitorMode::Managed)),

@@ -1047,3 +1047,89 @@ fn stop_signals_a_managed_monitor_when_the_gui_domain_is_unreachable() {
     assert!(!status.running);
     assert!(!read_monitor_autostart(&env.paths.config).unwrap());
 }
+
+#[test]
+fn disable_failure_is_reported_after_the_monitor_is_stopped() {
+    let env = env();
+    env.write_config("[monitor]\nautostart = true\n");
+    env.controller().ensure_running().unwrap();
+    env.system.with(|s| {
+        s.fail_verbs.insert(
+            "disable".to_string(),
+            crate::macos::monitor_agent::system::CommandOutput {
+                code: Some(5),
+                stdout: String::new(),
+                stderr: "permission denied".to_string(),
+            },
+        );
+    });
+
+    let error = env.controller().stop().unwrap_err();
+
+    assert!(error.to_string().contains("disable"));
+    assert!(env.system.with(|s| s.active.is_none()));
+}
+
+#[test]
+fn reset_stop_ignores_only_a_malformed_preference_after_shutdown() {
+    let env = env();
+    env.write_config("[monitor\n");
+    env.system.set_foreground_monitor(4242);
+
+    env.controller().stop_before_config_removal().unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&env.paths.config).unwrap(),
+        "[monitor\n"
+    );
+    assert!(env.system.with(|s| s.active.is_none()));
+}
+
+#[test]
+fn uninstall_keeps_payload_when_runtime_exit_cannot_be_confirmed() {
+    let env = env();
+    env.controller().ensure_running().unwrap();
+    env.system.with(|s| {
+        s.gui = false;
+        s.active = None;
+        s.runtime_held_unknown = true;
+    });
+
+    assert!(env.controller().uninstall().is_err());
+    assert!(env.paths.helper.exists());
+    assert!(env.paths.launch_agent.exists());
+}
+
+#[test]
+fn headless_cask_removal_signals_the_managed_monitor() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    env.controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .unwrap();
+    let pid = env.system.with(|s| s.active.as_ref().unwrap().pid);
+    env.system.with(|s| s.gui = false);
+
+    assert!(env.controller_for(None).remove_for_cask(&app).unwrap());
+    assert!(env.system.with(|s| s
+        .calls
+        .iter()
+        .any(|call| call == &format!("terminate {pid}"))));
+    assert!(!env.paths.helper.exists());
+}
+
+#[test]
+fn corrupted_executable_helper_is_repaired_from_its_recorded_source() {
+    let env = env();
+    env.controller().ensure_running().unwrap();
+    env.system.with(|s| {
+        s.loaded.clear();
+        s.pids.clear();
+        s.active = None;
+    });
+    write_executable(&env.paths.helper, b"corrupted but executable");
+
+    env.controller_for(None).ensure_running().unwrap();
+
+    assert_eq!(std::fs::read(&env.paths.helper).unwrap(), b"helper v1");
+}

@@ -46,28 +46,46 @@ impl<'a> Launchd<'a> {
     /// A GUI login session exists for this user. Without one the agent can
     /// only be prepared for the next login.
     pub fn gui_session_available(&self) -> Result<bool, MonitorAgentError> {
-        Ok(self.run(&["print", &self.user.gui_domain()])?.success())
+        let output = self.run(&["print", &self.user.gui_domain()])?;
+        if output.success() {
+            Ok(true)
+        } else if is_not_found(&output) {
+            Ok(false)
+        } else {
+            Err(failure("print GUI domain", &output))
+        }
     }
 
     pub fn service(&self, label: &str) -> Result<ServiceInfo, MonitorAgentError> {
         let output = self.run(&["print", &self.target(label)])?;
-        if !output.success() {
-            return Ok(ServiceInfo::default());
+        if output.success() {
+            return Ok(parse_service(&output.stdout));
         }
-        Ok(parse_service(&output.stdout))
+        if is_not_found(&output) {
+            Ok(ServiceInfo::default())
+        } else {
+            Err(failure("print service", &output))
+        }
     }
 
     /// The user (or an explicit Stop) disabled the service in launchd.
     /// Falls back to the user domain so the answer survives a missing GUI
     /// session.
     pub fn is_disabled(&self, label: &str) -> Result<bool, MonitorAgentError> {
-        for domain in [self.user.gui_domain(), self.user.user_domain()] {
+        for (index, domain) in [self.user.gui_domain(), self.user.user_domain()]
+            .into_iter()
+            .enumerate()
+        {
             let output = self.run(&["print-disabled", &domain])?;
             if output.success() {
                 return Ok(parse_disabled(&output.stdout, label));
             }
+            if index == 0 && is_not_found(&output) {
+                continue;
+            }
+            return Err(failure("print-disabled", &output));
         }
-        Ok(false)
+        unreachable!("the user-domain query either returns or errors")
     }
 
     /// Loads the job. Succeeds when it is already loaded.
@@ -115,11 +133,15 @@ impl<'a> Launchd<'a> {
         if output.success() {
             return Ok(());
         }
+        if !is_not_found(&output) {
+            return Err(failure("enable", &output));
+        }
         let user_target = format!("{}/{label}", self.user.user_domain());
-        if self.run(&["enable", &user_target])?.success() {
+        let fallback = self.run(&["enable", &user_target])?;
+        if fallback.success() {
             return Ok(());
         }
-        Err(failure("enable", &output))
+        Err(failure("enable", &fallback))
     }
 
     /// Persists the disabled state. Without a GUI session the GUI domain is
@@ -129,11 +151,15 @@ impl<'a> Launchd<'a> {
         if output.success() {
             return Ok(());
         }
+        if !is_not_found(&output) {
+            return Err(failure("disable", &output));
+        }
         let user_target = format!("{}/{label}", self.user.user_domain());
-        if self.run(&["disable", &user_target])?.success() {
+        let fallback = self.run(&["disable", &user_target])?;
+        if fallback.success() {
             return Ok(());
         }
-        Err(failure("disable", &output))
+        Err(failure("disable", &fallback))
     }
 }
 

@@ -70,6 +70,8 @@ pub struct Facts {
     pub service: ServiceInfo,
     /// Verified holder of the runtime lock.
     pub active: Option<RuntimeIdentity>,
+    /// The runtime lock is held but its identity record is not readable yet.
+    pub runtime_held_unknown: bool,
     /// The active process has written `status.json` itself.
     pub scan_complete: bool,
 }
@@ -82,6 +84,9 @@ pub fn derive_state(facts: &Facts) -> MonitorAgentState {
         } else {
             MonitorAgentState::Starting
         };
+    }
+    if facts.runtime_held_unknown {
+        return MonitorAgentState::Starting;
     }
     if !facts.autostart || facts.launchd_disabled {
         return MonitorAgentState::Disabled;

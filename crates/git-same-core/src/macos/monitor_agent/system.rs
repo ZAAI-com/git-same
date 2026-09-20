@@ -7,7 +7,7 @@
 
 use crate::errors::MonitorAgentError;
 use crate::ipc::IpcConfig;
-use crate::monitor::runtime_guard::{self, RuntimeIdentity};
+use crate::monitor::runtime_guard::{self, RuntimeIdentity, RuntimeMonitorState};
 use std::path::Path;
 use std::time::Duration;
 
@@ -44,11 +44,22 @@ pub trait System: Send + Sync {
 
     /// The monitor that verifiably holds the runtime lock, if any.
     fn active_monitor(&self, ipc: &IpcConfig) -> Option<RuntimeIdentity> {
-        runtime_guard::active_monitor(ipc)
+        match self.monitor_state(ipc) {
+            RuntimeMonitorState::Active(identity) => Some(identity),
+            RuntimeMonitorState::Stopped | RuntimeMonitorState::HeldUnknown => None,
+        }
+    }
+
+    fn monitor_state(&self, ipc: &IpcConfig) -> RuntimeMonitorState {
+        runtime_guard::runtime_monitor_state(ipc)
     }
 
     /// Asks a process to shut down gracefully.
     fn terminate(&self, pid: u32) -> std::io::Result<()>;
+
+    fn terminate_monitor(&self, identity: &RuntimeIdentity) -> std::io::Result<()> {
+        crate::monitor::process::terminate_identity(identity)
+    }
 }
 
 /// The real operating system.

@@ -13,7 +13,7 @@ use super::{plist, LABEL, LEGACY_LABEL, OBSOLETE_FINDER_EXTENSION_ID};
 use crate::config::edit::{read_monitor_autostart, set_monitor_autostart};
 use crate::errors::MonitorAgentError;
 use crate::ipc::StatusFileWriter;
-use crate::monitor::runtime_guard::{MonitorMode, RuntimeIdentity};
+use crate::monitor::runtime_guard::{MonitorMode, RuntimeIdentity, RuntimeMonitorState};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,6 +42,35 @@ pub struct Controller {
 enum Intent {
     Automatic,
     Explicit,
+}
+
+#[derive(Default)]
+struct StopOutcome {
+    preference_error: Option<MonitorAgentError>,
+    operational_failures: Vec<String>,
+}
+
+impl StopOutcome {
+    fn operational_result(&self) -> Result<()> {
+        if self.operational_failures.is_empty() {
+            Ok(())
+        } else {
+            Err(MonitorAgentError::Lifecycle {
+                operation: "stop",
+                failures: self.operational_failures.clone(),
+            })
+        }
+    }
+
+    fn finish(self, include_preference: bool) -> Result<()> {
+        self.operational_result()?;
+        if include_preference {
+            if let Some(error) = self.preference_error {
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Controller {
@@ -84,7 +113,11 @@ impl Controller {
         };
         let launchd = self.launchd();
         let record = InstallRecord::load(&self.paths.install_record);
-        let active = self.system.active_monitor(&self.paths.ipc);
+        let runtime = self.system.monitor_state(&self.paths.ipc);
+        let active = match &runtime {
+            RuntimeMonitorState::Active(identity) => Some(identity.clone()),
+            RuntimeMonitorState::Stopped | RuntimeMonitorState::HeldUnknown => None,
+        };
         let facts = Facts {
             autostart,
             launchd_disabled: launchd.is_disabled(LABEL)?,
@@ -94,6 +127,7 @@ impl Controller {
             scan_complete: active
                 .as_ref()
                 .is_some_and(|identity| self.scan_complete(identity)),
+            runtime_held_unknown: matches!(runtime, RuntimeMonitorState::HeldUnknown),
             active,
         };
         let state = derive_state(&facts);
@@ -144,9 +178,7 @@ impl Controller {
     /// The active process has written `status.json` itself. A file left by a
     /// previous process carries that process's PID.
     fn scan_complete(&self, identity: &RuntimeIdentity) -> bool {
-        StatusFileWriter::new(self.paths.ipc.status_file_path())
-            .read()
-            .is_ok_and(|status| status.daemon_pid == identity.pid)
+        crate::monitor::runtime_guard::scan_complete(&self.paths.ipc, identity)
     }
 
     fn last_scan_timestamp(&self) -> Option<String> {
@@ -228,7 +260,14 @@ impl Controller {
     fn bring_up(&self, intent: Intent, restart: bool) -> Result<()> {
         self.migrate_legacy_agent()?;
 
-        let active = self.system.active_monitor(&self.paths.ipc);
+        let runtime = self.system.monitor_state(&self.paths.ipc);
+        if matches!(runtime, RuntimeMonitorState::HeldUnknown) {
+            return Ok(());
+        }
+        let active = match runtime {
+            RuntimeMonitorState::Active(identity) => Some(identity),
+            RuntimeMonitorState::Stopped | RuntimeMonitorState::HeldUnknown => None,
+        };
         if active
             .as_ref()
             .is_some_and(|identity| identity.mode == MonitorMode::Foreground)
@@ -237,7 +276,7 @@ impl Controller {
         }
 
         let record = InstallRecord::load(&self.paths.install_record)?;
-        let helper_intact = is_executable(&self.paths.helper);
+        let helper_intact = helper_matches_record(&self.paths.helper, record.as_ref());
         let selection = source::select(
             record.as_ref(),
             helper_intact,
@@ -257,7 +296,7 @@ impl Controller {
                 }
             }
             Selection::Keep => {
-                let expected = self.render_plist(record.as_ref().map(|r| r.owner_kind));
+                let expected = self.render_plist(record.as_ref().map(|r| r.owner_kind))?;
                 let plist_current = std::fs::read_to_string(&self.paths.launch_agent)
                     .is_ok_and(|current| current == expected);
                 if !plist_current {
@@ -318,7 +357,7 @@ impl Controller {
     // installation
     // ------------------------------------------------------------------
 
-    fn render_plist(&self, owner_kind: Option<OwnerKind>) -> String {
+    fn render_plist(&self, owner_kind: Option<OwnerKind>) -> Result<String> {
         let associated = owner_kind
             .is_some_and(OwnerKind::is_app)
             .then_some(APP_BUNDLE_ID);
@@ -337,11 +376,17 @@ impl Controller {
         let gui = launchd.gui_session_available()?;
         let was_loaded = gui && launchd.service(LABEL)?.loaded;
 
-        let result = self
-            .replace_and_start(&staged, gui, was_loaded, start_if_possible)
-            .and_then(|()| installer.commit(&staged, &self.version));
-        let Err(original) = result else {
-            return Ok(());
+        let result = self.replace_and_start(&staged, gui, was_loaded, start_if_possible);
+        let original = match result {
+            Ok(()) => match installer.commit(&staged, &self.version) {
+                Ok(()) => return Ok(()),
+                // The install record is the commit point. A cleanup failure is
+                // surfaced, but rolling back now would reverse a committed
+                // installation and a stale marker could reverse it again.
+                Err(error) if installer.commit_landed() => return Err(error),
+                Err(error) => error,
+            },
+            Err(error) => error,
         };
 
         // Stop any replacement job before restoring its files. This also
@@ -378,10 +423,23 @@ impl Controller {
         if was_loaded {
             launchd.bootout(LABEL)?;
         }
+        if !gui {
+            if let RuntimeMonitorState::Active(active) = self.system.monitor_state(&self.paths.ipc)
+            {
+                if active.mode == MonitorMode::Managed {
+                    self.system.terminate_monitor(&active).map_err(|e| {
+                        MonitorAgentError::io("Failed to stop the managed monitor", e)
+                    })?;
+                }
+            }
+        }
         self.wait_for_managed_exit()?;
-        self.installer()
-            .activate(staged, &self.render_plist(Some(staged.source.owner_kind)))?;
-        let foreground_active = self.system.active_monitor(&self.paths.ipc).is_some();
+        let rendered = self.render_plist(Some(staged.source.owner_kind))?;
+        self.installer().activate(staged, &rendered)?;
+        let foreground_active = !matches!(
+            self.system.monitor_state(&self.paths.ipc),
+            RuntimeMonitorState::Stopped
+        );
         if start_if_possible && gui && !foreground_active {
             launchd.bootstrap(LABEL, &self.paths.launch_agent)?;
             self.confirm_started()?;
@@ -406,15 +464,33 @@ impl Controller {
     /// runtime lock so two monitors never overlap.
     fn wait_for_managed_exit(&self) -> Result<()> {
         let mut waited = Duration::ZERO;
-        while let Some(active) = self.system.active_monitor(&self.paths.ipc) {
-            if active.mode == MonitorMode::Foreground {
+        while !matches!(
+            self.system.monitor_state(&self.paths.ipc),
+            RuntimeMonitorState::Stopped
+        ) {
+            if matches!(
+                self.system.monitor_state(&self.paths.ipc),
+                RuntimeMonitorState::Active(RuntimeIdentity {
+                    mode: MonitorMode::Foreground,
+                    ..
+                })
+            ) {
                 return Ok(());
             }
             if waited >= EXIT_WAIT {
+                let detail = match self.system.monitor_state(&self.paths.ipc) {
+                    RuntimeMonitorState::Active(active) => {
+                        format!("monitor (PID {}) did not exit", active.pid)
+                    }
+                    RuntimeMonitorState::HeldUnknown => {
+                        "monitor runtime lock was not released".to_string()
+                    }
+                    RuntimeMonitorState::Stopped => break,
+                };
                 return Err(MonitorAgentError::Launchd {
                     operation: "bootout".to_string(),
                     code: None,
-                    detail: format!("monitor (PID {}) did not exit", active.pid),
+                    detail,
                 });
             }
             self.system.sleep(POLL);
@@ -460,57 +536,114 @@ impl Controller {
     pub fn stop(&self) -> Result<MonitorAgentStatus> {
         let _lock = self.lock(Wait::UpTo(EXPLICIT_WAIT))?;
         self.installer().recover_interrupted()?;
-        let persisted = self.stop_locked();
+        let stopped = self.stop_locked();
         let status = self.inspect()?;
-        match persisted {
-            Ok(()) => Ok(status),
-            Err(e) => Err(e),
-        }
+        stopped.finish(true)?;
+        Ok(status)
+    }
+
+    /// Stops the service before its configuration is deleted. Failure to
+    /// persist `autostart = false` is safe here because the caller removes the
+    /// malformed/unwritable file immediately afterwards; native disable and
+    /// process exit must still succeed.
+    pub fn stop_before_config_removal(&self) -> Result<()> {
+        let _lock = self.lock(Wait::UpTo(EXPLICIT_WAIT))?;
+        self.installer().recover_interrupted()?;
+        self.stop_locked().finish(false)
     }
 
     /// Returns the persistence error, if any, only after the native
     /// disabling and stopping were still attempted.
-    fn stop_locked(&self) -> Result<()> {
+    fn stop_locked(&self) -> StopOutcome {
         // Never overwrites a malformed config: the edit refuses it.
-        let persisted = set_monitor_autostart(&self.paths.config, false).map_err(|e| {
-            MonitorAgentError::Configuration(format!(
-                "monitoring was stopped, but the preference could not be saved: {e}"
-            ))
-        });
+        let preference_error = set_monitor_autostart(&self.paths.config, false)
+            .err()
+            .map(|e| {
+                MonitorAgentError::Configuration(format!(
+                    "monitoring was stopped, but the preference could not be saved: {e}"
+                ))
+            });
+        let mut outcome = StopOutcome {
+            preference_error,
+            ..Default::default()
+        };
 
         let launchd = self.launchd();
         // Disable before stopping so KeepAlive cannot bring it back.
-        launchd.disable(LABEL)?;
-        let booted_out = launchd.gui_session_available()?;
-        if booted_out {
-            launchd.bootout(LABEL)?;
+        if let Err(e) = launchd.disable(LABEL) {
+            outcome
+                .operational_failures
+                .push(format!("could not disable launchd service: {e}"));
         }
-        if let Some(active) = self.system.active_monitor(&self.paths.ipc) {
+        let gui = match launchd.gui_session_available() {
+            Ok(gui) => gui,
+            Err(e) => {
+                outcome
+                    .operational_failures
+                    .push(format!("could not inspect GUI launchd domain: {e}"));
+                false
+            }
+        };
+        let bootout_succeeded = if gui {
+            match launchd.bootout(LABEL) {
+                Ok(_) => true,
+                Err(e) => {
+                    outcome
+                        .operational_failures
+                        .push(format!("could not unload launchd service: {e}"));
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        if let RuntimeMonitorState::Active(active) = self.system.monitor_state(&self.paths.ipc) {
             // A foreground monitor was never launchd's to boot out. A managed
             // one is, unless there is no GUI domain to reach (an SSH session
             // while the console user is logged in) -- then a signal is the only
             // way to stop it, and `disable` above keeps KeepAlive from
             // reviving it. Without this, Stop reported a timeout and left the
             // monitor running, and Uninstall deleted the helper under it.
-            let signal_needed = active.mode == MonitorMode::Foreground || !booted_out;
+            let signal_needed = active.mode == MonitorMode::Foreground || !bootout_succeeded;
             if signal_needed {
-                self.system
-                    .terminate(active.pid)
-                    .map_err(|e| MonitorAgentError::io("Failed to stop the monitor", e))?;
+                if let Err(e) = self.system.terminate_monitor(&active) {
+                    outcome
+                        .operational_failures
+                        .push(format!("could not signal monitor PID {}: {e}", active.pid));
+                }
             }
-            self.wait_for_any_exit()?;
         }
-        persisted
+        if !matches!(
+            self.system.monitor_state(&self.paths.ipc),
+            RuntimeMonitorState::Stopped
+        ) {
+            if let Err(e) = self.wait_for_any_exit() {
+                outcome.operational_failures.push(e.to_string());
+            }
+        }
+        outcome
     }
 
     fn wait_for_any_exit(&self) -> Result<()> {
         let mut waited = Duration::ZERO;
-        while let Some(active) = self.system.active_monitor(&self.paths.ipc) {
+        while !matches!(
+            self.system.monitor_state(&self.paths.ipc),
+            RuntimeMonitorState::Stopped
+        ) {
             if waited >= EXIT_WAIT {
+                let detail = match self.system.monitor_state(&self.paths.ipc) {
+                    RuntimeMonitorState::Active(active) => {
+                        format!("monitor (PID {}) did not exit", active.pid)
+                    }
+                    RuntimeMonitorState::HeldUnknown => {
+                        "monitor runtime lock was not released".to_string()
+                    }
+                    RuntimeMonitorState::Stopped => break,
+                };
                 return Err(MonitorAgentError::Launchd {
                     operation: "stop".to_string(),
                     code: None,
-                    detail: format!("monitor (PID {}) did not exit", active.pid),
+                    detail,
                 });
             }
             self.system.sleep(POLL);
@@ -525,9 +658,10 @@ impl Controller {
         let _lock = self.lock(Wait::UpTo(EXPLICIT_WAIT))?;
         let installer = self.installer();
         installer.recover_interrupted()?;
-        let persisted = self.stop_locked();
+        let stopped = self.stop_locked();
+        stopped.operational_result()?;
         installer.remove_installation()?;
-        persisted?;
+        stopped.finish(true)?;
         self.inspect()
     }
 
@@ -594,14 +728,15 @@ impl Controller {
         };
         if record.owner_kind != OwnerKind::HomebrewCask
             || record.owner_path != source.owner_path
-            || !is_executable(&self.paths.helper)
+            || !helper_matches_record(&self.paths.helper, Some(&record))
         {
             return Ok(false);
         }
         let staged_hash = sha256_file(&source.copy_from)
             .map_err(|e| MonitorAgentError::io("Failed to hash the staged helper", e))?;
+        let expected = self.render_plist(Some(OwnerKind::HomebrewCask))?;
         let plist_current = std::fs::read_to_string(&self.paths.launch_agent)
-            .is_ok_and(|current| current == self.render_plist(Some(OwnerKind::HomebrewCask)));
+            .is_ok_and(|current| current == expected);
         Ok(staged_hash == record.binary_sha256 && plist_current)
     }
 
@@ -653,8 +788,19 @@ impl Controller {
         }
 
         let launchd = self.launchd();
-        if launchd.gui_session_available()? {
+        let gui = launchd.gui_session_available()?;
+        if gui {
             launchd.bootout(LABEL)?;
+        }
+        if !gui {
+            if let RuntimeMonitorState::Active(active) = self.system.monitor_state(&self.paths.ipc)
+            {
+                if active.mode == MonitorMode::Managed {
+                    self.system
+                        .terminate_monitor(&active)
+                        .map_err(|e| MonitorAgentError::io("Failed to stop the cask monitor", e))?;
+                }
+            }
         }
         self.wait_for_managed_exit()?;
         installer.remove_installation()?;
@@ -671,6 +817,13 @@ fn source_changed(record: &InstallRecord) -> bool {
         return false;
     }
     sha256_file(&record.source_binary).is_ok_and(|hash| hash != record.binary_sha256)
+}
+
+fn helper_matches_record(path: &Path, record: Option<&InstallRecord>) -> bool {
+    if !is_executable(path) {
+        return false;
+    }
+    record.is_none_or(|record| sha256_file(path).is_ok_and(|hash| hash == record.binary_sha256))
 }
 
 #[cfg(test)]

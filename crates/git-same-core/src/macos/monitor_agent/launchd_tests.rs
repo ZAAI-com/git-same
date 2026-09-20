@@ -53,3 +53,57 @@ fn recognizes_service_not_found() {
     assert!(is_not_found(&by_text));
     assert!(!is_not_found(&real_failure));
 }
+
+fn fake_launchd() -> (crate::macos::monitor_agent::fake::FakeSystem, UserContext) {
+    (
+        crate::macos::monitor_agent::fake::FakeSystem::new(),
+        UserContext {
+            uid: 501,
+            home: std::path::PathBuf::from("/Users/ada"),
+        },
+    )
+}
+
+#[test]
+fn real_gui_query_failures_are_not_reported_as_missing() {
+    let (system, user) = fake_launchd();
+    system.with(|state| {
+        state.fail_verbs.insert(
+            "print".to_string(),
+            CommandOutput {
+                code: Some(5),
+                stderr: "permission denied".to_string(),
+                ..CommandOutput::default()
+            },
+        );
+    });
+    assert!(Launchd::new(&system, &user)
+        .gui_session_available()
+        .is_err());
+}
+
+#[test]
+fn enable_falls_back_only_when_the_gui_domain_is_missing() {
+    let (system, user) = fake_launchd();
+    system.with(|state| {
+        state.fail_verbs.insert(
+            "enable".to_string(),
+            CommandOutput {
+                code: Some(5),
+                stderr: "permission denied".to_string(),
+                ..CommandOutput::default()
+            },
+        );
+    });
+    assert!(Launchd::new(&system, &user)
+        .enable(super::super::LABEL)
+        .is_err());
+    let calls = system.with(|state| state.calls.clone());
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call.starts_with("launchctl enable "))
+            .count(),
+        1
+    );
+}

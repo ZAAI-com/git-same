@@ -140,7 +140,10 @@ pub fn select(
     allow_dev_source: bool,
     source_changed: impl Fn(&InstallRecord) -> bool,
 ) -> Selection {
-    let usable = |source: &HelperSource| allow_dev_source || !is_dev_build(&source.copy_from);
+    let usable = |source: &HelperSource| {
+        super::install::is_executable(&source.copy_from)
+            && (allow_dev_source || !is_dev_build(&source.copy_from))
+    };
     let caller_usable = caller.is_some_and(usable);
 
     if let Some(record) = existing {
@@ -149,7 +152,7 @@ pub fn select(
         // was written by an explicit Start, which may point at a cargo
         // `target/` build; automatic recovery must not then reinstall and
         // restart the monitor after every rebuild.
-        let recorded_usable = usable(&recorded_source) && recorded_source.copy_from.exists();
+        let recorded_usable = usable(&recorded_source);
 
         // A standalone owner yields to the app's signed bundled helper.
         if let Some(caller) = caller {

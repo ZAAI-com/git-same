@@ -2,7 +2,7 @@ use super::*;
 
 fn render_for(home: &str, bundle: Option<&str>) -> String {
     let home = Path::new(home);
-    render(&MonitorAgentPaths::for_home(home), home, bundle)
+    render(&MonitorAgentPaths::for_home(home), home, bundle).unwrap()
 }
 
 // The asserted paths are POSIX: `Path::join` uses backslashes on Windows, so
@@ -47,6 +47,20 @@ fn app_association_is_optional() {
     assert!(plist.contains(
         "<key>AssociatedBundleIdentifiers</key>\n    <array>\n        <string>com.zaai.git-same</string>"
     ));
+}
+
+#[test]
+fn xml_control_characters_are_rejected() {
+    let home = Path::new("/Users/a\u{1}da");
+    assert!(render(&MonitorAgentPaths::for_home(home), home, None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_paths_are_rejected() {
+    use std::os::unix::ffi::OsStrExt;
+    let home = Path::new(std::ffi::OsStr::from_bytes(b"/Users/\xff"));
+    assert!(render(&MonitorAgentPaths::for_home(home), home, None).is_err());
 }
 
 #[cfg(target_os = "macos")]

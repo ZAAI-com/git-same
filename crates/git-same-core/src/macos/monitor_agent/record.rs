@@ -84,7 +84,9 @@ impl InstallRecord {
     }
 }
 
-/// `(len, mtime seconds)` of a file, for cheap change detection.
+/// `(len, mtime nanoseconds)` of a file, for cheap change detection. Records
+/// written by older builds used seconds in the second slot; they simply cause
+/// one safe hash comparison and refresh after upgrade.
 pub fn file_stamp(path: &Path) -> Option<(u64, u64)> {
     let metadata = std::fs::metadata(path).ok()?;
     let modified = metadata
@@ -92,7 +94,7 @@ pub fn file_stamp(path: &Path) -> Option<(u64, u64)> {
         .ok()?
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?;
-    Some((metadata.len(), modified.as_secs()))
+    Some((metadata.len(), u64::try_from(modified.as_nanos()).ok()?))
 }
 
 /// SHA-256 of a file as lowercase hex.

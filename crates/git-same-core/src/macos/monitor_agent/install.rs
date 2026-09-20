@@ -218,15 +218,13 @@ impl<'a> Installer<'a> {
             source_stamp: file_stamp(&staged.source.copy_from),
         }
         .save(&self.paths.install_record)?;
-        self.cleanup();
-        Ok(())
+        self.cleanup()
     }
 
     /// Restores the files that were live before [`Self::activate`].
     pub fn rollback(&self) -> Result<(), MonitorAgentError> {
         let Some(transaction) = self.read_transaction() else {
-            self.cleanup();
-            return Ok(());
+            return self.cleanup();
         };
         let mut failures = Vec::new();
         let mut restore = |had: bool, backup: PathBuf, target: &Path| {
@@ -263,8 +261,7 @@ impl<'a> Installer<'a> {
             &self.paths.install_record,
         );
         if failures.is_empty() {
-            self.cleanup();
-            Ok(())
+            self.cleanup()
         } else {
             Err(MonitorAgentError::Transaction {
                 original: "could not restore the previous installation".to_string(),
@@ -280,6 +277,16 @@ impl<'a> Installer<'a> {
             let _ = std::fs::remove_file(self.staged_helper());
             return Ok(false);
         }
+        let transaction =
+            self.read_transaction()
+                .ok_or_else(|| MonitorAgentError::Transaction {
+                    original: "transaction marker is unreadable".to_string(),
+                    rollback: None,
+                })?;
+        if self.commit_has_landed(&transaction) {
+            self.cleanup()?;
+            return Ok(true);
+        }
         self.rollback()?;
         Ok(true)
     }
@@ -291,21 +298,66 @@ impl<'a> Installer<'a> {
         serde_json::from_slice(&content).ok()
     }
 
-    fn cleanup(&self) {
+    /// A changed/new install record is the commit point. This makes recovery
+    /// safe when cleanup removed some backups but could not remove the marker.
+    fn commit_has_landed(&self, transaction: &Transaction) -> bool {
+        let Ok(live) = std::fs::read(&self.paths.install_record) else {
+            return false;
+        };
+        if !transaction.had_record {
+            return true;
+        }
+        match std::fs::read(self.record_backup()) {
+            Ok(previous) => live != previous,
+            // Backups are removed only during post-commit cleanup. If it is
+            // already gone while the marker remains, the commit landed.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+            Err(_) => false,
+        }
+    }
+
+    pub fn commit_landed(&self) -> bool {
+        self.read_transaction()
+            .is_some_and(|transaction| self.commit_has_landed(&transaction))
+    }
+
+    fn cleanup(&self) -> Result<(), MonitorAgentError> {
+        let mut failures = Vec::new();
         for path in [
-            self.paths.transaction_record.clone(),
             self.staged_helper(),
             self.helper_backup(),
             self.plist_backup(),
             self.record_backup(),
         ] {
-            let _ = std::fs::remove_file(path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    failures.push(format!("{}: {e}", path.display()));
+                }
+            }
+        }
+        // The marker is removed last and only if all other cleanup succeeded.
+        // As long as it exists, recovery can distinguish commit completion
+        // from interrupted activation using the live-vs-backup record.
+        if failures.is_empty() {
+            if let Err(e) = std::fs::remove_file(&self.paths.transaction_record) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    failures.push(format!("{}: {e}", self.paths.transaction_record.display()));
+                }
+            }
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(MonitorAgentError::Lifecycle {
+                operation: "transaction cleanup",
+                failures,
+            })
         }
     }
 
     /// Removes the managed payload. Locks, logs, and configuration stay.
     pub fn remove_installation(&self) -> Result<(), MonitorAgentError> {
-        self.cleanup();
+        self.cleanup()?;
         for path in [
             &self.paths.helper,
             &self.paths.install_record,

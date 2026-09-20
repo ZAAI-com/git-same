@@ -68,6 +68,14 @@ pub enum MonitorAgentError {
         rollback: Option<String>,
     },
 
+    /// Multiple phases of one lifecycle operation failed after all safe
+    /// cleanup attempts were made.
+    #[error("Monitor {operation} failed: {}", failures.join("; "))]
+    Lifecycle {
+        operation: &'static str,
+        failures: Vec<String>,
+    },
+
     /// Filesystem failure with context.
     #[error("{context}: {source}")]
     Io {
@@ -131,7 +139,9 @@ impl MonitorAgentError {
             MonitorAgentError::ForegroundActive { .. } => {
                 "Run 'gisa monitor --stop', then 'gisa monitor --start'"
             }
-            MonitorAgentError::Transaction { .. } | MonitorAgentError::Io { .. } => {
+            MonitorAgentError::Transaction { .. }
+            | MonitorAgentError::Lifecycle { .. }
+            | MonitorAgentError::Io { .. } => {
                 "Run 'gisa monitor --status', then 'gisa monitor --start' to repair"
             }
         }

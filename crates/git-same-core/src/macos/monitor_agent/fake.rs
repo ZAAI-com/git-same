@@ -4,7 +4,7 @@
 use super::system::{CommandOutput, System};
 use crate::errors::MonitorAgentError;
 use crate::ipc::IpcConfig;
-use crate::monitor::runtime_guard::{MonitorMode, RuntimeIdentity};
+use crate::monitor::runtime_guard::{MonitorMode, RuntimeIdentity, RuntimeMonitorState};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -21,6 +21,7 @@ pub struct FakeState {
     pub next_pid: u32,
     /// Verified holder of the runtime lock.
     pub active: Option<RuntimeIdentity>,
+    pub runtime_held_unknown: bool,
     /// launchctl verbs that fail with the given output.
     pub fail_verbs: HashMap<String, CommandOutput>,
     /// Copies whose destination contains this text fail.
@@ -211,6 +212,9 @@ impl FakeState {
                 }
             }
             "print-disabled" => {
+                if args[1].starts_with("gui/") && !self.gui {
+                    return fail(113, "Could not find domain");
+                }
                 let mut out = String::from("disabled services = {\n");
                 for label in &self.disabled {
                     out.push_str(&format!("\t\"{label}\" => disabled\n"));
@@ -265,6 +269,9 @@ impl FakeState {
                 ok("")
             }
             "disable" => {
+                if args[1].starts_with("gui/") && !self.gui {
+                    return fail(113, "Could not find domain");
+                }
                 self.disabled.insert(label_of(args[1]));
                 ok("")
             }
@@ -316,13 +323,26 @@ impl System for FakeSystem {
         self.with(|s| s.active.clone())
     }
 
+    fn monitor_state(&self, _ipc: &IpcConfig) -> RuntimeMonitorState {
+        self.with(|s| match &s.active {
+            Some(identity) => RuntimeMonitorState::Active(identity.clone()),
+            None if s.runtime_held_unknown => RuntimeMonitorState::HeldUnknown,
+            None => RuntimeMonitorState::Stopped,
+        })
+    }
+
     fn terminate(&self, pid: u32) -> std::io::Result<()> {
         self.with(|s| {
             s.calls.push(format!("terminate {pid}"));
+            s.pids.retain(|_, running_pid| *running_pid != pid);
             if s.active.as_ref().map(|a| a.pid) == Some(pid) {
                 s.active = None;
             }
         });
         Ok(())
+    }
+
+    fn terminate_monitor(&self, identity: &RuntimeIdentity) -> std::io::Result<()> {
+        self.terminate(identity.pid)
     }
 }

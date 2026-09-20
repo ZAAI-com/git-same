@@ -12,8 +12,20 @@ fn make_bundle(root: &Path, name: &str, identifier: &str) -> PathBuf {
         ),
     )
     .unwrap();
-    std::fs::write(helpers.join("git-same"), b"helper").unwrap();
+    write_executable(&helpers.join("git-same"), b"helper");
     std::fs::canonicalize(bundle).unwrap()
+}
+
+fn write_executable(path: &Path, bytes: &[u8]) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(path, bytes).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 fn record(kind: OwnerKind, owner: &Path, source: &Path) -> InstallRecord {
@@ -127,7 +139,10 @@ fn cargo_target_directories_are_dev_builds() {
 
 #[test]
 fn nothing_installed_uses_the_caller() {
-    let caller = cli_source(Path::new("/usr/local/bin/git-same"));
+    let dir = tempfile::tempdir().unwrap();
+    let binary = dir.path().join("git-same");
+    write_executable(&binary, b"cli");
+    let caller = cli_source(&binary);
     assert_eq!(
         select(None, false, Some(&caller), false, |_| false),
         Selection::Install(caller)
@@ -165,10 +180,27 @@ fn app_caller_takes_over_from_a_standalone_owner() {
 }
 
 #[test]
+fn damaged_app_does_not_take_over_from_a_usable_recorded_cli() {
+    let dir = tempfile::tempdir().unwrap();
+    let bundle = make_bundle(dir.path(), "Git-Same.app", APP_BUNDLE_ID);
+    let app_helper = bundle.join("Contents/Helpers/git-same");
+    let caller = classify(&app_helper);
+    std::fs::remove_file(app_helper).unwrap();
+    let recorded = dir.path().join("cli/git-same");
+    write_executable(&recorded, b"usable cli");
+    let existing = record(OwnerKind::Cli, &recorded, &recorded);
+
+    assert_eq!(
+        select(Some(&existing), true, Some(&caller), false, |_| false),
+        Selection::Keep
+    );
+}
+
+#[test]
 fn owner_updates_from_its_own_changed_source_only() {
     let dir = tempfile::tempdir().unwrap();
     let owner_binary = dir.path().join("git-same");
-    std::fs::write(&owner_binary, b"new").unwrap();
+    write_executable(&owner_binary, b"new");
     let existing = record(OwnerKind::Cli, &owner_binary, &owner_binary);
     let other = cli_source(Path::new("/somewhere/else/git-same"));
 
@@ -213,6 +245,7 @@ fn automatic_recovery_never_installs_a_dev_build() {
     std::fs::create_dir_all(target.join("debug")).unwrap();
     std::fs::write(target.join("CACHEDIR.TAG"), b"").unwrap();
     let caller = cli_source(&target.join("debug").join("git-same"));
+    write_executable(&caller.copy_from, b"dev");
 
     assert!(matches!(
         select(None, false, Some(&caller), false, |_| false),
@@ -235,7 +268,7 @@ fn automatic_recovery_never_reinstalls_a_recorded_dev_build() {
     std::fs::create_dir_all(target.join("release")).unwrap();
     std::fs::write(target.join("CACHEDIR.TAG"), b"").unwrap();
     let binary = target.join("release").join("git-same");
-    std::fs::write(&binary, b"dev build").unwrap();
+    write_executable(&binary, b"dev build");
     let record = record(OwnerKind::Cli, &binary, &binary);
 
     // Helper present, source rebuilt.

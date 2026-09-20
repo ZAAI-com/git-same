@@ -228,6 +228,39 @@ fn crash_before_activation_only_leaves_a_staged_file_to_sweep() {
 }
 
 #[test]
+fn recovery_keeps_a_commit_that_landed_before_cleanup() {
+    let env = env();
+    install(&env, b"helper v1", "<plist v1/>");
+    write_executable(&env.source.copy_from, b"helper v2");
+    let installer = Installer::new(&env.system, &env.paths);
+    let staged = installer.stage(env.source.clone()).unwrap();
+    installer.activate(&staged, "<plist v2/>").unwrap();
+    InstallRecord {
+        schema_version: InstallRecord::SCHEMA_VERSION,
+        owner_kind: staged.source.owner_kind,
+        owner_path: staged.source.owner_path.clone(),
+        source_binary: staged.source.source_binary.clone(),
+        binary_version: "3.1.3".to_string(),
+        binary_sha256: staged.sha256.clone(),
+        installed_at: "new commit".to_string(),
+        source_stamp: file_stamp(&staged.source.copy_from),
+    }
+    .save(&env.paths.install_record)
+    .unwrap();
+
+    assert!(installer.recover_interrupted().unwrap());
+    assert_eq!(std::fs::read(&env.paths.helper).unwrap(), b"helper v2");
+    assert_eq!(
+        InstallRecord::load(&env.paths.install_record)
+            .unwrap()
+            .unwrap()
+            .binary_version,
+        "3.1.3"
+    );
+    assert_eq!(leftovers(&env), vec!["git-same", "install.json"]);
+}
+
+#[test]
 fn remove_installation_keeps_locks_logs_and_unrelated_files() {
     let env = env();
     install(&env, b"helper v1", "<plist/>");
