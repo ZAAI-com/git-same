@@ -85,8 +85,12 @@ fi
 # The entitlement only reaches the CLI if the release workflow passes it to
 # codesign. Match the flag and the path together: a bare mention of the
 # filename is satisfied by a comment or an unrelated `cat`.
-if ! grep -Eq -- '--entitlements[[:space:]]+[^[:space:]]*darwin-entitlements\.plist' \
-    "$RELEASE_WORKFLOW"; then
+if ! awk '
+    /darwin-sign-and-notarize\.sh/ { in_sign=1 }
+    in_sign && /--entitlements[[:space:]]+[^[:space:]]*darwin-entitlements\.plist/ { found=1 }
+    in_sign && $0 !~ /\\[[:space:]]*$/ { in_sign=0 }
+    END { exit !found }
+' "$RELEASE_WORKFLOW"; then
     echo "ERROR: $RELEASE_WORKFLOW no longer passes darwin-entitlements.plist to" >&2
     echo "       codesign --entitlements when signing the CLI" >&2
     exit 1

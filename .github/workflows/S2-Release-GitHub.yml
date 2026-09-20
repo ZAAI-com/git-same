@@ -370,6 +370,15 @@ jobs:
             exit 1
           fi
 
+      - name: Verify signed CLI app-group entitlement
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENTITLEMENTS="$(/usr/bin/codesign -d --entitlements - --xml staging/git-same 2>&1)"
+          grep -Fq 'group.57KL6Y7V32.com.zaai.git-same' <<<"$ENTITLEMENTS" \
+            || { echo "ERROR: signed CLI is missing the Finder app-group entitlement" >&2; exit 1; }
+
       - name: Upload artifact
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7

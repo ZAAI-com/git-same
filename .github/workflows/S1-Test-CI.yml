@@ -298,7 +298,9 @@ jobs:
 
           # Dev scripts must never manage the developer's live monitor.
           grep -q 'GIT_SAME_DISABLE_MONITOR_AUTOSTART' toolkit/conductor/run.sh || { echo "ERROR: run.sh no longer suppresses automatic monitor management"; exit 1; }
-          grep -q 'owner-scoped' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost its owner-scoped monitor cleanup"; exit 1; }
+          grep -Eq 'PROJECT_DIR=.*pwd -P' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh no longer canonicalizes its owner path"; exit 1; }
+          grep -Eq 'grep -qF .*PROJECT_DIR' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost its executable owner guard"; exit 1; }
+          grep -Eq 'MANAGED_HELPER.*--quiet monitor --uninstall' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost owner-scoped monitor uninstall"; exit 1; }
 
           echo "All alias drift checks passed."
 
