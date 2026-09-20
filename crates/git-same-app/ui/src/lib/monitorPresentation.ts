@@ -182,13 +182,15 @@ export function shouldSuggestFullDiskAccess(input: {
  */
 export function createStatusSequencer<T>() {
   let events = 0;
+  let fetches = 0;
   return {
-    beginFetch(): number {
-      return events;
+    beginFetch(): { fetch: number; event: number } {
+      fetches += 1;
+      return { fetch: fetches, event: events };
     },
     /** Returns the value to store, or `undefined` to keep the newer event. */
-    acceptFetch(token: number, value: T): T | undefined {
-      return token === events ? value : undefined;
+    acceptFetch(token: { fetch: number; event: number }, value: T): T | undefined {
+      return token.fetch === fetches && token.event === events ? value : undefined;
     },
     acceptEvent(value: T): T {
       events += 1;

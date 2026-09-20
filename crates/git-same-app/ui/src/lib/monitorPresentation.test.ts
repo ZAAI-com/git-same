@@ -159,4 +159,12 @@ describe('createStatusSequencer', () => {
     const token = sequencer.beginFetch();
     expect(sequencer.acceptFetch(token, 'fetched later')).toBe('fetched later');
   });
+
+  it('rejects an older overlapping fetch even without an event', () => {
+    const sequencer = createStatusSequencer<string>();
+    const older = sequencer.beginFetch();
+    const newer = sequencer.beginFetch();
+    expect(sequencer.acceptFetch(newer, 'newer')).toBe('newer');
+    expect(sequencer.acceptFetch(older, 'older')).toBeUndefined();
+  });
 });

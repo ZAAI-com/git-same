@@ -115,6 +115,17 @@ describe('monitor store', () => {
     expect(get(store.monitorError)).toContain('foreground monitor');
   });
 
+  it('keeps the action error when its recovery fetch also fails', async () => {
+    const store = await freshStore();
+    api.startMonitor.mockRejectedValue('Start failed for the real reason');
+    api.monitorStatus.mockRejectedValue('Recovery fetch failed');
+
+    await store.runMonitorAction('start');
+
+    expect(get(store.monitorError)).toContain('real reason');
+    expect(get(store.monitorError)).not.toContain('Recovery fetch');
+  });
+
   it('clears a stale error once a later fetch succeeds', async () => {
     const store = await freshStore();
     api.startMonitor.mockRejectedValue('A foreground monitor (PID 9) is running');

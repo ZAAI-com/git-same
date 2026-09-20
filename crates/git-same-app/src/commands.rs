@@ -416,7 +416,10 @@ const MONITOR_STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(1
 /// Last known service status. Returned by `monitor_status`, so a fetch made
 /// after subscribing can never disagree with an event emitted earlier.
 #[derive(Default)]
-pub struct MonitorStatusCache(std::sync::Mutex<Option<(MonitorAgentStatus, std::time::Instant)>>);
+pub struct MonitorStatusCache {
+    cached: std::sync::Mutex<Option<(MonitorAgentStatus, std::time::Instant)>>,
+    operations: tokio::sync::Mutex<()>,
+}
 
 /// Event carrying a [`MonitorAgentStatus`] after every lifecycle operation
 /// and whenever the monitor's runtime files change.
@@ -426,7 +429,7 @@ pub const MONITOR_AGENT_UPDATED: &str = "monitor-agent-updated";
 pub(crate) fn publish_monitor_status(app: &tauri::AppHandle, status: &MonitorAgentStatus) {
     use tauri::Manager;
     if let Some(cache) = app.try_state::<MonitorStatusCache>() {
-        *cache.0.lock().unwrap_or_else(|e| e.into_inner()) =
+        *cache.cached.lock().unwrap_or_else(|e| e.into_inner()) =
             Some((status.clone(), std::time::Instant::now()));
     }
     let _ = app.emit(MONITOR_AGENT_UPDATED, status);
@@ -438,6 +441,9 @@ async fn run_monitor_operation(
     app: tauri::AppHandle,
     operation: fn() -> Result<MonitorAgentStatus, AppError>,
 ) -> Result<MonitorAgentStatus, String> {
+    use tauri::Manager;
+    let state = app.state::<MonitorStatusCache>();
+    let _operation = state.operations.lock().await;
     let status = tauri::async_runtime::spawn_blocking(operation)
         .await
         .map_err(error_string)?
@@ -474,7 +480,11 @@ pub async fn monitor_status(
     app: tauri::AppHandle,
     cache: tauri::State<'_, MonitorStatusCache>,
 ) -> Result<MonitorLaunchAgentStatusDto, String> {
-    let cached = cache.0.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let cached = cache
+        .cached
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     match cached {
         Some((status, at)) if at.elapsed() < MONITOR_STATUS_TTL => Ok(status),
         _ => run_monitor_operation(app, monitor_launch_agent_status_inner).await,

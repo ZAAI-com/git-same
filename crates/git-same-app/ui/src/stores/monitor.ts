@@ -47,7 +47,7 @@ export async function loadMonitorStatus(
     if (fetched) monitorStatus.set(fetched);
     if (!preserveError) monitorError.set('');
   } catch (err) {
-    monitorError.set(String(err));
+    if (!preserveError) monitorError.set(String(err));
   }
 }
 

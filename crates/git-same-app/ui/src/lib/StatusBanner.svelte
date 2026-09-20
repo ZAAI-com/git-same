@@ -8,7 +8,7 @@
     syncProgress,
     workspaces,
   } from '../stores/status';
-  import { monitorBusy, monitorStatus, runMonitorAction } from '../stores/monitor';
+  import { monitorBusy, monitorError, monitorStatus, runMonitorAction } from '../stores/monitor';
   import { actionLabel, presentMonitor, shouldSuggestFullDiskAccess } from './monitorPresentation';
   import { openUrl } from './tauri';
 
@@ -41,7 +41,8 @@
   // Service state comes from the monitor status, never from how old the
   // badge data is: a long first scan is "starting", not "not running".
   $: monitorView = presentMonitor($monitorStatus);
-  $: showMonitor = !showSuccess && !showError && !showProgress && monitorView.banner;
+  $: showMonitor =
+    !showSuccess && !showError && !showProgress && (monitorView.banner || Boolean($monitorError));
   $: showAllowExt =
     !showSuccess &&
     !showError &&
@@ -103,8 +104,8 @@
   <div class="banner {monitorView.tone === 'info' ? 'info' : monitorView.tone === 'error' ? 'error' : 'warning'}">
     {#if monitorView.tone === 'info'}<Info size={18} />{:else}<AlertTriangle size={18} />{/if}
     <div class="progress-copy">
-      <span>{monitorView.title}</span>
-      {#if monitorView.detail}<small>{monitorView.detail}</small>{/if}
+      <span>{$monitorError || monitorView.title}</span>
+      {#if !$monitorError && monitorView.detail}<small>{monitorView.detail}</small>{/if}
     </div>
     {#if monitorView.actions[0] && monitorView.actions[0] !== 'stop'}
       <button

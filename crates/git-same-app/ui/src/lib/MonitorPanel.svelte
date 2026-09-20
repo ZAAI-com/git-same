@@ -1,6 +1,12 @@
 <script lang="ts">
   import { AlertTriangle, CheckCircle2, Info } from '@lucide/svelte';
-  import { monitorBusy, monitorError, monitorStatus, runMonitorAction } from '../stores/monitor';
+  import {
+    loadMonitorStatus,
+    monitorBusy,
+    monitorError,
+    monitorStatus,
+    runMonitorAction,
+  } from '../stores/monitor';
   import { actionLabel, presentMonitor } from './monitorPresentation';
 
   $: view = presentMonitor($monitorStatus);
@@ -25,6 +31,11 @@
     {/if}
   </div>
   <div class="actions">
+    {#if !$monitorStatus && $monitorError}
+      <button type="button" class="primary" disabled={$monitorBusy} on:click={() => loadMonitorStatus()}>
+        Retry
+      </button>
+    {/if}
     {#each view.actions as action, index}
       <button
         type="button"
@@ -59,9 +70,12 @@
     color: var(--ok, #2e9e5b);
   }
 
-  .warning .icon,
+  .warning .icon {
+    color: var(--warning, #c98a12);
+  }
+
   .error .icon {
-    color: var(--warn, #c98a12);
+    color: var(--danger, #c0392b);
   }
 
   .copy {

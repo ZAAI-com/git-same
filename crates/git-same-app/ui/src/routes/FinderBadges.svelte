@@ -46,7 +46,9 @@
       // Controls live in the Monitor panel above; an intentional stop is
       // listed here without being presented as something broken to fix.
       label: 'Monitor',
-      passed: monitorView.healthy,
+      passed:
+        monitorView.healthy ||
+        ($monitorStatus?.state === 'disabled' && !$monitorStatus?.autostart),
       detail: $monitorStatus?.state === 'running' && $snapshot?.updated_at
         ? `Running. Badge data updated ${relativeTime($snapshot.updated_at)}`
         : monitorView.title,
@@ -66,7 +68,9 @@
 </script>
 
 <section class="finder-screen">
-  <MonitorPanel />
+  {#if !monitorView.banner}
+    <MonitorPanel />
+  {/if}
   <section class="panel">
     <div class="panel-head">
       <h2>Setup Checklist</h2>
