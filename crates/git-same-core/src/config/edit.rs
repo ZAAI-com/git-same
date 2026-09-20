@@ -27,8 +27,16 @@ pub fn read_monitor_autostart(path: &Path) -> Result<bool, AppError> {
 
 /// Persists `monitor.autostart`, changing nothing else in the file.
 ///
-/// Creates the default configuration only when the file is missing.
+/// A machine with no configuration keeps none: `gisa monitor --stop` must not
+/// materialise a full `config.toml` the user never asked for, which would also
+/// turn "No configuration found. Run 'gisa init'." into an empty workspace
+/// list. The durable half of a Stop is `launchctl disable`, which
+/// `monitoring_enabled` honours on its own and which `gisa reset` already
+/// relies on outliving the configuration file.
 pub fn set_monitor_autostart(path: &Path, autostart: bool) -> Result<(), AppError> {
+    if !path.exists() {
+        return Ok(());
+    }
     edit_document(path, |doc| {
         table_mut(doc, "monitor")?["autostart"] = value(autostart);
         Ok(())

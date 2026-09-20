@@ -169,7 +169,9 @@ fn delete_keeps_workspace_files_when_registry_update_fails() {
         .unwrap();
 
         let err = WorkspaceStore::delete(&root).unwrap_err();
-        assert!(err.to_string().contains("Failed to parse config"));
+        assert!(err
+            .to_string()
+            .contains("is malformed and was left untouched"));
         assert!(
             dot_dir.exists(),
             ".git-same should remain when unregister fails"
@@ -300,7 +302,9 @@ fn save_rolls_back_new_workspace_write_when_registry_update_fails() {
 
         let ws = WorkspaceConfig::new_from_root(&root);
         let err = WorkspaceStore::save(&ws).unwrap_err();
-        assert!(err.to_string().contains("Failed to parse config"));
+        assert!(err
+            .to_string()
+            .contains("is malformed and was left untouched"));
         assert!(!WorkspaceStore::config_path(&root).exists());
         assert!(!WorkspaceStore::dot_dir(&root).exists());
     });
@@ -330,7 +334,9 @@ fn save_restores_existing_workspace_config_when_registry_update_fails() {
         let mut ws = WorkspaceConfig::new_from_root(&root);
         ws.username = "after".to_string();
         let err = WorkspaceStore::save(&ws).unwrap_err();
-        assert!(err.to_string().contains("Failed to parse config"));
+        assert!(err
+            .to_string()
+            .contains("is malformed and was left untouched"));
 
         let restored = std::fs::read_to_string(&config_path).unwrap();
         assert_eq!(restored, previous_content);

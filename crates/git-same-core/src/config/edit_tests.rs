@@ -50,14 +50,20 @@ fn set_autostart_adds_monitor_table_when_absent() {
     assert_eq!(Config::load_from(&path).unwrap().concurrency, 2);
 }
 
+/// `gisa monitor --stop` must work on a machine that has never been
+/// configured, without leaving a `config.toml` behind: that would turn the
+/// next command's "No configuration found. Run 'gisa init'." into a silently
+/// empty workspace list. `launchctl disable` carries the state instead.
 #[test]
-fn set_autostart_creates_default_config_only_when_missing() {
+fn set_autostart_never_creates_a_configuration() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("sub").join("config.toml");
+
     set_monitor_autostart(&path, false).unwrap();
-    let config = Config::load_from(&path).unwrap();
-    assert!(!config.monitor.autostart);
-    assert_eq!(config.monitor.fullscan_interval_secs, 30);
+    assert!(!path.exists());
+
+    set_monitor_autostart(&path, true).unwrap();
+    assert!(!path.exists());
 }
 
 #[test]
@@ -141,4 +147,104 @@ fn merge_settings_round_trips_every_modeled_field() {
         saved.filters.include_archived,
         form.filters.include_archived
     );
+}
+
+// ------------------------------------------- registry and default workspace
+//
+// `gisa setup`, `gisa scan --register`, `gisa workspace default` and the app's
+// Save button used to re-serialize the whole document (dropping every comment)
+// or to edit it as raw text (inserting `default_workspace` into whichever
+// table happened to follow the first textual `sync_mode`).
+
+/// A comment that mentions `sync_mode` from inside another table: the old
+/// text-surgery writer inserted `default_workspace` into `[filters]` here,
+/// where `Config` silently ignores it.
+const ANNOTATED: &str = r#"# git-same configuration
+structure = "{org}/{repo}"
+
+# How existing repos are updated.
+sync_mode = "fetch"
+
+[filters]
+# sync_mode can be overridden per workspace one day.
+include_forks = false
+"#;
+
+#[test]
+fn setting_a_default_workspace_keeps_comments_and_table_structure() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(&dir, ANNOTATED);
+
+    Config::save_default_workspace_to(&path, Some("~/work")).unwrap();
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(content.contains("# git-same configuration"), "{content}");
+    assert!(
+        content.contains("# How existing repos are updated."),
+        "{content}"
+    );
+    assert!(
+        content.contains("# sync_mode can be overridden per workspace one day."),
+        "{content}"
+    );
+    let config = Config::load_from(&path).unwrap();
+    assert_eq!(config.default_workspace.as_deref(), Some("~/work"));
+    assert!(!config.filters.include_forks);
+}
+
+#[test]
+fn clearing_the_default_workspace_removes_only_that_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(&dir, ANNOTATED);
+    Config::save_default_workspace_to(&path, Some("~/work")).unwrap();
+
+    Config::save_default_workspace_to(&path, None).unwrap();
+
+    let content = std::fs::read_to_string(&path).unwrap();
+    assert!(!content.contains("default_workspace"), "{content}");
+    assert!(content.contains("# git-same configuration"), "{content}");
+    assert_eq!(Config::load_from(&path).unwrap().default_workspace, None);
+}
+
+#[test]
+fn registering_and_unregistering_a_workspace_keeps_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(&dir, &Config::default_toml());
+    let before = std::fs::read_to_string(&path).unwrap();
+    let comments = before
+        .lines()
+        .filter(|l| l.trim_start().starts_with('#'))
+        .count();
+    assert!(comments > 5, "the default config is documented");
+
+    Config::add_to_registry_at(&path, "~/one").unwrap();
+    Config::add_to_registry_at(&path, "~/two").unwrap();
+    // Registering the same path twice is idempotent.
+    Config::add_to_registry_at(&path, "~/two").unwrap();
+    Config::remove_from_registry_at(&path, "~/one").unwrap();
+
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        after
+            .lines()
+            .filter(|l| l.trim_start().starts_with('#'))
+            .count(),
+        comments,
+        "every comment must survive:\n{after}"
+    );
+    assert_eq!(
+        Config::load_from(&path).unwrap().workspaces,
+        vec!["~/two".to_string()]
+    );
+}
+
+#[test]
+fn a_malformed_config_is_not_rewritten_by_a_registry_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let broken = "workspaces = [[[\n";
+    let path = write(&dir, broken);
+
+    assert!(Config::add_to_registry_at(&path, "~/one").is_err());
+    assert!(Config::save_default_workspace_to(&path, Some("~/one")).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
 }

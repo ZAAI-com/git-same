@@ -270,11 +270,20 @@ pub async fn save_app_config(input: AppConfigInput) -> Result<AppConfigDto, Stri
 fn save_app_config_inner(input: AppConfigInput) -> Result<AppConfigDto, AppError> {
     let path = ensure_config_file()?;
     let settings = app_config_input(input)?;
-    monitor_agent::with_preference_lock(|| {
-        git_same_core::config::edit::merge_settings(&path, &settings)
-    })??;
+    with_config_lock(|| git_same_core::config::edit::merge_settings(&path, &settings))?;
     let saved = Config::load_from(&path)?;
     Ok(app_config_dto(&saved, &path, true))
+}
+
+/// Serialises every write to the global `config.toml` against the same lock
+/// the settings save takes. Two read-modify-write cycles that overlap (Save
+/// Settings while the Workspace screen sets a default) would otherwise leave
+/// one of the two changes on the floor.
+fn with_config_lock<T>(write: impl FnOnce() -> Result<T, AppError>) -> Result<T, AppError> {
+    match monitor_agent::with_preference_lock(write) {
+        Ok(result) => result,
+        Err(e) => Err(AppError::from(e)),
+    }
 }
 
 #[tauri::command]
@@ -318,12 +327,14 @@ pub fn save_workspace(input: WorkspaceInput) -> Result<WorkspaceDetailDto, Strin
         .as_ref()
         .and_then(|workspace| workspace.last_synced.clone());
 
-    WorkspaceManager::save(&workspace).map_err(error_string)?;
+    // `save`/`delete` update the global registry, so both take the lock.
+    with_config_lock(|| WorkspaceManager::save(&workspace)).map_err(error_string)?;
 
     if let Some(previous) = previous {
         if !same_path(&previous.root_path, &workspace.root_path) {
             folder_icon::clear_or_log(&previous.root_path);
-            WorkspaceManager::delete(&previous.root_path).map_err(error_string)?;
+            with_config_lock(|| WorkspaceManager::delete(&previous.root_path))
+                .map_err(error_string)?;
         }
     }
 
@@ -333,9 +344,10 @@ pub fn save_workspace(input: WorkspaceInput) -> Result<WorkspaceDetailDto, Strin
 
     let collapsed = tilde_collapse_path(&workspace.root_path);
     if input.default {
-        Config::save_default_workspace(Some(&collapsed)).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(Some(&collapsed)))
+            .map_err(error_string)?;
     } else if was_default {
-        Config::save_default_workspace(None).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?;
     }
 
     let config = Config::load().map_err(error_string)?;
@@ -351,9 +363,9 @@ pub fn delete_workspace(workspace_id: String) -> Result<Vec<WorkspaceSummary>, S
     let was_default = workspace_is_default(&workspace, config.default_workspace.as_deref());
 
     folder_icon::clear_or_log(&workspace.root_path);
-    WorkspaceManager::delete(&workspace.root_path).map_err(error_string)?;
+    with_config_lock(|| WorkspaceManager::delete(&workspace.root_path)).map_err(error_string)?;
     if was_default {
-        Config::save_default_workspace(None).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?;
     }
 
     nudge_monitor_refresh();
@@ -372,9 +384,10 @@ pub fn set_default_workspace(
             let config = Config::load().map_err(error_string)?;
             let workspace = WorkspaceManager::resolve(Some(&id), &config).map_err(error_string)?;
             let collapsed = tilde_collapse_path(&workspace.root_path);
-            Config::save_default_workspace(Some(&collapsed)).map_err(error_string)?;
+            with_config_lock(|| Config::save_default_workspace(Some(&collapsed)))
+                .map_err(error_string)?;
         }
-        None => Config::save_default_workspace(None).map_err(error_string)?,
+        None => with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?,
     }
 
     workspace_summaries().map_err(error_string)
