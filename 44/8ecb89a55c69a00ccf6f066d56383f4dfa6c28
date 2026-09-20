@@ -1,0 +1,54 @@
+crates/git-same-cli/src/commands/refresh_tests.rs
+  s_7c790b14a3bc6d::t_c6ed1607ae4d80 15-18,28-44
+  s_7c790b14a3bc6d::t_56d77d7aae825c 45
+toolkit/conductor/archive.sh
+  s_7c790b14a3bc6d::t_603f44987815d3 44-64,77-78
+toolkit/conductor/run.sh
+  s_7c790b14a3bc6d::t_603f44987815d3 135-140
+crates/git-same-cli/src/cli.rs
+  s_7c790b14a3bc6d::t_fdea763fb24ff7 158-159,166-169,327-345,347,351-358,361-365,369,372-417
+crates/git-same-cli/src/commands/monitor_tests.rs
+  s_7c790b14a3bc6d::t_de932ed0092cd4 2,5-6,10-11,15-17,21-29,33-62
+  s_7c790b14a3bc6d::t_c6ed1607ae4d80 63-65
+crates/git-same-cli/src/commands/setup.rs
+  s_7c790b14a3bc6d::t_a0a8dd7f1ffb74 12,14,22
+crates/git-same-cli/src/commands/auto_monitor_tests.rs
+  s_7c790b14a3bc6d::t_de932ed0092cd4 1-70
+crates/git-same-core/src/macos/monitor_agent/controller.rs
+  s_7c790b14a3bc6d::t_fdea763fb24ff7 159-167
+crates/git-same-cli/src/main.rs
+  s_7c790b14a3bc6d::t_c6ed1607ae4d80 32-45,114-124
+crates/git-same-cli/src/commands/auto_monitor.rs
+  s_7c790b14a3bc6d::t_de932ed0092cd4 1-92
+crates/git-same-cli/src/cli_tests.rs
+  s_7c790b14a3bc6d::t_eb0775eb991583 206-314
+crates/git-same-cli/src/commands/mod.rs
+  s_7c790b14a3bc6d::t_a0a8dd7f1ffb74 6,24,39-41,45-52,54-61,63-68,70-87,94-96,104-119
+crates/git-same-cli/src/commands/monitor.rs
+  s_7c790b14a3bc6d::t_c6ed1607ae4d80 15,138-141,187-189
+  s_7c790b14a3bc6d::t_de932ed0092cd4 1,3-6,8-9,13,16,18,20,22-137,142-153,155-186,190-192,195-310,313-319,327-368,370-384,393-394
+crates/git-same-cli/tests/integration_test.rs
+  s_7c790b14a3bc6d::t_eb0775eb991583 690-761
+crates/git-same-cli/src/commands/reset.rs
+  s_7c790b14a3bc6d::t_a0a8dd7f1ffb74 49-57,61,68,83-85
+crates/git-same-cli/src/commands/refresh.rs
+  s_7c790b14a3bc6d::t_fc1cfee2ca48c0 21,25,28,31,33,45-52,54-56
+crates/git-same-cli/src/commands/scan.rs
+  s_7c790b14a3bc6d::t_fc1cfee2ca48c0 10-11,35,54,76,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "448ecb89a55c69a00ccf6f066d56383f4dfa6c28",
+  "prompts": {},
+  "sessions": {
+    "s_7c790b14a3bc6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54d42238-6b51-4397-820d-f2f6d964c946",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
