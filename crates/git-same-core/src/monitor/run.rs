@@ -315,6 +315,9 @@ where
 }
 
 /// Everything a socket task needs, cloned out of the loop.
+// Only the `#[cfg(unix)]` `serve_connection` reads these fields; off Unix the
+// struct is still built but never consumed, so every field reads as dead.
+#[cfg_attr(not(unix), allow(dead_code))]
 struct ConnectionState {
     live: LiveConfig,
     reload_tx: tokio::sync::mpsc::UnboundedSender<()>,
