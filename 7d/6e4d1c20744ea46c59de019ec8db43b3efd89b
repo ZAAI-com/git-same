@@ -1,7 +1,41 @@
+crates/git-same-app/src/status_stream.rs
+  s_ca5a7db15db3f8::t_534367144440cd 11,144-147,193
+crates/git-same-core/src/ipc/mod_tests.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 102-117
+crates/git-same-app/src/commands.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 41-48,405-410,416,618-619,626,628-630,672,945,971,1235-1236,1238,1260-1273
+crates/git-same-app/src/commands_tests.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 214-252
+crates/git-same-app/src/main.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 4-5,35-42
+crates/git-same-core/src/monitor/socket_handler.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 30,70,86,96,110-111
+crates/git-same-core/src/ipc/status_file.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 15,21-36,44-49,54-57,82-129,139,147-148,150-153,159-163
+crates/git-same-core/src/ipc/mod.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 80-91
+crates/git-same-core/src/monitor/run.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 141-145
+  s_ca5a7db15db3f8::t_e6175ae6f19e89 279,356,398
+  s_ca5a7db15db3f8::t_ae3a41b0869cf2 324-345
+crates/git-same-core/src/monitor/socket_handler_tests.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 13,24-25
+crates/git-same-core/src/ipc/status_file_tests.rs
+  s_ca5a7db15db3f8::t_21530c23976a0c 107-165,250-267
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.7.4",
   "base_commit_sha": "7d6e4d1c20744ea46c59de019ec8db43b3efd89b",
-  "prompts": {}
+  "prompts": {},
+  "sessions": {
+    "s_ca5a7db15db3f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d3bd8ecd-cb3e-4648-90d2-1956d5fbda3f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
 }
