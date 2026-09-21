@@ -1,5 +1,7 @@
 crates/git-same-app/ui/package.json
   s_a78fdf3e7e1b82::t_364696066651f7 14,22
+  s_ca5a7db15db3f8::t_5cc7717a621c9c 25
+  s_ca5a7db15db3f8::t_8ca215177631c7 27-31
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -12,6 +14,14 @@ crates/git-same-app/ui/package.json
         "tool": "codex",
         "id": "01a0bdd2-d465-7b73-ba92-b8108c7272fd",
         "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_ca5a7db15db3f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d3bd8ecd-cb3e-4648-90d2-1956d5fbda3f",
+        "model": "claude-opus-5"
       },
       "human_author": "Manuel <m@manuelgruber.com>"
     }
