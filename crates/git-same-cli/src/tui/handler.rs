@@ -311,7 +311,18 @@ fn handle_backend_message(
             app.all_repos = repos;
         }
         BackendMessage::DiscoveryError(msg) => {
-            app.operation_state = OperationState::Idle;
+            // Discovery errors are per-org and non-fatal: the provider logs the
+            // failure and keeps walking the remaining orgs, so the operation is
+            // still in flight. Resetting to Idle here would drop the guards that
+            // keep a status refresh (and a second sync) from starting mid-run,
+            // and the operation would then finish into an already-idle state.
+            // Only clear state that is not backed by a running task.
+            if matches!(
+                app.operation_state,
+                OperationState::Idle | OperationState::Finished { .. }
+            ) {
+                app.operation_state = OperationState::Idle;
+            }
             app.error_message = Some(msg);
         }
         BackendMessage::SetupOrgsDiscovered(orgs) => {
@@ -500,6 +511,10 @@ fn handle_backend_message(
                     *total_new_commits,
                     started_at.elapsed().as_secs_f64(),
                 ),
+                // A run that short-circuits (for example an empty repo set)
+                // completes while still Discovering; keep its real operation so
+                // a Status run is never recorded as a sync.
+                OperationState::Discovering { operation, .. } => (*operation, 0, 0, 0, 0, 0.0),
                 _ => (Operation::Sync, 0, 0, 0, 0, 0.0),
             };
 
@@ -569,6 +584,9 @@ fn handle_backend_message(
         }
         BackendMessage::OperationError(msg) => {
             app.operation_state = OperationState::Idle;
+            // A failed status scan must not leave the flag latched: it gates both
+            // the next refresh and every sync.
+            app.status_loading = false;
             app.error_message = Some(msg);
         }
         BackendMessage::StatusResults(entries) => {

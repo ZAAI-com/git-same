@@ -220,10 +220,59 @@ pub fn ensure_legacy_symlinks(group_dir: &Path) -> Result<(), AppError> {
 fn ensure_legacy_symlinks_in(legacy_dir: &Path, group_dir: &Path) -> Result<(), AppError> {
     // Only the socket is symlinked; status.json is a real mirror file written
     // by the monitor (see the doc comment on `ensure_legacy_symlinks`). The
-    // socket helper creates the legacy directory as needed.
+    // socket helper creates the legacy directory as needed. Done first so a
+    // problem with the status entry can never block the socket migration.
     let legacy_sock = legacy_dir.join("finder.sock");
     let target_sock = group_dir.join("finder.sock");
-    ensure_one_symlink(&legacy_sock, &target_sock)
+    ensure_one_symlink(&legacy_sock, &target_sock)?;
+
+    // status.json is not symlinked, but an unusable entry there still has to be
+    // cleared or every mirror write fails forever.
+    clear_unusable_status_entry(&legacy_dir.join("status.json"))
+}
+
+/// Renames aside anything at the host `status.json` path that the mirror write
+/// cannot replace.
+///
+/// A regular file and a symlink are both fine: `write_atomic` renames over them.
+/// A directory (or any other node) is not; `fs::rename` fails with `EISDIR` /
+/// `ENOTDIR`, and because a mirror failure is only a warning the monitor keeps
+/// running with the host status permanently absent, with no way back short of
+/// deleting the entry by hand. Moving it aside at startup keeps the migration
+/// recoverable, matching how `ensure_one_symlink` treats the socket path.
+#[cfg(target_os = "macos")]
+fn clear_unusable_status_entry(status_path: &Path) -> Result<(), AppError> {
+    let meta = match std::fs::symlink_metadata(status_path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            return Err(AppError::path(format!(
+                "Failed to inspect '{}': {}",
+                status_path.display(),
+                e
+            )));
+        }
+    };
+    let file_type = meta.file_type();
+    if file_type.is_file() || file_type.is_symlink() {
+        return Ok(());
+    }
+
+    let aside = aside_path(status_path);
+    std::fs::rename(status_path, &aside).map_err(|e| {
+        AppError::path(format!(
+            "Failed to rename legacy status entry '{}' to '{}': {}",
+            status_path.display(),
+            aside.display(),
+            e
+        ))
+    })?;
+    tracing::warn!(
+        legacy = %status_path.display(),
+        aside = %aside.display(),
+        "Renamed unusable legacy status.json entry aside so the mirror write can recover"
+    );
+    Ok(())
 }
 
 /// Non-macOS no-op so the monitor can call this unconditionally without `cfg`

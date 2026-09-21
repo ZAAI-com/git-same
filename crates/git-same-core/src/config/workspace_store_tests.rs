@@ -1,11 +1,10 @@
 use super::*;
+use crate::test_support::lock_env;
 use std::path::Path;
-use std::sync::Mutex;
-
-static HOME_LOCK: Mutex<()> = Mutex::new(());
 
 fn with_temp_home<T>(home: &Path, f: impl FnOnce() -> T) -> T {
-    let _lock = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // Crate-wide, so the env readers in `ipc::mod_tests` are held off too.
+    let _lock = lock_env();
     let original_home = std::env::var("HOME").ok();
     let original_userprofile = std::env::var("USERPROFILE").ok();
     let original_xdg_config_home = std::env::var("XDG_CONFIG_HOME").ok();

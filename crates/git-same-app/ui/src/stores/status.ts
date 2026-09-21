@@ -1,5 +1,5 @@
 import { derived, get, writable } from 'svelte/store';
-import { runMonitorAction } from './monitor';
+import { monitorStatus, runMonitorAction } from './monitor';
 import { createStatusSequencer } from '../lib/monitorPresentation';
 import {
   checkRequirements,
@@ -13,8 +13,8 @@ import {
   readExtensionStatus,
   readFullDiskAccess,
   readStatus,
-  restartMonitorLaunchAgent,
   readWorkspaceStructure,
+  restartMonitorIfAgentInstalled,
   saveAppConfig,
   setDefaultWorkspace,
   startSync,
@@ -24,6 +24,7 @@ import type {
   AppConfigInput,
   ExtensionStatus,
   FullDiskAccessDto,
+  MonitorAgentStatusDto,
   ProgressEvent,
   RequirementCheckDto,
   StatusSnapshot,
@@ -118,6 +119,26 @@ export async function refreshPermissions(): Promise<void> {
 // restarted in a loop.
 let monitorKickPending = false;
 
+/** Reset between tests; the latch is module state. */
+export function __resetMonitorKickForTests(): void {
+  monitorKickPending = false;
+}
+
+/**
+ * Whether an automatic restart can actually help.
+ *
+ * Only a managed service may be restarted on the app's initiative. A monitor
+ * the user started by hand (`gisa monitor`) is foreground: the backend refuses
+ * to kill it, so kicking it would just raise the same error on every refresh
+ * and window focus. With nothing installed there is no service to restart, and
+ * the recovery command deliberately will not create one.
+ */
+function monitorIsRecoverable(status: MonitorAgentStatusDto | null): boolean {
+  if (!status) return false;
+  if (status.mode === 'foreground') return false;
+  return status.installed;
+}
+
 /**
  * The app holds Full Disk Access but the running monitor was started before
  * the grant landed (macOS applies TCC grants on process start). Restart it
@@ -131,11 +152,24 @@ async function kickMonitorIfLagging(fda: FullDiskAccessDto | null): Promise<void
   }
   if (fda.host !== 'granted' || fda.monitor !== false || !fda.monitor_fresh) return;
   if (monitorKickPending) return;
+  if (!monitorIsRecoverable(get(monitorStatus))) return;
   monitorKickPending = true;
   try {
-    await restartMonitorLaunchAgent();
+    // The guarded command: never installs a service implicitly.
+    await restartMonitorIfAgentInstalled();
+    // The restarted monitor holds the grant now, but the store still carries
+    // the pre-restart answer, which keeps the Finder-badge action disabled
+    // until the next window focus. Re-read so the UI unlocks immediately.
+    try {
+      fullDiskAccess.set(await readFullDiskAccess());
+    } catch {
+      // A failed re-read leaves the stale value; the next refresh corrects it.
+    }
     successMessage.set('Full Disk Access granted, monitor restarted');
   } catch (err) {
+    // Clear the latch so a transient launchctl failure can be retried rather
+    // than disabling recovery for the rest of the session.
+    monitorKickPending = false;
     errorMessage.set(String(err));
   }
 }

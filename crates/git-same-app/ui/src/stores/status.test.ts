@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   readExtensionStatus: vi.fn(),
   readFullDiskAccess: vi.fn(),
   readAppConfig: vi.fn(),
+  restartMonitorIfAgentInstalled: vi.fn(),
 }));
 
 vi.mock('../lib/tauri', () => ({
@@ -40,6 +41,7 @@ vi.mock('../lib/tauri', () => ({
   startSync: vi.fn(),
   enableFinderExtension: vi.fn(),
   restartMonitorLaunchAgent: vi.fn(),
+  restartMonitorIfAgentInstalled: api.restartMonitorIfAgentInstalled,
 }));
 
 const make = (updated_at: string | null, stale = false): StatusSnapshot => ({
@@ -61,6 +63,7 @@ beforeEach(() => {
   api.readExtensionStatus.mockResolvedValue(null);
   api.readFullDiskAccess.mockResolvedValue(null);
   api.readAppConfig.mockResolvedValue(null);
+  api.restartMonitorIfAgentInstalled.mockResolvedValue(null);
 });
 
 describe('status store snapshot ordering', () => {
@@ -100,5 +103,85 @@ describe('status store snapshot ordering', () => {
 
     expect(get(store.snapshot)).toBeNull();
     expect(get(store.errorMessage)).toContain('unreadable');
+  });
+});
+
+// Full Disk Access is granted to the app but the running monitor predates the
+// grant: the store restarts it once so its scans pick the grant up.
+const laggingFda = {
+  host: 'granted',
+  monitor: false,
+  monitor_fresh: true,
+  granted: false,
+};
+
+const managedAgent = { installed: true, mode: 'managed' };
+
+// `monitorStatus` lives in ./monitor; after resetModules it must be imported
+// from the same fresh graph status.ts is bound to, or the store instances differ.
+async function freshStores(agent: unknown) {
+  vi.resetModules();
+  const monitor = await import('./monitor');
+  const store = await import('./status');
+  store.__resetMonitorKickForTests();
+  monitor.monitorStatus.set(agent as never);
+  return store;
+}
+
+describe('monitor kick on lagging Full Disk Access', () => {
+  it('restarts a managed monitor and re-reads Full Disk Access', async () => {
+    const store = await freshStores(managedAgent);
+    // Lagging on the first read, granted once the monitor has restarted.
+    api.readFullDiskAccess
+      .mockResolvedValueOnce(laggingFda)
+      .mockResolvedValueOnce({ ...laggingFda, monitor: true, granted: true });
+
+    await store.refreshPermissions();
+
+    expect(api.restartMonitorIfAgentInstalled).toHaveBeenCalledTimes(1);
+    expect(get(store.fullDiskAccess)).toMatchObject({ monitor: true, granted: true });
+  });
+
+  it('never kicks a monitor the user started by hand', async () => {
+    // Foreground: the backend refuses to kill it, so a kick only raises an
+    // error on every refresh and focus.
+    const store = await freshStores({ installed: false, mode: 'foreground' });
+    api.readFullDiskAccess.mockResolvedValue(laggingFda);
+
+    await store.refreshPermissions();
+
+    expect(api.restartMonitorIfAgentInstalled).not.toHaveBeenCalled();
+    expect(get(store.errorMessage)).toBe('');
+  });
+
+  it('never kicks when no service is installed', async () => {
+    const store = await freshStores({ installed: false, mode: null });
+    api.readFullDiskAccess.mockResolvedValue(laggingFda);
+
+    await store.refreshPermissions();
+
+    expect(api.restartMonitorIfAgentInstalled).not.toHaveBeenCalled();
+  });
+
+  it('retries after a failed restart instead of latching off recovery', async () => {
+    const store = await freshStores(managedAgent);
+    api.readFullDiskAccess.mockResolvedValue(laggingFda);
+    api.restartMonitorIfAgentInstalled.mockRejectedValue(new Error('launchctl busy'));
+
+    await store.refreshPermissions();
+    await store.refreshPermissions();
+
+    expect(api.restartMonitorIfAgentInstalled).toHaveBeenCalledTimes(2);
+    expect(get(store.errorMessage)).toContain('launchctl busy');
+  });
+
+  it('kicks only once while a restart keeps succeeding', async () => {
+    const store = await freshStores(managedAgent);
+    api.readFullDiskAccess.mockResolvedValue(laggingFda);
+
+    await store.refreshPermissions();
+    await store.refreshPermissions();
+
+    expect(api.restartMonitorIfAgentInstalled).toHaveBeenCalledTimes(1);
   });
 });

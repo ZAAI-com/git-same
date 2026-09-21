@@ -488,6 +488,20 @@ pub(crate) fn refresh_monitor_status(app: tauri::AppHandle) {
     });
 }
 
+/// Restart an already-installed monitor that startup found stale, in the
+/// background so the window stays responsive.
+///
+/// Goes through `run_monitor_operation` like every other lifecycle command, so
+/// it takes the same lock as `ensure_monitor_on_startup` instead of racing it,
+/// and the result reaches the UI as a `monitor-agent-updated` event.
+pub(crate) fn recover_monitor_on_startup(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = run_monitor_operation(app, restart_monitor_if_installed).await {
+            eprintln!("failed to restart monitor after upgrade: {error}");
+        }
+    });
+}
+
 /// One automatic recovery at app startup. Does nothing when suppressed
 /// (`GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, dev launches) or when this is
 /// not the real user's default environment, and never enables a service
@@ -763,12 +777,30 @@ pub fn full_disk_access_status(
 
 fn full_disk_access_status_inner(ipc: &IpcConfig) -> FullDiskAccessDto {
     let snapshot = read_status_snapshot_with(ipc).ok();
-    full_disk_access_dto(full_disk_access::probe(), snapshot.as_ref())
+    full_disk_access_dto(
+        full_disk_access::probe(),
+        snapshot.as_ref(),
+        monitor_runs_as_app_identity(),
+    )
+}
+
+/// Whether the installed agent runs the monitor as this app's bundle
+/// executable, the only program a Full Disk Access grant for Git-Same covers.
+///
+/// A `Cli`-owned agent execs a copied helper under its own path-based TCC
+/// identity, so the app's grant never reaches it. An unknown owner is reported
+/// as "not the app": the one gate that consults this fails closed.
+fn monitor_runs_as_app_identity() -> bool {
+    monitor_launch_agent_status_inner()
+        .ok()
+        .and_then(|status| status.owner_kind)
+        .is_some_and(|owner| owner.is_app())
 }
 
 fn full_disk_access_dto(
     host: FullDiskAccess,
     snapshot: Option<&StatusSnapshot>,
+    monitor_is_app_identity: bool,
 ) -> FullDiskAccessDto {
     let monitor_fresh = snapshot.is_some_and(|snapshot| !snapshot.stale);
     let monitor = snapshot
@@ -778,17 +810,32 @@ fn full_disk_access_dto(
         host: host.as_str().to_string(),
         monitor,
         monitor_fresh,
-        granted: fda_gate_passes(host, monitor, monitor_fresh),
+        granted: fda_gate_passes(host, monitor, monitor_fresh, monitor_is_app_identity),
     }
 }
 
-/// The badge-setup gate. A fresh monitor's own answer wins because TCC keys
-/// the grant on the monitor executable; otherwise fall back to this process's
-/// probe (the same identity once the LaunchAgent runs the app executable).
-/// Only a definite "granted" passes; unknown never does.
-fn fda_gate_passes(host: FullDiskAccess, monitor: Option<bool>, monitor_fresh: bool) -> bool {
+/// The badge-setup gate. A fresh monitor's own answer wins because TCC keys the
+/// grant on the monitor executable. Only a definite "granted" passes; unknown
+/// never does.
+///
+/// The awkward arm is a fresh monitor that reports *no* answer: a pre-3.2 build
+/// that predates the `full_disk_access` field. Falling back to this process's
+/// probe is only sound when that monitor shares this app's TCC identity, so the
+/// fallback is withheld unless the agent is app-owned. Without that, badges get
+/// enabled against a helper-identity monitor that cannot read the workspace and
+/// stay silently blank, which is exactly what this gate exists to prevent.
+///
+/// A stale or absent monitor keeps the plain host-probe fallback, so a first-run
+/// setup with nothing installed yet is never blocked.
+fn fda_gate_passes(
+    host: FullDiskAccess,
+    monitor: Option<bool>,
+    monitor_fresh: bool,
+    monitor_is_app_identity: bool,
+) -> bool {
     match (monitor_fresh, monitor) {
         (true, Some(granted)) => granted,
+        (true, None) => monitor_is_app_identity && host == FullDiskAccess::Granted,
         _ => host == FullDiskAccess::Granted,
     }
 }
@@ -798,6 +845,13 @@ fn full_disk_access_message(fda: &FullDiskAccessDto) -> String {
         (true, _, _) => "granted to Git-Same",
         (false, "granted", Some(false)) => {
             "granted to the app, but the running monitor lacks it (restart the monitor)"
+        }
+        // The gate withheld the host-probe fallback: a running monitor that
+        // reports no answer is a pre-3.2 build, and the app's grant only covers
+        // it once the agent runs this app's executable.
+        (false, "granted", None) if fda.monitor_fresh => {
+            "granted to the app, but the running monitor is an older build under a \
+             different identity (restart the monitor to pick up the grant)"
         }
         (false, "not_applicable", _) => "not applicable on this platform",
         (false, "unknown", None) => "could not be determined",
@@ -883,19 +937,73 @@ fn monitor_launch_agent_status_inner() -> Result<MonitorLaunchAgentStatusDto, Ap
 /// monitor process is replaced by the on-disk build, which mirrors a real
 /// `status.json` into the host dir. Does nothing when nothing is installed
 /// (the user never set up the monitor); it never installs one implicitly.
-/// Called from app startup when a leftover legacy status symlink signals
-/// that an old monitor is still running.
-pub(crate) fn restart_monitor_if_installed() -> Result<(), AppError> {
+/// Called from app startup via `recover_monitor_on_startup` when
+/// `monitor_needs_startup_recovery` finds evidence of an old build, and exposed
+/// to the UI as `restart_monitor_if_agent_installed`.
+pub(crate) fn restart_monitor_if_installed() -> Result<MonitorAgentStatus, AppError> {
     let controller = match monitor_agent::controller_for_current_user(false) {
         Ok(controller) => controller,
-        Err(MonitorAgentError::Unsupported) => return Ok(()),
+        Err(MonitorAgentError::Unsupported) => return Ok(MonitorAgentStatus::unsupported()),
         Err(error) => return Err(error.into()),
     };
-    if controller.inspect()?.state == MonitorAgentState::NotInstalled {
-        return Ok(());
+    let status = controller.inspect()?;
+    if status.state == MonitorAgentState::NotInstalled {
+        return Ok(status);
     }
-    controller.restart()?;
-    Ok(())
+    Ok(controller.restart()?)
+}
+
+/// Whether an already-installed monitor should be restarted at app launch.
+///
+/// Two independent signals, either sufficient:
+///
+/// * A leftover **symlink** at the host status path. Only pre-3.2 monitors
+///   create one, so seeing it means an old build is still running.
+/// * An installed service that is **running and has completed a scan**, while
+///   the host mirror is absent or stale. That is the same old build seen from
+///   the other side: it scans and writes the container, but never mirrors.
+///
+/// The symlink alone is not enough. `read_status_snapshot_with` unlinks it on
+/// the first read, and the status watcher performs one within moments of
+/// launch, so from the *second* launch onwards there is no symlink left to find
+/// and the host status would stay absent indefinitely.
+///
+/// Requiring a completed scan is what keeps this from restarting a healthy
+/// monitor that simply has not finished its first pass yet.
+pub(crate) fn monitor_needs_startup_recovery(ipc: &IpcConfig) -> bool {
+    // Checked before any snapshot read, which would erase the evidence.
+    let host_status_is_symlink = ipc
+        .status_file_path()
+        .symlink_metadata()
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false);
+    if host_status_is_symlink {
+        return true;
+    }
+
+    let Ok(agent) = monitor_launch_agent_status_inner() else {
+        return false;
+    };
+    if !agent.running || agent.last_scan.is_none() {
+        return false;
+    }
+    read_status_snapshot_with(ipc)
+        .map(|snapshot| snapshot.stale)
+        .unwrap_or(true)
+}
+
+/// Restart the monitor only when a service is already installed.
+///
+/// Unlike `restart_monitor`, this never installs one: a plain restart falls
+/// back to a full install when nothing is present, which would turn a
+/// background recovery attempt into a service the user never asked for. The UI
+/// uses this for automatic recovery and keeps `restart_monitor` for the button
+/// the user presses deliberately.
+#[tauri::command]
+pub async fn restart_monitor_if_agent_installed(
+    app: tauri::AppHandle,
+) -> Result<MonitorLaunchAgentStatusDto, String> {
+    run_monitor_operation(app, restart_monitor_if_installed).await
 }
 
 // `pluginkit -m -v -i <id>` prints one line per plugin matching the id, or
@@ -1159,7 +1267,14 @@ fn app_requirement_checks(ipc: &IpcConfig) -> Vec<RequirementCheckDto> {
         critical: false,
     });
 
-    let fda = full_disk_access_dto(full_disk_access::probe(), snapshot.as_ref());
+    let fda = full_disk_access_dto(
+        full_disk_access::probe(),
+        snapshot.as_ref(),
+        monitor_agent
+            .as_ref()
+            .and_then(|status| status.owner_kind)
+            .is_some_and(|owner| owner.is_app()),
+    );
     checks.push(RequirementCheckDto {
         name: "Full Disk Access".to_string(),
         passed: fda.granted,

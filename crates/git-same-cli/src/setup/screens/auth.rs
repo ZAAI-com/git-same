@@ -7,12 +7,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
 use ratatui::Frame;
 
-/// Braille spinner frames.
-const SPINNER: [char; 10] = [
-    '\u{280b}', '\u{2819}', '\u{2839}', '\u{2838}', '\u{283c}', '\u{2834}', '\u{2826}', '\u{2827}',
-    '\u{2807}', '\u{280f}',
-];
-
 pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
     let provider = state.selected_provider();
     let green = Style::default().fg(Color::Rgb(21, 128, 61));
@@ -43,7 +37,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
             )));
         }
         AuthStatus::Checking => {
-            let spinner_char = SPINNER[(state.tick_count as usize) % SPINNER.len()];
+            let spinner_char = crate::tui::widgets::spinner::frame(state.tick_count);
             lines.push(Line::from(Span::styled(
                 format!("{} Authenticating...", spinner_char),
                 Style::default().fg(Color::Yellow),

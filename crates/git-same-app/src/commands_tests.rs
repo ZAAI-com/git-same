@@ -694,28 +694,68 @@ fn snapshot_with_fda(monitor: Option<bool>, stale: bool) -> StatusSnapshot {
 #[test]
 fn fda_gate_prefers_a_fresh_monitor_answer() {
     // The monitor holds the grant even though this process does not (for
-    // example a dev build): badges can render, so the gate passes.
-    assert!(fda_gate_passes(FullDiskAccess::Denied, Some(true), true));
+    // example a dev build): badges can render, so the gate passes. The monitor's
+    // own answer wins regardless of which agent installed it.
+    assert!(fda_gate_passes(
+        FullDiskAccess::Denied,
+        Some(true),
+        true,
+        false
+    ));
+    assert!(fda_gate_passes(
+        FullDiskAccess::Denied,
+        Some(true),
+        true,
+        true
+    ));
     // The monitor lacks the grant even though this process has it (grant
     // landed after the monitor started): badges would stay blank.
-    assert!(!fda_gate_passes(FullDiskAccess::Granted, Some(false), true));
+    assert!(!fda_gate_passes(
+        FullDiskAccess::Granted,
+        Some(false),
+        true,
+        true
+    ));
 }
 
 #[test]
 fn fda_gate_falls_back_to_the_host_probe_without_a_fresh_monitor() {
-    assert!(fda_gate_passes(FullDiskAccess::Granted, None, true));
-    assert!(fda_gate_passes(FullDiskAccess::Granted, Some(false), false));
-    assert!(!fda_gate_passes(FullDiskAccess::Denied, None, false));
+    assert!(fda_gate_passes(
+        FullDiskAccess::Granted,
+        Some(false),
+        false,
+        false
+    ));
+    assert!(!fda_gate_passes(FullDiskAccess::Denied, None, false, true));
     // Unknown never passes: the gate must not enable badges on a guess.
-    assert!(!fda_gate_passes(FullDiskAccess::Unknown, None, true));
-    assert!(!fda_gate_passes(FullDiskAccess::NotApplicable, None, false));
+    assert!(!fda_gate_passes(FullDiskAccess::Unknown, None, true, true));
+    assert!(!fda_gate_passes(
+        FullDiskAccess::NotApplicable,
+        None,
+        false,
+        true
+    ));
+}
+
+#[test]
+fn fda_gate_withholds_the_host_probe_from_a_foreign_identity_monitor() {
+    // A fresh monitor reporting no answer is a pre-3.2 build. The host probe
+    // only transfers to it when the agent runs this app's executable; a
+    // CLI-owned (or unknown) agent runs a helper under its own TCC identity, so
+    // enabling badges would leave them silently blank.
+    assert!(!fda_gate_passes(FullDiskAccess::Granted, None, true, false));
+    assert!(fda_gate_passes(FullDiskAccess::Granted, None, true, true));
+
+    // A stale or absent monitor keeps the plain fallback, so a first-run setup
+    // with nothing installed yet is never blocked by this.
+    assert!(fda_gate_passes(FullDiskAccess::Granted, None, false, false));
 }
 
 #[test]
 fn full_disk_access_dto_reports_both_identities() {
     let stale_snapshot = snapshot_with_fda(Some(false), true);
 
-    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&stale_snapshot));
+    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&stale_snapshot), true);
 
     assert_eq!(dto.host, "granted");
     assert_eq!(dto.monitor, Some(false));
@@ -724,12 +764,12 @@ fn full_disk_access_dto_reports_both_identities() {
     assert!(dto.granted);
 
     let fresh_snapshot = snapshot_with_fda(Some(false), false);
-    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&fresh_snapshot));
+    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&fresh_snapshot), true);
     assert!(dto.monitor_fresh);
     // Fresh monitor without the grant: its answer wins.
     assert!(!dto.granted);
 
-    let dto = full_disk_access_dto(FullDiskAccess::Denied, None);
+    let dto = full_disk_access_dto(FullDiskAccess::Denied, None, true);
     assert_eq!(dto.host, "denied");
     assert_eq!(dto.monitor, None);
     assert!(!dto.monitor_fresh);
@@ -738,12 +778,13 @@ fn full_disk_access_dto_reports_both_identities() {
 
 #[test]
 fn full_disk_access_message_explains_each_state() {
-    let granted = full_disk_access_dto(FullDiskAccess::Granted, None);
+    let granted = full_disk_access_dto(FullDiskAccess::Granted, None, true);
     assert_eq!(full_disk_access_message(&granted), "granted to Git-Same");
 
     let stale_monitor = full_disk_access_dto(
         FullDiskAccess::Granted,
         Some(&snapshot_with_fda(Some(false), true)),
+        true,
     );
     assert!(
         stale_monitor.granted,
@@ -753,22 +794,23 @@ fn full_disk_access_message_explains_each_state() {
     let fresh_lagging_monitor = full_disk_access_dto(
         FullDiskAccess::Granted,
         Some(&snapshot_with_fda(Some(false), false)),
+        true,
     );
     assert!(full_disk_access_message(&fresh_lagging_monitor).contains("restart the monitor"));
 
-    let denied = full_disk_access_dto(FullDiskAccess::Denied, None);
+    let denied = full_disk_access_dto(FullDiskAccess::Denied, None, true);
     assert_eq!(
         full_disk_access_message(&denied),
         "not granted (required for Finder badges)"
     );
 
-    let unknown = full_disk_access_dto(FullDiskAccess::Unknown, None);
+    let unknown = full_disk_access_dto(FullDiskAccess::Unknown, None, true);
     assert_eq!(
         full_disk_access_message(&unknown),
         "could not be determined"
     );
 
-    let not_applicable = full_disk_access_dto(FullDiskAccess::NotApplicable, None);
+    let not_applicable = full_disk_access_dto(FullDiskAccess::NotApplicable, None, true);
     assert_eq!(
         full_disk_access_message(&not_applicable),
         "not applicable on this platform"

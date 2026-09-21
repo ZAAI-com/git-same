@@ -334,3 +334,154 @@ async fn operation_complete_starts_one_guarded_status_refresh() {
         "the following dashboard tick must not launch a duplicate status scan"
     );
 }
+
+#[test]
+fn discovery_error_keeps_an_in_flight_operation_running() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.operation_state = running_state(Operation::Sync);
+
+    // A per-org discovery failure is non-fatal in the provider: the sync task is
+    // still running, so the state must not fall back to Idle.
+    handle_backend_message(
+        &mut app,
+        BackendMessage::DiscoveryError("Error fetching repos for acme: 404".to_string()),
+        &tx,
+    );
+
+    assert!(matches!(
+        app.operation_state,
+        OperationState::Running {
+            operation: Operation::Sync,
+            ..
+        }
+    ));
+    assert!(app.error_message.is_some());
+}
+
+#[test]
+fn discovery_error_keeps_a_discovering_operation_running() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.operation_state = OperationState::Discovering {
+        operation: Operation::Sync,
+        message: "Starting Sync...".to_string(),
+    };
+
+    handle_backend_message(
+        &mut app,
+        BackendMessage::DiscoveryError("Error fetching repos for acme: 404".to_string()),
+        &tx,
+    );
+
+    assert!(matches!(
+        app.operation_state,
+        OperationState::Discovering {
+            operation: Operation::Sync,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn discovery_error_still_reports_when_no_operation_is_running() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.operation_state = OperationState::Idle;
+
+    handle_backend_message(
+        &mut app,
+        BackendMessage::DiscoveryError("no orgs configured".to_string()),
+        &tx,
+    );
+
+    assert!(matches!(app.operation_state, OperationState::Idle));
+    assert_eq!(
+        app.error_message.as_deref(),
+        Some("no orgs configured"),
+        "a discovery error outside a run must still surface"
+    );
+}
+
+#[tokio::test]
+async fn discovery_error_during_sync_does_not_open_a_status_refresh_window() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, mut rx) = unbounded_channel();
+    app.screen = Screen::Dashboard;
+    app.operation_state = running_state(Operation::Sync);
+
+    handle_backend_message(
+        &mut app,
+        BackendMessage::DiscoveryError("Error fetching repos for acme: 404".to_string()),
+        &tx,
+    );
+    // The dashboard tick previously saw an Idle state here and started a scan
+    // that was still in flight when the sync completed.
+    handle_event(&mut app, AppEvent::Tick, &tx).await;
+
+    assert!(!app.status_loading);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
+            .await
+            .is_err(),
+        "no status scan may start while the sync task is still running"
+    );
+}
+
+#[test]
+fn operation_error_clears_the_status_refresh_flag() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.status_loading = true;
+
+    handle_backend_message(
+        &mut app,
+        BackendMessage::OperationError("scan failed".to_string()),
+        &tx,
+    );
+
+    assert!(
+        !app.status_loading,
+        "a latched flag would block every later refresh and sync"
+    );
+    assert!(matches!(app.operation_state, OperationState::Idle));
+}
+
+#[test]
+fn operation_complete_from_discovering_keeps_its_own_operation() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/test-ws"));
+    let mut app = App::new(Config::default(), vec![ws], false);
+    let (tx, _rx) = unbounded_channel();
+    app.operation_state = OperationState::Discovering {
+        operation: Operation::Status,
+        message: "Scanning...".to_string(),
+    };
+
+    handle_backend_message(
+        &mut app,
+        BackendMessage::OperationComplete(OpSummary::new()),
+        &tx,
+    );
+
+    assert!(
+        matches!(
+            app.operation_state,
+            OperationState::Finished {
+                operation: Operation::Status,
+                ..
+            }
+        ),
+        "a Status run that short-circuits must not be recorded as a sync"
+    );
+    assert!(
+        app.active_workspace
+            .as_ref()
+            .is_none_or(|ws| ws.last_synced.is_none()),
+        "a Status completion must not stamp last_synced"
+    );
+}

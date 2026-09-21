@@ -49,9 +49,11 @@ fn test_app_group_id_has_team_prefix() {
 #[cfg(target_os = "macos")]
 #[test]
 fn test_macos_group_container_dir_includes_app_group_segment() {
-    // We don't mutate HOME (env mutation races with parallel tests); instead
-    // we just assert that, when HOME is set in the inherited environment, the
-    // function returns a path under Library/Group Containers/<APP_GROUP_ID>.
+    // We never mutate HOME here; we assert that, when HOME is set in the
+    // inherited environment, the function returns a path under
+    // Library/Group Containers/<APP_GROUP_ID>. The lock keeps the tests that do
+    // swap HOME from changing it underneath us.
+    let _env = crate::test_support::lock_env();
     if let Some(dir) = macos_group_container_dir() {
         let dir_str = dir.to_string_lossy();
         assert!(
@@ -71,6 +73,7 @@ fn test_macos_group_container_dir_includes_app_group_segment() {
 #[cfg(target_os = "macos")]
 #[test]
 fn test_default_path_uses_group_container_on_macos() {
+    let _env = crate::test_support::lock_env();
     if std::env::var_os("HOME").is_none() {
         return;
     }
@@ -90,7 +93,9 @@ fn test_default_path_uses_group_container_on_macos() {
 #[test]
 fn test_legacy_default_path_ends_in_finder() {
     // legacy_default_path leans on Config::default_path which respects XDG
-    // env vars; we just sanity-check the suffix.
+    // env vars; we just sanity-check the suffix. The lock holds off the tests
+    // that swap HOME/XDG_CONFIG_HOME process-wide while we read them.
+    let _env = crate::test_support::lock_env();
     if let Ok(cfg) = IpcConfig::legacy_default_path() {
         assert!(
             cfg.dir.ends_with("git-same/finder"),
@@ -104,6 +109,9 @@ fn test_legacy_default_path_ends_in_finder() {
 fn test_host_status_path_matches_legacy_default_path() {
     // The host reads from the non-container host path; it must resolve to the
     // same directory as legacy_default_path (a distinct name for clarity).
+    // Both calls read the environment, so they must see the same one: without
+    // the lock a concurrent HOME swap between them fails the comparison below.
+    let _env = crate::test_support::lock_env();
     let host = IpcConfig::host_status_path();
     let legacy = IpcConfig::legacy_default_path();
     match (host, legacy) {
@@ -136,6 +144,7 @@ fn test_status_writer_has_no_mirrors_for_custom_dir() {
 #[cfg(target_os = "macos")]
 #[test]
 fn test_status_writer_mirrors_host_status_for_group_container() {
+    let _env = crate::test_support::lock_env();
     if std::env::var_os("HOME").is_none() {
         return;
     }

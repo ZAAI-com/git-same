@@ -32,6 +32,7 @@ fn main() {
             commands::monitor_launch_agent_status,
             commands::install_monitor_launch_agent,
             commands::restart_monitor_launch_agent,
+            commands::restart_monitor_if_agent_installed,
             commands::discover_provider_orgs,
             commands::read_workspace_structure,
             commands::read_status,
@@ -52,27 +53,16 @@ fn main() {
             let host_ipc = git_same_core::ipc::IpcConfig::host_status_path()?;
             app.manage(commands::HostIpc(host_ipc.clone()));
 
-            // A leftover symlink at the host status.json path means an old
-            // monitor build is still running (only pre-upgrade monitors symlink
-            // it into the container; the current monitor writes a real mirror
-            // file). Best-effort restart the installed monitor so the upgraded
-            // build takes over and starts mirroring, instead of the app showing
-            // stale status until the user restarts it by hand. symlink_metadata
-            // does not follow the link, so this never reaches into the app-group
-            // container (no "access data from other apps" TCC prompt). Run on a
-            // background thread so the synchronous launchctl calls do not block
-            // app startup.
-            let host_status_is_symlink = host_ipc
-                .status_file_path()
-                .symlink_metadata()
-                .map(|meta| meta.file_type().is_symlink())
-                .unwrap_or(false);
-            if host_status_is_symlink {
-                std::thread::spawn(move || {
-                    if let Err(error) = commands::restart_monitor_if_installed() {
-                        eprintln!("failed to restart monitor after upgrade: {error}");
-                    }
-                });
+            // An old monitor build can still be running after an upgrade: it
+            // writes the container but never mirrors a real status.json into the
+            // host dir, so the app would show "monitor not running" until the
+            // user restarted it by hand. Restart the installed service so the
+            // upgraded build takes over. See `monitor_needs_startup_recovery`
+            // for the two signals. Never installs a service implicitly, and runs
+            // through the shared monitor-operation lock so it serializes with
+            // `ensure_monitor_on_startup` below and publishes its result.
+            if commands::monitor_needs_startup_recovery(&host_ipc) {
+                commands::recover_monitor_on_startup(app.handle().clone());
             }
 
             if let Err(error) = status_stream::spawn_watcher(app.handle().clone(), host_ipc) {

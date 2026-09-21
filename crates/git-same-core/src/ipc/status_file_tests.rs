@@ -114,9 +114,17 @@ fn test_write_produces_primary_and_every_mirror() {
     let status = sample_status();
     writer.write(&status).unwrap();
 
-    // Both files exist as real files with identical content.
-    assert!(primary.exists());
-    assert!(mirror.exists());
+    // Both entries must be REAL FILES, not symlinks. `exists()` follows links,
+    // so it cannot catch a regression that reinstates the cross-container
+    // symlink this whole layout exists to avoid.
+    assert!(std::fs::symlink_metadata(&primary)
+        .unwrap()
+        .file_type()
+        .is_file());
+    assert!(std::fs::symlink_metadata(&mirror)
+        .unwrap()
+        .file_type()
+        .is_file());
     assert_eq!(
         std::fs::read_to_string(&primary).unwrap(),
         std::fs::read_to_string(&mirror).unwrap()
@@ -334,5 +342,67 @@ mod symlink_helper {
         let sock_meta = fs::symlink_metadata(&sock).unwrap();
         assert!(sock_meta.file_type().is_symlink());
         assert_eq!(fs::read_link(&sock).unwrap(), group.join("finder.sock"));
+    }
+    #[test]
+    fn migration_moves_aside_a_directory_at_the_legacy_status_path() {
+        let (_root, legacy, group) = dirs();
+        let status = legacy.join("status.json");
+        fs::create_dir_all(status.join("nested")).unwrap();
+
+        ensure_legacy_symlinks_in(&legacy, &group).unwrap();
+
+        // The directory is gone from the mirror path, so write_atomic's rename
+        // can land there instead of failing EISDIR on every write.
+        assert!(
+            fs::symlink_metadata(&status).is_err(),
+            "the blocking directory must be moved out of the way"
+        );
+        let aside: Vec<_> = fs::read_dir(&legacy)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("status.json.user-saved-")
+            })
+            .collect();
+        assert_eq!(aside.len(), 1, "contents must be preserved, not deleted");
+        assert!(aside[0].path().join("nested").is_dir());
+
+        // And a real mirror write now succeeds at that path.
+        let writer =
+            StatusFileWriter::new_with_mirrors(group.join("status.json"), vec![status.clone()]);
+        writer.write(&sample_status()).unwrap();
+        assert!(fs::symlink_metadata(&status).unwrap().file_type().is_file());
+    }
+
+    #[test]
+    fn migration_leaves_a_real_legacy_status_file_alone() {
+        let (_root, legacy, group) = dirs();
+        let status = legacy.join("status.json");
+        fs::write(&status, "{\"keep\":true}").unwrap();
+
+        ensure_legacy_symlinks_in(&legacy, &group).unwrap();
+
+        assert_eq!(fs::read_to_string(&status).unwrap(), "{\"keep\":true}");
+        assert!(fs::symlink_metadata(&status).unwrap().file_type().is_file());
+    }
+
+    #[test]
+    fn migration_leaves_a_symlinked_legacy_status_alone() {
+        let (_root, legacy, group) = dirs();
+        let status = legacy.join("status.json");
+        let target = group.join("status.json");
+        fs::write(&target, "{}").unwrap();
+        symlink(&target, &status).unwrap();
+
+        ensure_legacy_symlinks_in(&legacy, &group).unwrap();
+
+        // The mirror write and read_status_snapshot_with already handle links;
+        // moving them aside would lose the recovery path they encode.
+        assert!(fs::symlink_metadata(&status)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 }

@@ -309,8 +309,6 @@ pub fn spawn_operation(operation: Operation, app: &App, tx: UnboundedSender<AppE
             });
         }
         Operation::Status => {
-            let workspace = app.active_workspace.clone();
-            let config = app.config.clone();
             tokio::spawn(async move {
                 run_status_scan(config, workspace, tx).await;
             });

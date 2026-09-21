@@ -85,6 +85,11 @@ export function restartMonitorLaunchAgent(): Promise<MonitorLaunchAgentStatusDto
   return invoke('restart_monitor_launch_agent');
 }
 
+/** Restart only an already-installed monitor; never installs one implicitly. */
+export function restartMonitorIfAgentInstalled(): Promise<MonitorAgentStatusDto> {
+  return invoke('restart_monitor_if_agent_installed');
+}
+
 export function discoverProviderOrgs(
   provider: WorkspaceProviderDto,
 ): Promise<ProviderDiscoveryDto> {
