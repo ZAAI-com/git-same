@@ -1,6 +1,10 @@
 crates/git-same-app/src/status_stream_tests.rs
   s_b0ea03f8de4224::t_5842806111c402 48,59-60,87
   s_b0ea03f8de4224::t_32babde6ecdedc 88-89
+  s_ca5a7db15db3f8::t_74c9ef3904268c 145-146,149
+  s_ca5a7db15db3f8::t_1c52f1161493ec 147-148,150-177
+crates/git-same-app/src/status_stream.rs
+  s_ca5a7db15db3f8::t_1c52f1161493ec 13,101-119,198
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -13,6 +17,14 @@ crates/git-same-app/src/status_stream_tests.rs
         "tool": "codex",
         "id": "019fe206-42f0-7e11-91ef-fa5f95d36a95",
         "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_ca5a7db15db3f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d3bd8ecd-cb3e-4648-90d2-1956d5fbda3f",
+        "model": "claude-opus-5"
       },
       "human_author": "Manuel <m@manuelgruber.com>"
     }
