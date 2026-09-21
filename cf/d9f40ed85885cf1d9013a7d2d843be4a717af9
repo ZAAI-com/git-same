@@ -1,0 +1,19 @@
+crates/git-same-app/ui/package.json
+  s_a78fdf3e7e1b82::t_364696066651f7 14,22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cfd9f40ed85885cf1d9013a7d2d843be4a717af9",
+  "prompts": {},
+  "sessions": {
+    "s_a78fdf3e7e1b82": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bdd2-d465-7b73-ba92-b8108c7272fd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}

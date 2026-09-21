@@ -1,0 +1,37 @@
+Cargo.lock
+  s_d2f2c98d3ed29b::t_c794e916ffcf4c 1592,1617,1637
+crates/git-same-app/ui/package.json
+  s_d2f2c98d3ed29b::t_6eb619691aa5ea 4
+macos/GitSameBadges/Info.plist
+  s_a78fdf3e7e1b82::t_a3c037ae401779 20,22
+Cargo.toml
+  s_a78fdf3e7e1b82::t_a3c037ae401779 10
+crates/git-same-app/tauri.conf.json
+  s_a78fdf3e7e1b82::t_a3c037ae401779 4
+crates/git-same-cli/Cargo.toml
+  s_a78fdf3e7e1b82::t_a3c037ae401779 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2219887b3ad3027a217da9a06c3d652e41741ba6",
+  "prompts": {},
+  "sessions": {
+    "s_a78fdf3e7e1b82": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bdd2-d465-7b73-ba92-b8108c7272fd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_d2f2c98d3ed29b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "716d4fe9-84c7-48a4-8f59-a64f0679746c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}

@@ -1,0 +1,89 @@
+crates/git-same-core/src/types/finder_status.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 162-168,188
+  s_ee6ae02672c688::t_a65e1b10420a98 28
+crates/git-same-app/ui/src/lib/types.ts
+  s_ee6ae02672c688::t_abacfca6fd683b 155-167,267
+macos/GitSameBadges/GitSameBadges.entitlements
+  s_ee6ae02672c688::t_7b239107bb4180 12-20
+crates/git-same-core/src/monitor/run_tests.rs
+  s_ee6ae02672c688::t_74cbd2e3e17cf2 1-2,19-21,124-128,130-131,133-139,141-143
+crates/git-same-app/ui/src/lib/tauri.ts
+  s_ee6ae02672c688::t_abacfca6fd683b 8,112-122
+  s_ee6ae02672c688::t_aecce0f9090b76 123
+toolkit/packaging/macos/build-app-bundle.sh
+  s_ee6ae02672c688::t_7b239107bb4180 98-102
+crates/git-same-app/src/monitor_mode.rs
+  s_ee6ae02672c688::t_2a5ac1e1d06a2a 1-2,10-11,15-22,25-34,45-48,50-57,68-70,71,72-95
+crates/git-same-app/ui/src/App.svelte
+  s_ee6ae02672c688::t_abacfca6fd683b 8-14,20-29,44-45,51-52
+crates/git-same-app/ui/src/lib/StatusBanner.svelte
+  s_ee6ae02672c688::t_abacfca6fd683b 4,7,44-45,48-49,53-56,60-62,121,124-125,127,130-131
+crates/git-same-core/src/macos/mod.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 3-7,10
+.claude/CLAUDE.md
+  s_ee6ae02672c688::t_7b239107bb4180 49,120-122
+crates/git-same-core/src/types/finder_status_tests.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 169-193
+crates/git-same-app/src/commands.rs
+  s_ee6ae02672c688::t_ece03528957ca2 14,240-255,737-741,743-744,746-765,767-851,893,1162,1165-1170,1252
+  s_ee6ae02672c688::t_2126368e39cb70 742,745,766
+crates/git-same-app/src/commands_tests.rs
+  s_ee6ae02672c688::t_b8c6856348a807 490,494,511,597,613-615,619-620,627-630,639-640,643,644-646,666-706,708,710-715,722-734,743,748-756,761-765,767
+  s_ee6ae02672c688::t_2126368e39cb70 736,738-739,741-742,744-745,747,757-760,766
+  s_ee6ae02672c688::t_01e1ec9689ab60 735,737,740,746
+  s_ee6ae02672c688::t_376ce562118b78 707,709,716-721
+crates/git-same-app/ui/src/stores/status.ts
+  s_ee6ae02672c688::t_abacfca6fd683b 7,14,26,43,78,88,95,98-152
+crates/git-same-app/ui/src/routes/FinderBadges.svelte
+  s_ee6ae02672c688::t_10f4b0efbe3d0e 15-22,24,26-40,45-50,66-67,70-103,105-112,114-119,143-150,325-328
+  s_ee6ae02672c688::t_2daab53cf534c3 329
+crates/git-same-core/src/api/service.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 186-190
+  s_ee6ae02672c688::t_74cbd2e3e17cf2 4
+  s_ee6ae02672c688::t_a65e1b10420a98 115
+crates/git-same-core/src/macos/full_disk_access_tests.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 1-53
+crates/git-same-app/Cargo.toml
+  s_ee6ae02672c688::t_2a5ac1e1d06a2a 35-36
+crates/git-same-core/src/monitor/run.rs
+  s_ee6ae02672c688::t_74cbd2e3e17cf2 54-94,558-561
+crates/git-same-core/src/macos/full_disk_access.rs
+  s_ee6ae02672c688::t_bfe8d93ee3e587 1-94
+crates/git-same-app/ui/src/routes/Requirements.svelte
+  s_ee6ae02672c688::t_abacfca6fd683b 13
+docs/README.md
+  s_ee6ae02672c688::t_7b239107bb4180 278-288
+crates/git-same-app/ui/src/lib/systemSettings.ts
+  s_ee6ae02672c688::t_abacfca6fd683b 1-7
+crates/git-same-app/src/monitor_mode_tests.rs
+  s_ee6ae02672c688::t_2a5ac1e1d06a2a 1-15,21-23
+  s_ee6ae02672c688::t_2126368e39cb70 16-20
+crates/git-same-app/src/main.rs
+  s_ee6ae02672c688::t_2a5ac1e1d06a2a 2,8-15,40-42,71
+Cargo.lock
+  s_ee6ae02672c688::t_1c005e380ddab5 1633-1634
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "2b7a3d110c0c44f783fec0fb22f9ebcfc429be03",
+  "prompts": {},
+  "sessions": {
+    "s_a78fdf3e7e1b82": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bdd2-d465-7b73-ba92-b8108c7272fd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_ee6ae02672c688": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "104c4115-ba44-494b-a9a4-cf39fcc15271",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
