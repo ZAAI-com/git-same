@@ -1,0 +1,19 @@
+crates/git-same-app/Cargo.toml
+  s_ca5a7db15db3f8::t_ff99f9fd7286ce 28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "54770e72bf70c178264586d9cb273a81670d45df",
+  "prompts": {},
+  "sessions": {
+    "s_ca5a7db15db3f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d3bd8ecd-cb3e-4648-90d2-1956d5fbda3f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
