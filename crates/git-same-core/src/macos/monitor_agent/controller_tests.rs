@@ -751,9 +751,12 @@ fn cask_install_starts_monitoring_without_the_app() {
     // The monitor runs the bundle executable itself: a copy under the
     // managed root would be a TCC identity the app's grant never reaches.
     assert!(!env.paths.helper.exists());
+    // Built with `join`, not a slash literal: the rendered plist carries the
+    // platform separator, so a POSIX literal never matches on Windows.
+    let executable = source::app_main_executable(&app);
     assert!(std::fs::read_to_string(&env.paths.launch_agent)
         .unwrap()
-        .contains(app.join("Contents/MacOS/git-same-app").to_str().unwrap()));
+        .contains(executable.to_str().unwrap()));
     assert!(std::fs::read_to_string(&env.paths.launch_agent)
         .unwrap()
         .contains("AssociatedBundleIdentifiers"));
