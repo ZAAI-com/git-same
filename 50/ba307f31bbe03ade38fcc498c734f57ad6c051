@@ -1,0 +1,19 @@
+docs/plans/per-subcommand-manpages.md
+  s_38ddb91f7df0b7::t_ce0308d229144e 1-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "50ba307f31bbe03ade38fcc498c734f57ad6c051",
+  "prompts": {},
+  "sessions": {
+    "s_38ddb91f7df0b7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b63d351-694e-4057-b519-62d837d2b26f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
