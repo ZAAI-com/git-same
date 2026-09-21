@@ -1,0 +1,19 @@
+crates/git-same-cli/src/cli_tests.rs
+  s_463afe401e0e52::t_63215c8ffcef64 296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "43609e8811014553638cbe18a5a7f61af1f045bd",
+  "prompts": {},
+  "sessions": {
+    "s_463afe401e0e52": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0bfb8-88fb-72d3-a0ea-9ac32b36377d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
