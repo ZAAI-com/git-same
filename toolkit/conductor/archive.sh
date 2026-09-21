@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 cd "$PROJECT_DIR"
 
 PACKAGE_NAME="git-same"
@@ -41,6 +41,27 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
+# Owner-scoped monitor cleanup. run.sh suppresses automatic monitor management,
+# so this only matters after a deliberate GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART=1
+# session. Never uninstall a monitor this worktree does not own: that would
+# stop and remove the developer's real background monitor.
+echo "--- Monitor Cleanup (owner-scoped) ---"
+INSTALL_RECORD="$HOME/Library/Application Support/com.zaai.git-same/monitor/install.json"
+MANAGED_HELPER="$HOME/Library/Application Support/com.zaai.git-same/monitor/git-same"
+if [ -f "$INSTALL_RECORD" ] && grep -qF "\"$PROJECT_DIR/" "$INSTALL_RECORD"; then
+    if [ -x "$MANAGED_HELPER" ] && "$MANAGED_HELPER" --quiet monitor --uninstall; then
+        echo "  [REMOVED] background monitor installed from this worktree"
+        echo "  Monitoring is now stopped. Re-enable it from your real install:"
+        echo "    gisa monitor --start"
+    else
+        echo "  WARNING: monitor was installed from this worktree but could not be removed."
+        echo "  Run 'gisa monitor --uninstall' from an installed Git-Same."
+    fi
+else
+    echo "  No monitor owned by this worktree. Skipping."
+fi
+echo ""
+
 echo "--- Uninstalling Cargo Package ---"
 if cargo uninstall "$PACKAGE_NAME"; then
     echo "Removed package: $PACKAGE_NAME"
@@ -53,7 +74,8 @@ echo "--- Removing Leftover Binaries ---"
 FOUND_LEFTOVERS=false
 for bin in "${BINARIES[@]}"; do
     path="$CARGO_BIN_DIR/$bin"
-    if [ -f "$path" ]; then
+    # -L also catches aliases left dangling after the worktree was removed.
+    if [ -f "$path" ] || [ -L "$path" ]; then
         rm -f "$path"
         echo "  [REMOVED] $path"
         FOUND_LEFTOVERS=true

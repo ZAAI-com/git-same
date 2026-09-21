@@ -17,8 +17,10 @@
 
 mod app;
 mod git;
+mod monitor_agent;
 mod provider;
 
 pub use app::{AppError, Result};
 pub use git::GitError;
+pub use monitor_agent::MonitorAgentError;
 pub use provider::ProviderError;

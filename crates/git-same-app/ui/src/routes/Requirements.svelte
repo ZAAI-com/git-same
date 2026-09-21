@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { AlertTriangle, CheckCircle2, ExternalLink, FilePlus2, Play, RotateCcw } from '@lucide/svelte';
+  import { AlertTriangle, CheckCircle2, ExternalLink, FilePlus2, RotateCcw } from '@lucide/svelte';
+  import MonitorPanel from '../lib/MonitorPanel.svelte';
+  import { monitorStatus } from '../stores/monitor';
   import {
     createDefaultConfig,
-    installMonitor,
     loadRequirements,
     requirements,
     requirementsLoading,
-    restartMonitor,
   } from '../stores/status';
   import { openUrl } from '../lib/tauri';
 
@@ -23,33 +23,36 @@
   $: passed = $requirements.filter((check) => check.passed).length;
   $: criticalFailures = $requirements.filter((check) => check.critical && !check.passed).length;
 
-  function actionFor(name: string, message = ''): 'config' | 'extensions' | 'fda' | 'monitor-install' | 'monitor-restart' | null {
+  // The Monitor row has no button of its own: Start, Stop, and Restart live
+  // in the Monitor panel, driven by typed state instead of message text.
+  function actionFor(name: string): 'config' | 'extensions' | 'fda' | null {
     if (name === 'Config file') return 'config';
     if (name === 'Finder extension') return 'extensions';
     if (name === 'Full Disk Access') return 'fda';
-    if (name === 'Monitor') {
-      return message.includes('missing') ? 'monitor-install' : 'monitor-restart';
-    }
     return null;
   }
 
-  function runAction(action: 'config' | 'extensions' | 'fda' | 'monitor-install' | 'monitor-restart') {
+  function runAction(action: 'config' | 'extensions' | 'fda') {
     if (action === 'config') void createDefaultConfig().then(loadRequirements);
     if (action === 'extensions') void openUrl(EXTENSIONS_URL);
     if (action === 'fda') void openUrl(FDA_URL);
-    if (action === 'monitor-install') void installMonitor();
-    if (action === 'monitor-restart') void restartMonitor();
   }
 
   function actionLabel(action: string) {
-    if (action === 'config') return 'Create';
-    if (action === 'monitor-install') return 'Install';
-    if (action === 'monitor-restart') return 'Restart';
-    return 'Open';
+    return action === 'config' ? 'Create' : 'Open';
+  }
+
+  // Re-run the checks when the monitor changes state (start, stop, first scan).
+  let lastMonitorState = '';
+  $: if ($monitorStatus && $monitorStatus.state !== lastMonitorState) {
+    const first = lastMonitorState === '';
+    lastMonitorState = $monitorStatus.state;
+    if (!first) void loadRequirements();
   }
 </script>
 
 <section class="requirements-screen">
+  <MonitorPanel />
   <section class="summary">
     <article>
       <strong>{passed}</strong>
@@ -72,7 +75,7 @@
       </div>
     {:else}
       {#each $requirements as check}
-        {@const action = actionFor(check.name, check.message)}
+        {@const action = actionFor(check.name)}
         <article class:failed={!check.passed} class="check-row">
           <span class={check.passed ? 'ok' : 'warn'}>
             {#if check.passed}<CheckCircle2 size={18} />{:else}<AlertTriangle size={18} />{/if}
@@ -89,7 +92,7 @@
           </span>
           {#if action && !check.passed}
             <button type="button" on:click={() => runAction(action)}>
-              {#if action === 'config'}<FilePlus2 size={15} />{:else if action.startsWith('monitor')}<Play size={15} />{:else}<ExternalLink size={15} />{/if}
+              {#if action === 'config'}<FilePlus2 size={15} />{:else}<ExternalLink size={15} />{/if}
               <span>{actionLabel(action)}</span>
             </button>
           {/if}

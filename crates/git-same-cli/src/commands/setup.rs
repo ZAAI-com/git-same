@@ -9,9 +9,9 @@ use git_same_core::errors::Result;
 #[cfg(feature = "tui")]
 use git_same_core::output::Output;
 
-/// Run the setup wizard.
+/// Run the setup wizard. Returns `true` when a workspace was configured.
 #[cfg(feature = "tui")]
-pub async fn run(_args: &SetupArgs, output: &Output) -> Result<()> {
+pub async fn run(_args: &SetupArgs, output: &Output) -> Result<bool> {
     let completed = crate::setup::run_setup().await?;
     if completed {
         output.success("Workspace configured successfully");
@@ -19,5 +19,5 @@ pub async fn run(_args: &SetupArgs, output: &Output) -> Result<()> {
     } else {
         output.info("Setup cancelled");
     }
-    Ok(())
+    Ok(completed)
 }

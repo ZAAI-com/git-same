@@ -3,7 +3,7 @@
 //! These errors represent top-level failures in the gisa application,
 //! aggregating errors from providers, git operations, and configuration.
 
-use super::{GitError, ProviderError};
+use super::{GitError, MonitorAgentError, ProviderError};
 use thiserror::Error;
 
 /// Top-level application errors.
@@ -34,6 +34,14 @@ pub enum AppError {
         #[from]
         #[source]
         GitError,
+    ),
+
+    /// Error from managing the background monitor service.
+    #[error("{0}")]
+    MonitorAgent(
+        #[from]
+        #[source]
+        MonitorAgentError,
     ),
 
     /// File system I/O error.
@@ -86,6 +94,7 @@ impl AppError {
         match self {
             AppError::Provider(e) => e.is_retryable(),
             AppError::Git(e) => e.is_retryable(),
+            AppError::MonitorAgent(e) => e.is_retryable(),
             AppError::Io(e) => {
                 // Some I/O errors are retryable
                 matches!(
@@ -106,6 +115,7 @@ impl AppError {
             AppError::Auth(_) => 3,
             AppError::Provider(_) => 4,
             AppError::Git(_) => 5,
+            AppError::MonitorAgent(e) => e.exit_code(),
             AppError::Io(_) => 6,
             AppError::Path(_) => 7,
             AppError::Cancelled => 130, // Standard for SIGINT
@@ -123,6 +133,7 @@ impl AppError {
             AppError::Auth(_) => "Run 'gh auth login' to authenticate with GitHub CLI",
             AppError::Provider(e) => e.suggested_action(),
             AppError::Git(e) => e.suggested_action(),
+            AppError::MonitorAgent(e) => e.suggested_action(),
             AppError::Io(_) => "Check file permissions and disk space",
             AppError::Path(_) => "Check that the path exists and is accessible",
             AppError::Cancelled | AppError::Interrupted => "Re-run the command to continue",

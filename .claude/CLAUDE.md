@@ -43,13 +43,14 @@ Git-Same is a Rust CLI + TUI + macOS Tauri app that discovers GitHub org/repo st
 
 **Commands:** `init`, `setup`, `sync`, `status`, `scan`, `workspace {list,default}`, `reset`, `monitor` (alias: `daemon`), `refresh`.
 
-**Why `monitor` is a CLI subcommand and not solely a Tauri-host responsibility:** the LaunchAgent invokes `gisa monitor --foreground`, non-cask installs (`cargo install`, the homebrew formula) ship only the binary, `--status` / `--stop` are the supported debugging surface, and a future Linux file-manager extension would talk to the same `gisa monitor` over the same Unix socket. The CLI handler is a thin shim (~140 lines); the loop itself lives in `git-same-core::monitor`.
+**Why `monitor` is a CLI subcommand and not solely a Tauri-host responsibility:** the LaunchAgent invokes the managed helper as `git-same monitor --foreground --managed`, the cask installs it through the hidden `--install-agent` / `--remove-agent` modes, non-cask installs (`cargo install`, the homebrew formula) ship only the binary, `--status` / `--start` / `--stop` / `--uninstall` are the supported control surface, and a future Linux file-manager extension would talk to the same `gisa monitor` over the same Unix socket. The CLI handler is a thin shim (~140 lines); the loop itself lives in `git-same-core::monitor`.
 
 ### Engine modules (`crates/git-same-core/src/`)
 
 - **`auth/`**: `gh_cli.rs` obtains GitHub API tokens via `gh auth token`. `ssh.rs` exposes low-level SSH probing primitives (`SshProbeResult`, `parse_ssh_probe_output`) used by clone-time diagnostics
 - **`workflows/`**: Cross-cutting orchestration: `sync_workspace` (discover + clone + fetch/pull) and `status_scan` (walk local repos, collect git status)
-- **`monitor/`**: Long-running monitor loop (periodic scan + Unix-socket server) used by `gisa monitor` and reusable by host apps like the Tauri GUI
+- **`monitor/`**: Long-running monitor loop (periodic scan + Unix-socket server) used by `gisa monitor` and reusable by host apps like the Tauri GUI. `runtime_guard.rs` is the cross-platform single-instance lock plus identity record (a status-file PID alone is never trusted); `live_config.rs` reloads config on `REFRESH_ALL` and on file change, so a healthy monitor is never restarted to pick up a new workspace
+- **`macos/monitor_agent/`**: The one lifecycle controller for the managed background monitor (inspect, ensure, start, stop, restart, uninstall, cask install/remove), shared by the cask installer, the CLI, and the Tauri app. Separate helper in `~/Library/Application Support/com.zaai.git-same/monitor/`, transactional replacement with rollback, owner-aware source selection, persistent Stop (`monitor.autostart` + launchd disable). All side effects go through the `System` trait; `UserContext::resolve` refuses redirected environments so tests cannot reach launchd. Compiles everywhere, only resolves on macOS
 - **`config/`**: TOML config parser. Default: `~/.config/git-same/config.toml`. Top-level keys: `workspaces`, `default_workspace`, plus `[clone]` and `[filters]` sections
 - **`discovery.rs`**: `DiscoveryOrchestrator` coordinates repo discovery via providers, applies filters, builds `ActionPlan` (what to clone vs sync)
 - **`operations/clone.rs`**: `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
@@ -89,10 +90,11 @@ Elm architecture: `app.rs` = Model, `screens/` = View, `handler.rs` = Update.
 
 ### macOS app module (`crates/git-same-app/`)
 
-- **`src/commands.rs`**: Tauri command handlers for app config, workspace CRUD, requirement checks, LaunchAgent install/restart/status, workspace structure reads, sync runs, and macOS URL opening.
-- **`src/status_stream.rs`**: Watches the monitor's `status.json` and emits `status-updated` events to the Svelte UI.
+- **`src/commands.rs`**: Tauri command handlers for app config (settings save is a `toml_edit` merge under the control lock), workspace CRUD, requirement checks, monitor start/stop/restart/status (thin adapters over `git_same_core::macos::monitor_agent`), workspace structure reads, sync runs, and macOS URL opening.
+- **`src/status_stream.rs`**: Watches the monitor's IPC directory by filename: `status.json` emits `status-updated`; it and the runtime identity record trigger a debounced inspect that emits `monitor-agent-updated`.
 - **`ui/src/routes/`**: App screens for dashboard, workspaces, settings, requirements, Finder badges, and badge browser.
 - **`ui/src/stores/status.ts`**: Frontend status store that performs the initial refresh and subscribes to push updates.
+- **`ui/src/stores/monitor.ts`** + **`ui/src/lib/monitorPresentation.ts`**: Monitor service state (separate from badge-data freshness), subscribe-then-fetch, and the pure state-to-UI mapping covered by vitest (`pnpm --dir crates/git-same-app/ui test`).
 
 ### Key patterns
 

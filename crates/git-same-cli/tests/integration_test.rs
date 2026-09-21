@@ -9,8 +9,16 @@ fn git_same_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_git-same"))
 }
 
-fn command_with_temp_env(home: &Path) -> Command {
+/// Spawn the CLI with automatic monitor management suppressed, so routine
+/// tests can never install, start, or stop the developer's live LaunchAgent.
+fn cli() -> Command {
     let mut cmd = Command::new(git_same_binary());
+    cmd.env("GIT_SAME_DISABLE_MONITOR_AUTOSTART", "1");
+    cmd
+}
+
+fn command_with_temp_env(home: &Path) -> Command {
+    let mut cmd = cli();
     let config_dir = home.join(".config").join("git-same");
     cmd.env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
@@ -120,7 +128,7 @@ fn assert_banner_branding(stdout: &str) {
 
 #[test]
 fn test_help_command() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("--help")
         .output()
         .expect("Failed to execute git-same");
@@ -138,7 +146,7 @@ fn test_help_command() {
 
 #[test]
 fn test_reset_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["reset", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -151,7 +159,7 @@ fn test_reset_help() {
 
 #[test]
 fn test_version_command() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("--version")
         .output()
         .expect("Failed to execute git-same");
@@ -163,7 +171,7 @@ fn test_version_command() {
 
 #[test]
 fn test_clone_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("clone")
         .output()
         .expect("Failed to execute git-same");
@@ -179,7 +187,7 @@ fn test_clone_subcommand_removed() {
 
 #[test]
 fn test_fetch_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("fetch")
         .output()
         .expect("Failed to execute git-same");
@@ -195,7 +203,7 @@ fn test_fetch_subcommand_removed() {
 
 #[test]
 fn test_pull_subcommand_removed() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .arg("pull")
         .output()
         .expect("Failed to execute git-same");
@@ -211,7 +219,7 @@ fn test_pull_subcommand_removed() {
 
 #[test]
 fn test_status_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["status", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -225,7 +233,7 @@ fn test_status_help() {
 
 #[test]
 fn test_init_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -238,7 +246,7 @@ fn test_init_help() {
 
 #[test]
 fn test_global_verbose_flag() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-v", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -248,7 +256,7 @@ fn test_global_verbose_flag() {
 
 #[test]
 fn test_global_quiet_flag() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-q", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -263,7 +271,7 @@ fn test_init_creates_config() {
     let temp = TempDir::new().expect("Failed to create temp dir");
     let config_path = temp.path().join("gisa.config.toml");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to execute git-same");
@@ -287,7 +295,7 @@ fn test_init_force_overwrites() {
     std::fs::write(&config_path, "# existing").expect("Failed to write");
 
     // Init without force should fail
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to execute git-same");
@@ -298,7 +306,7 @@ fn test_init_force_overwrites() {
     );
 
     // Init with force should succeed
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["init", "--path", config_path.to_str().unwrap(), "--force"])
         .output()
         .expect("Failed to execute git-same");
@@ -321,12 +329,12 @@ fn test_status_nonexistent_workspace() {
     let config_path = temp.path().join("config.toml");
 
     // Create a valid config so the test reaches workspace resolution
-    Command::new(git_same_binary())
+    cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to run init");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args([
             "-C",
             config_path.to_str().unwrap(),
@@ -352,7 +360,7 @@ fn test_status_nonexistent_workspace() {
 
 #[test]
 fn test_sync_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["sync", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -367,7 +375,7 @@ fn test_sync_help() {
 
 #[test]
 fn test_setup_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["setup", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -379,7 +387,7 @@ fn test_setup_help() {
 
 #[test]
 fn test_workspace_help() {
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["workspace", "--help"])
         .output()
         .expect("Failed to execute git-same");
@@ -398,12 +406,12 @@ fn test_workspace_list() {
     let config_path = temp.path().join("config.toml");
 
     // Create a minimal valid config so the test doesn't depend on local config
-    Command::new(git_same_binary())
+    cli()
         .args(["init", "--path", config_path.to_str().unwrap()])
         .output()
         .expect("Failed to run init");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-C", config_path.to_str().unwrap(), "workspace", "list"])
         .output()
         .expect("Failed to execute git-same");
@@ -571,7 +579,7 @@ fn test_missing_config_suggests_init() {
     let nonexistent = temp.path().join("nonexistent-gisa-config.toml");
     let path_str = nonexistent.to_str().expect("Path is valid UTF-8");
 
-    let output = Command::new(git_same_binary())
+    let output = cli()
         .args(["-C", path_str, "sync"])
         .output()
         .expect("Failed to execute git-same");
@@ -678,4 +686,104 @@ fn test_banner_source_no_legacy_version_subheadline() {
         !source.contains("local file system  Version"),
         "Found legacy versioned subheadline text in banner.rs"
     );
+}
+
+#[test]
+fn test_agent_protocol_version_prints_only_the_version() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--agent-protocol-version"]);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "1\n");
+    assert!(output.stderr.is_empty(), "no logging or warnings");
+    assert!(
+        !default_config_path(temp.path()).exists(),
+        "the probe must have no side effects"
+    );
+}
+
+#[test]
+fn test_monitor_status_works_without_any_configuration() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--quiet", "monitor", "--status"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "stdout: {stdout}");
+    assert!(
+        stdout.contains("Monitor is not running"),
+        "stdout: {stdout}"
+    );
+    assert!(!default_config_path(temp.path()).exists());
+}
+
+#[test]
+fn test_monitor_status_json_is_a_single_json_object() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--json", "monitor", "--status"]);
+
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout must be exactly one JSON value");
+    assert_eq!(value["running"], false);
+    assert!(value["state"].is_string());
+}
+
+/// `gisa refresh` has a "before" monitor hook. The hook must run after the
+/// configuration is validated: installing and starting a background service
+/// and *then* failing with "No configuration found" leaves a fresh machine
+/// running a service the user never asked for.
+///
+/// What this can assert is the observable half. The hook itself is
+/// unreachable from here by construction: `run_cli_with_env` sets
+/// `GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, and `UserContext::resolve` refuses
+/// the redirected HOME anyway. The ordering itself is held by `run_command`.
+#[test]
+fn test_refresh_without_a_config_fails_before_doing_anything() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["refresh"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stderr.contains("configuration") || stdout.contains("configuration"),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(!default_config_path(temp.path()).exists());
+    assert!(
+        !temp.path().join("Library").exists(),
+        "nothing may be installed before the config is validated"
+    );
+}
+
+/// The test environment redirects HOME and the config directory, so explicit
+/// service controls must refuse instead of touching the real launchd domain.
+#[cfg(target_os = "macos")]
+#[test]
+fn test_monitor_start_refuses_a_redirected_environment() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["--json", "monitor", "--start"]);
+
+    assert_eq!(output.status.code(), Some(8));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["error"]
+        .as_str()
+        .unwrap()
+        .contains("Refusing to manage the monitor service"));
+    assert!(!temp.path().join("Library").exists());
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn test_monitor_start_is_unsupported_off_macos() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--start"]);
+    assert_eq!(output.status.code(), Some(10));
+}
+
+#[test]
+fn test_monitor_conflicting_modes_are_rejected() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let output = run_cli_with_env(temp.path(), &["monitor", "--start", "--stop"]);
+    assert!(!output.status.success());
 }

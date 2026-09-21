@@ -7,8 +7,8 @@ use git_same_core::output::Output;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-/// Run the scan command.
-pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Result<()> {
+/// Run the scan command. Returns how many workspaces were newly registered.
+pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Result<usize> {
     let root = match &args.path {
         Some(p) => p.clone(),
         None => std::env::current_dir()
@@ -32,7 +32,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
 
     if found.is_empty() {
         output.info("No .git-same/ workspaces found.");
-        return Ok(());
+        return Ok(0);
     }
 
     // Load existing registry to flag already-registered workspaces
@@ -51,6 +51,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
         .collect();
 
     let mut unregistered_count = 0usize;
+    let mut newly_registered = 0usize;
     let mut register_failures = Vec::new();
     for ws_root in &found {
         let is_registered = registered.contains(ws_root);
@@ -72,6 +73,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
                             Ok(()) => {
                                 output.success(&format!("    Registered: {}", tilde));
                                 unregistered_count = unregistered_count.saturating_sub(1);
+                                newly_registered += 1;
                             }
                             Err(e) => {
                                 output.warn(&format!("    Failed to register {}: {}", tilde, e));
@@ -113,7 +115,7 @@ pub fn run(args: &ScanArgs, config_path: Option<&Path>, output: &Output) -> Resu
         )));
     }
 
-    Ok(())
+    Ok(newly_registered)
 }
 
 /// Recursively scan for directories containing `.git-same/config.toml`.

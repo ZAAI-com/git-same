@@ -2,6 +2,7 @@
 name = "git-same"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -39,7 +40,7 @@ tui = ["dep:ratatui", "dep:crossterm"]
 release-tools = ["dep:clap_complete", "dep:clap_mangen"]
 
 [dependencies]
-git-same-core = { path = "../git-same-core", version = "=3.1.1" }
+git-same-core = { path = "../git-same-core", version = "=3.1.2" }
 clap = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

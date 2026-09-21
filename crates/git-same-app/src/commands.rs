@@ -8,9 +8,10 @@ use git_same_core::config::{
 };
 use git_same_core::discovery::DiscoveryOrchestrator;
 use git_same_core::domain::RepoPathTemplate;
-use git_same_core::errors::AppError;
+use git_same_core::errors::{AppError, MonitorAgentError};
 use git_same_core::ipc::{IpcConfig, StatusFileWriter};
 use git_same_core::macos::folder_icon;
+use git_same_core::macos::monitor_agent::{self, MonitorAgentState, MonitorAgentStatus};
 use git_same_core::progress::{ProgressEvent, ProgressReporter};
 use git_same_core::provider::{create_provider, NoProgress};
 use git_same_core::setup::{authenticate_provider, discover_org_entries};
@@ -20,10 +21,8 @@ use git_same_core::workflows::sync_workspace::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -34,9 +33,6 @@ const DAEMON_STALE_AFTER_SECS: u64 = 90;
 // available on every platform for the colocated parser tests.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const FINDER_EXTENSION_ID: &str = "com.zaai.git-same.badges";
-const MONITOR_LAUNCH_AGENT_LABEL: &str = "com.zaai.git-same.monitor";
-const MONITOR_LAUNCH_AGENT_FILE: &str = "com.zaai.git-same.monitor.plist";
-const MONITOR_PLIST_TEMPLATE: &str = include_str!("../../../macos/com.zaai.git-same.monitor.plist");
 
 #[cfg(test)]
 #[path = "commands_tests.rs"]
@@ -76,8 +72,18 @@ pub struct FinderConfigDto {
     pub show_ambient: bool,
 }
 
+/// Monitor settings as read. `autostart` is informational: it changes only
+/// through the dedicated Start and Stop controls.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MonitorConfigDto {
+    pub fullscan_interval_secs: u64,
+    pub autostart: bool,
+}
+
+/// Monitor settings as saved. Deliberately has no `autostart`, so a stale
+/// settings form cannot undo `gisa monitor --stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MonitorConfigInput {
     pub fullscan_interval_secs: u64,
 }
 
@@ -108,7 +114,7 @@ pub struct AppConfigInput {
     pub filters: FilterOptionsDto,
     pub workspaces: Vec<String>,
     pub finder: FinderConfigDto,
-    pub monitor: MonitorConfigDto,
+    pub monitor: MonitorConfigInput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -217,17 +223,9 @@ pub struct ExtensionStatus {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct MonitorLaunchAgentStatusDto {
-    pub label: String,
-    pub plist_path: String,
-    pub binary_path: Option<String>,
-    pub installed: bool,
-    pub loaded: bool,
-    pub running: bool,
-    pub state: String,
-    pub message: String,
-}
+/// Service status of the managed monitor. The lifecycle lives in
+/// `git_same_core::macos::monitor_agent`; this crate only adapts it.
+pub type MonitorLaunchAgentStatusDto = MonitorAgentStatus;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncProgressPayload {
@@ -255,15 +253,37 @@ pub fn ensure_config() -> Result<AppConfigDto, String> {
     Ok(app_config_dto(&config, &path, true))
 }
 
+/// Saves the settings form as a targeted merge under the monitor control
+/// lock. Keys the form does not model (`monitor.autostart`, `[ui]`, comments,
+/// unknown keys) keep their persisted values, and a malformed file is never
+/// replaced.
 #[tauri::command]
-pub fn save_app_config(input: AppConfigInput) -> Result<AppConfigDto, String> {
-    let path = ensure_config_file().map_err(error_string)?;
-    let config = app_config_input(input).map_err(error_string)?;
-    let content = toml::to_string_pretty(&config)
-        .map_err(|error| format!("Failed to serialize config: {error}"))?;
-    fs::write(&path, content)
-        .map_err(|error| format!("Failed to write config at '{}': {error}", path.display()))?;
-    Ok(app_config_dto(&config, &path, true))
+pub async fn save_app_config(input: AppConfigInput) -> Result<AppConfigDto, String> {
+    let dto = tauri::async_runtime::spawn_blocking(move || save_app_config_inner(input))
+        .await
+        .map_err(error_string)?
+        .map_err(error_string)?;
+    nudge_monitor_refresh();
+    Ok(dto)
+}
+
+fn save_app_config_inner(input: AppConfigInput) -> Result<AppConfigDto, AppError> {
+    let path = ensure_config_file()?;
+    let settings = app_config_input(input)?;
+    with_config_lock(|| git_same_core::config::edit::merge_settings(&path, &settings))?;
+    let saved = Config::load_from(&path)?;
+    Ok(app_config_dto(&saved, &path, true))
+}
+
+/// Serialises every write to the global `config.toml` against the same lock
+/// the settings save takes. Two read-modify-write cycles that overlap (Save
+/// Settings while the Workspace screen sets a default) would otherwise leave
+/// one of the two changes on the floor.
+fn with_config_lock<T>(write: impl FnOnce() -> Result<T, AppError>) -> Result<T, AppError> {
+    match monitor_agent::with_preference_lock(write) {
+        Ok(result) => result,
+        Err(e) => Err(AppError::from(e)),
+    }
 }
 
 #[tauri::command]
@@ -307,12 +327,14 @@ pub fn save_workspace(input: WorkspaceInput) -> Result<WorkspaceDetailDto, Strin
         .as_ref()
         .and_then(|workspace| workspace.last_synced.clone());
 
-    WorkspaceManager::save(&workspace).map_err(error_string)?;
+    // `save`/`delete` update the global registry, so both take the lock.
+    with_config_lock(|| WorkspaceManager::save(&workspace)).map_err(error_string)?;
 
     if let Some(previous) = previous {
         if !same_path(&previous.root_path, &workspace.root_path) {
             folder_icon::clear_or_log(&previous.root_path);
-            WorkspaceManager::delete(&previous.root_path).map_err(error_string)?;
+            with_config_lock(|| WorkspaceManager::delete(&previous.root_path))
+                .map_err(error_string)?;
         }
     }
 
@@ -322,12 +344,14 @@ pub fn save_workspace(input: WorkspaceInput) -> Result<WorkspaceDetailDto, Strin
 
     let collapsed = tilde_collapse_path(&workspace.root_path);
     if input.default {
-        Config::save_default_workspace(Some(&collapsed)).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(Some(&collapsed)))
+            .map_err(error_string)?;
     } else if was_default {
-        Config::save_default_workspace(None).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?;
     }
 
     let config = Config::load().map_err(error_string)?;
+    nudge_monitor_refresh();
     Ok(workspace_detail(&workspace, &config))
 }
 
@@ -339,11 +363,12 @@ pub fn delete_workspace(workspace_id: String) -> Result<Vec<WorkspaceSummary>, S
     let was_default = workspace_is_default(&workspace, config.default_workspace.as_deref());
 
     folder_icon::clear_or_log(&workspace.root_path);
-    WorkspaceManager::delete(&workspace.root_path).map_err(error_string)?;
+    with_config_lock(|| WorkspaceManager::delete(&workspace.root_path)).map_err(error_string)?;
     if was_default {
-        Config::save_default_workspace(None).map_err(error_string)?;
+        with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?;
     }
 
+    nudge_monitor_refresh();
     workspace_summaries().map_err(error_string)
 }
 
@@ -359,9 +384,10 @@ pub fn set_default_workspace(
             let config = Config::load().map_err(error_string)?;
             let workspace = WorkspaceManager::resolve(Some(&id), &config).map_err(error_string)?;
             let collapsed = tilde_collapse_path(&workspace.root_path);
-            Config::save_default_workspace(Some(&collapsed)).map_err(error_string)?;
+            with_config_lock(|| Config::save_default_workspace(Some(&collapsed)))
+                .map_err(error_string)?;
         }
-        None => Config::save_default_workspace(None).map_err(error_string)?,
+        None => with_config_lock(|| Config::save_default_workspace(None)).map_err(error_string)?,
     }
 
     workspace_summaries().map_err(error_string)
@@ -378,20 +404,167 @@ pub async fn check_requirements() -> Result<Vec<RequirementCheckDto>, String> {
     Ok(checks)
 }
 
-#[tauri::command]
-pub fn monitor_launch_agent_status() -> Result<MonitorLaunchAgentStatusDto, String> {
-    monitor_launch_agent_status_inner().map_err(error_string)
+/// How long a cached status is served before the service is inspected again.
+///
+/// The cache is refreshed by lifecycle operations and by the file watcher, so
+/// it is normally current. The TTL is the backstop for the case where the
+/// watcher never fires (a watch that failed to register, an event the
+/// platform did not deliver): without it a dead status is served for the rest
+/// of the session.
+const MONITOR_STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Last known service status. Returned by `monitor_status`, so a fetch made
+/// after subscribing can never disagree with an event emitted earlier.
+#[derive(Default)]
+pub struct MonitorStatusCache {
+    cached: std::sync::Mutex<Option<(MonitorAgentStatus, std::time::Instant)>>,
+    operations: tokio::sync::Mutex<()>,
+}
+
+/// Event carrying a [`MonitorAgentStatus`] after every lifecycle operation
+/// and whenever the monitor's runtime files change.
+pub const MONITOR_AGENT_UPDATED: &str = "monitor-agent-updated";
+
+/// Caches `status` and tells the frontend.
+pub(crate) fn publish_monitor_status(app: &tauri::AppHandle, status: &MonitorAgentStatus) {
+    use tauri::Manager;
+    if let Some(cache) = app.try_state::<MonitorStatusCache>() {
+        *cache.cached.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((status.clone(), std::time::Instant::now()));
+    }
+    let _ = app.emit(MONITOR_AGENT_UPDATED, status);
+}
+
+/// Runs a controller operation off the UI thread and publishes the result.
+/// launchctl calls are bounded by timeouts but still block for a while.
+async fn run_monitor_operation(
+    app: tauri::AppHandle,
+    operation: fn() -> Result<MonitorAgentStatus, AppError>,
+) -> Result<MonitorAgentStatus, String> {
+    use tauri::Manager;
+    let state = app.state::<MonitorStatusCache>();
+    let _operation = state.operations.lock().await;
+    let status = tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(error_string)?
+        .map_err(error_string)?;
+    publish_monitor_status(&app, &status);
+    Ok(status)
+}
+
+/// Inspects the service on a worker and publishes the result. Used by the
+/// file watcher and on window focus.
+pub(crate) fn refresh_monitor_status(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let _ = run_monitor_operation(app, monitor_launch_agent_status_inner).await;
+    });
+}
+
+/// One automatic recovery at app startup. Does nothing when suppressed
+/// (`GIT_SAME_DISABLE_MONITOR_AUTOSTART=1`, dev launches) or when this is
+/// not the real user's default environment, and never enables a service
+/// the user stopped.
+pub(crate) fn ensure_monitor_on_startup(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let _ = run_monitor_operation(app, || match monitor_agent::auto_ensure(false) {
+            Some(Ok(status)) => Ok(status),
+            Some(Err(error)) => Ok(monitor_launch_agent_status_inner()?.failed(error.to_string())),
+            None => monitor_launch_agent_status_inner(),
+        })
+        .await;
+    });
 }
 
 #[tauri::command]
-pub fn install_monitor_launch_agent() -> Result<MonitorLaunchAgentStatusDto, String> {
-    install_monitor_launch_agent_inner().map_err(error_string)
+pub async fn monitor_status(
+    app: tauri::AppHandle,
+    cache: tauri::State<'_, MonitorStatusCache>,
+) -> Result<MonitorLaunchAgentStatusDto, String> {
+    let cached = cache
+        .cached
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    match cached {
+        Some((status, at)) if at.elapsed() < MONITOR_STATUS_TTL => Ok(status),
+        _ => run_monitor_operation(app, monitor_launch_agent_status_inner).await,
+    }
 }
 
 #[tauri::command]
-pub fn restart_monitor_launch_agent() -> Result<MonitorLaunchAgentStatusDto, String> {
-    restart_monitor_launch_agent_inner().map_err(error_string)
+pub async fn start_monitor(app: tauri::AppHandle) -> Result<MonitorLaunchAgentStatusDto, String> {
+    run_monitor_operation(app, || {
+        Ok(monitor_agent::controller_for_current_user(false)?.start()?)
+    })
+    .await
 }
+
+#[tauri::command]
+pub async fn stop_monitor(app: tauri::AppHandle) -> Result<MonitorLaunchAgentStatusDto, String> {
+    run_monitor_operation(app, || {
+        Ok(monitor_agent::controller_for_current_user(false)?.stop()?)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn restart_monitor(app: tauri::AppHandle) -> Result<MonitorLaunchAgentStatusDto, String> {
+    run_monitor_operation(app, || {
+        Ok(monitor_agent::controller_for_current_user(false)?.restart()?)
+    })
+    .await
+}
+
+/// Compatibility name for `monitor_status` (always inspects).
+#[tauri::command]
+pub async fn monitor_launch_agent_status(
+    app: tauri::AppHandle,
+) -> Result<MonitorLaunchAgentStatusDto, String> {
+    run_monitor_operation(app, monitor_launch_agent_status_inner).await
+}
+
+/// Compatibility name: installing is an explicit Start.
+#[tauri::command]
+pub async fn install_monitor_launch_agent(
+    app: tauri::AppHandle,
+) -> Result<MonitorLaunchAgentStatusDto, String> {
+    start_monitor(app).await
+}
+
+/// Compatibility name for `restart_monitor`.
+#[tauri::command]
+pub async fn restart_monitor_launch_agent(
+    app: tauri::AppHandle,
+) -> Result<MonitorLaunchAgentStatusDto, String> {
+    restart_monitor(app).await
+}
+
+/// Asks a running monitor to reload the configuration and rescan. A healthy
+/// monitor is never restarted, so this is how registry changes reach it.
+fn nudge_monitor_refresh() {
+    // A redirected configuration (tests) is not the running monitor's.
+    if std::env::var_os("GIT_SAME_CONFIG_DIR").is_some() {
+        return;
+    }
+    spawn_refresh_all();
+}
+
+/// The monitor is reachable over a Unix socket only.
+#[cfg(unix)]
+fn spawn_refresh_all() {
+    tauri::async_runtime::spawn(async {
+        let Ok(ipc) = IpcConfig::default_path() else {
+            return;
+        };
+        let _ = git_same_core::ipc::UnixSocketClient::new(ipc.socket_path())
+            .refresh_all()
+            .await;
+    });
+}
+
+/// No socket on this platform: nothing to nudge.
+#[cfg(not(unix))]
+fn spawn_refresh_all() {}
 
 #[tauri::command]
 pub async fn discover_provider_orgs(
@@ -515,8 +688,29 @@ pub fn extension_status() -> Result<ExtensionStatus, String> {
     }
 }
 
+/// Schemes the frontend is allowed to hand to `open`.
+///
+/// The UI only ever sends the two System Settings panes; `https:` is here so
+/// a documentation link does not need a second command. Anything else,
+/// including a bare path, a `file:` URL, or a string starting with `-` that
+/// `open` would read as a flag, is refused.
+const OPENABLE_SCHEMES: [&str; 2] = ["https://", "x-apple.systempreferences:"];
+
+fn is_openable(url: &str) -> bool {
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return false;
+    }
+    let lower = url.to_ascii_lowercase();
+    OPENABLE_SCHEMES
+        .iter()
+        .any(|scheme| lower.starts_with(scheme) && url.len() > scheme.len())
+}
+
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
+    if !is_openable(&url) {
+        return Err(format!("refusing to open unsupported URL: {url}"));
+    }
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("/usr/bin/open")
@@ -527,243 +721,17 @@ pub fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = url;
         Err("open_url is only implemented on macOS".to_string())
     }
 }
 
+/// Off macOS there is no managed service: report that instead of failing so
+/// the requirement checks and the UI can render a definite state.
 fn monitor_launch_agent_status_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    let installed = plist_path.exists();
-    let binary_path = monitor_binary_path().ok();
-    let launchctl = launchctl_print_monitor();
-    let loaded = launchctl
-        .as_ref()
-        .is_ok_and(|output| output.status.success());
-    let stdout = launchctl
-        .as_ref()
-        .ok()
-        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-        .unwrap_or_default();
-    let running = loaded && launchctl_output_has_pid(&stdout);
-    let state = monitor_agent_state(installed, loaded, running);
-    Ok(MonitorLaunchAgentStatusDto {
-        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
-        plist_path: plist_path.display().to_string(),
-        binary_path: binary_path.map(|path| path.display().to_string()),
-        installed,
-        loaded,
-        running,
-        message: monitor_agent_message(&state),
-        state,
-    })
-}
-
-fn install_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    let binary_path = monitor_binary_path()?;
-    let rendered = render_monitor_plist(&binary_path)?;
-    if let Some(parent) = plist_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            AppError::path(format!(
-                "Failed to create LaunchAgents directory '{}': {error}",
-                parent.display()
-            ))
-        })?;
-    }
-    fs::write(&plist_path, rendered).map_err(|error| {
-        AppError::path(format!(
-            "Failed to write LaunchAgent '{}': {error}",
-            plist_path.display()
-        ))
-    })?;
-    restart_monitor_launch_agent_inner()
-}
-
-fn restart_monitor_launch_agent_inner() -> Result<MonitorLaunchAgentStatusDto, AppError> {
-    let plist_path = monitor_launch_agent_path()?;
-    if !plist_path.exists() {
-        return install_monitor_launch_agent_inner();
-    }
-    let domain = launchctl_domain();
-    let service = format!("{domain}/{MONITOR_LAUNCH_AGENT_LABEL}");
-    let plist_arg = plist_path.display().to_string();
-    let _ = Command::new("/bin/launchctl")
-        .args(["bootout", &domain, &plist_arg])
-        .output();
-    run_launchctl(&["bootstrap", &domain, &plist_arg])?;
-    run_launchctl(&["kickstart", "-k", &service])?;
-    monitor_launch_agent_status_inner()
-}
-
-fn monitor_launch_agent_path() -> Result<PathBuf, AppError> {
-    let home = env::var_os("HOME")
-        .ok_or_else(|| AppError::config("HOME is not set; cannot resolve LaunchAgents path"))?;
-    Ok(PathBuf::from(home)
-        .join("Library")
-        .join("LaunchAgents")
-        .join(MONITOR_LAUNCH_AGENT_FILE))
-}
-
-fn monitor_binary_path() -> Result<PathBuf, AppError> {
-    for candidate in monitor_binary_candidates() {
-        if candidate.is_file() && is_executable(&candidate) {
-            return Ok(candidate);
-        }
-    }
-    Err(AppError::config(
-        "Could not find an executable git-same binary for the monitor LaunchAgent",
-    ))
-}
-
-fn monitor_binary_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(exe) = env::current_exe() {
-        if let Some(contents) = exe.ancestors().find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name == "Contents")
-        }) {
-            candidates.push(contents.join("Helpers").join("git-same"));
-        }
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("git-same"));
-        }
-    }
-    if let Some(home) = env::var_os("HOME") {
-        let home = PathBuf::from(home);
-        candidates.push(home.join(".cargo/bin/git-same"));
-        candidates.push(home.join(".cargo/bin/gisa"));
-    }
-    if let Some(path) = find_on_path("git-same") {
-        candidates.push(path);
-    }
-    if let Some(path) = find_on_path("gisa") {
-        candidates.push(path);
-    }
-    dedupe_paths(candidates)
-}
-
-fn render_monitor_plist(binary_path: &Path) -> Result<String, AppError> {
-    if !binary_path.is_file() || !is_executable(binary_path) {
-        return Err(AppError::config(format!(
-            "Monitor binary is not executable: {}",
-            binary_path.display()
-        )));
-    }
-    Ok(MONITOR_PLIST_TEMPLATE.replace(
-        "__GIT_SAME_MONITOR_BINARY__",
-        &escape_xml(&binary_path.display().to_string()),
-    ))
-}
-
-fn escape_xml(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn is_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::metadata(path)
-            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
-}
-
-fn find_on_path(binary: &str) -> Option<PathBuf> {
-    let paths = env::var_os("PATH")?;
-    env::split_paths(&paths)
-        .map(|dir| dir.join(binary))
-        .find(|path| path.is_file() && is_executable(path))
-}
-
-fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut deduped = Vec::new();
-    for path in paths {
-        if !deduped.iter().any(|existing| existing == &path) {
-            deduped.push(path);
-        }
-    }
-    deduped
-}
-
-fn launchctl_print_monitor() -> std::io::Result<std::process::Output> {
-    Command::new("/bin/launchctl")
-        .args([
-            "print",
-            &format!("{}/{}", launchctl_domain(), MONITOR_LAUNCH_AGENT_LABEL),
-        ])
-        .output()
-}
-
-fn run_launchctl(args: &[&str]) -> Result<(), AppError> {
-    let output = Command::new("/bin/launchctl")
-        .args(args)
-        .output()
-        .map_err(|error| AppError::config(format!("launchctl failed to start: {error}")))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Err(AppError::config(format!(
-        "launchctl {} failed: {}{}",
-        args.join(" "),
-        stdout,
-        stderr
-    )))
-}
-
-fn launchctl_domain() -> String {
-    let uid = Command::new("/usr/bin/id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|output| output.status.success().then_some(output.stdout))
-        .and_then(|stdout| String::from_utf8(stdout).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "0".to_string());
-    format!("gui/{uid}")
-}
-
-fn launchctl_output_has_pid(output: &str) -> bool {
-    output.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with("pid = ") || trimmed.starts_with("pid =")
-    })
-}
-
-fn monitor_agent_state(installed: bool, loaded: bool, running: bool) -> String {
-    if !installed {
-        "missing_plist"
-    } else if !loaded {
-        "not_loaded"
-    } else if !running {
-        "not_running"
-    } else {
-        "running"
-    }
-    .to_string()
-}
-
-fn monitor_agent_message(state: &str) -> String {
-    match state {
-        "missing_plist" => "LaunchAgent plist is missing".to_string(),
-        "not_loaded" => "LaunchAgent is installed but not loaded".to_string(),
-        "not_running" => "LaunchAgent is loaded but the monitor is not running".to_string(),
-        "running" => "Monitor LaunchAgent is running".to_string(),
-        _ => "Unknown monitor LaunchAgent state".to_string(),
+    match monitor_agent::controller_for_current_user(false) {
+        Ok(controller) => Ok(controller.inspect()?),
+        Err(MonitorAgentError::Unsupported) => Ok(MonitorAgentStatus::unsupported()),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -840,6 +808,7 @@ fn app_config_dto(config: &Config, path: &Path, exists: bool) -> AppConfigDto {
         },
         monitor: MonitorConfigDto {
             fullscan_interval_secs: config.monitor.fullscan_interval_secs,
+            autostart: config.monitor.autostart,
         },
     }
 }
@@ -987,10 +956,9 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
     let monitor_agent = monitor_launch_agent_status_inner().ok();
     checks.push(RequirementCheckDto {
         name: "Monitor".to_string(),
-        passed: monitor_agent.as_ref().is_some_and(|agent| agent.running)
-            && snapshot.as_ref().is_some_and(|snapshot| !snapshot.stale),
-        message: monitor_requirement_message(monitor_agent.as_ref(), snapshot.as_ref()),
-        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref(), snapshot.as_ref()),
+        passed: monitor_agent.as_ref().is_some_and(monitor_is_healthy),
+        message: monitor_requirement_message(monitor_agent.as_ref()),
+        suggestion: monitor_requirement_suggestion(monitor_agent.as_ref()),
         critical: false,
     });
 
@@ -1016,10 +984,7 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
         critical: false,
     });
 
-    let fda_needed = snapshot
-        .as_ref()
-        .and_then(|snapshot| snapshot.status.as_ref())
-        .is_some_and(|status| !status.workspaces.is_empty() && status.repos.is_empty());
+    let fda_needed = full_disk_access_needed(monitor_agent.as_ref(), snapshot.as_ref());
     checks.push(RequirementCheckDto {
         name: "Full Disk Access".to_string(),
         passed: !fda_needed,
@@ -1036,43 +1001,52 @@ fn app_requirement_checks() -> Vec<RequirementCheckDto> {
     checks
 }
 
-fn monitor_requirement_message(
-    agent: Option<&MonitorLaunchAgentStatusDto>,
-    snapshot: Option<&StatusSnapshot>,
-) -> String {
+/// Starting counts as healthy: a long first scan is not a problem to fix.
+fn monitor_is_healthy(agent: &MonitorLaunchAgentStatusDto) -> bool {
+    matches!(
+        agent.state,
+        MonitorAgentState::Running | MonitorAgentState::Starting
+    )
+}
+
+fn monitor_requirement_message(agent: Option<&MonitorLaunchAgentStatusDto>) -> String {
     match agent {
-        Some(agent) if !agent.installed => "LaunchAgent plist missing".to_string(),
-        Some(agent) if !agent.loaded => "LaunchAgent installed but not loaded".to_string(),
-        Some(agent) if !agent.running => {
-            "LaunchAgent loaded but monitor process is not running".to_string()
-        }
-        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
-            "Monitor running but status file is stale".to_string()
-        }
-        Some(_) => snapshot
-            .and_then(|snapshot| snapshot.updated_at.clone())
-            .unwrap_or_else(|| "Monitor running".to_string()),
-        None => "Unable to inspect LaunchAgent".to_string(),
+        Some(agent) => agent
+            .detail
+            .clone()
+            .unwrap_or_else(|| agent.message.clone()),
+        None => "Unable to inspect the background monitor".to_string(),
     }
 }
 
-fn monitor_requirement_suggestion(
+fn monitor_requirement_suggestion(agent: Option<&MonitorLaunchAgentStatusDto>) -> Option<String> {
+    let agent = agent?;
+    match agent.state {
+        MonitorAgentState::Running | MonitorAgentState::Starting => None,
+        MonitorAgentState::Deferred => {
+            Some("Nothing to do: it starts at your next login".to_string())
+        }
+        MonitorAgentState::Disabled => Some("Start monitoring to see Finder badges".to_string()),
+        MonitorAgentState::NotInstalled | MonitorAgentState::Stopped => {
+            Some("Start the Git-Same monitor".to_string())
+        }
+        MonitorAgentState::Failed => Some("Start the monitor again to repair it".to_string()),
+        MonitorAgentState::Unsupported => Some("Run `gisa monitor` in a terminal".to_string()),
+    }
+}
+
+/// An empty repository list only suggests a permission problem once the
+/// current monitor process has completed a scan. Before that (first scan in
+/// progress, or data left by a previous process) it means nothing.
+fn full_disk_access_needed(
     agent: Option<&MonitorLaunchAgentStatusDto>,
     snapshot: Option<&StatusSnapshot>,
-) -> Option<String> {
-    match agent {
-        Some(agent) if !agent.installed => {
-            Some("Install the Git-Same monitor LaunchAgent".to_string())
-        }
-        Some(agent) if !agent.loaded || !agent.running => {
-            Some("Restart the Git-Same monitor LaunchAgent".to_string())
-        }
-        Some(_) if snapshot.is_some_and(|snapshot| snapshot.stale) => {
-            Some("Restart the monitor or wait for the next scan".to_string())
-        }
-        Some(_) => None,
-        None => Some("Check LaunchAgent permissions and the git-same binary path".to_string()),
-    }
+) -> bool {
+    let scan_completed = agent.is_some_and(|agent| agent.state == MonitorAgentState::Running);
+    scan_completed
+        && snapshot
+            .and_then(|snapshot| snapshot.status.as_ref())
+            .is_some_and(|status| !status.workspaces.is_empty() && status.repos.is_empty())
 }
 
 async fn read_workspace_structure_inner(
@@ -1245,18 +1219,15 @@ pub(crate) fn read_status_snapshot() -> Result<StatusSnapshot, AppError> {
     read_status_snapshot_with(&ipc)
 }
 
+/// `stale` describes badge-data freshness only. Whether a monitor process
+/// is running is a separate question answered by the monitor status.
 fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError> {
-    ipc.ensure_dir()?;
     let status_path = ipc.status_file_path();
     let writer = StatusFileWriter::new(status_path.clone());
-    let metadata = fs::metadata(&status_path).ok();
-    let updated_at = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
-        .map(system_time_to_rfc3339);
-    let stale_by_age = metadata
-        .as_ref()
-        .and_then(|meta| meta.modified().ok())
+    let modified = fs::metadata(&status_path)
+        .ok()
+        .and_then(|meta| meta.modified().ok());
+    let stale = modified
         .map(|modified| {
             modified
                 .elapsed()
@@ -1264,28 +1235,12 @@ fn read_status_snapshot_with(ipc: &IpcConfig) -> Result<StatusSnapshot, AppError
                 > Duration::from_secs(DAEMON_STALE_AFTER_SECS)
         })
         .unwrap_or(true);
-    let monitor_alive = if writer.exists() {
-        writer
-            .read()
-            .map(|status| is_process_alive(status.daemon_pid))
-            .unwrap_or(false)
-    } else {
-        false
-    };
-    let stale = stale_by_age || !monitor_alive;
-    let status = if writer.exists() && !stale {
-        Some(writer.read()?)
-    } else if writer.exists() {
-        writer.read().ok()
-    } else {
-        None
-    };
 
     Ok(StatusSnapshot {
         status_path: status_path.display().to_string(),
-        updated_at,
+        updated_at: modified.map(system_time_to_rfc3339),
         stale,
-        status,
+        status: writer.read().ok(),
     })
 }
 
@@ -1366,33 +1321,6 @@ fn clean_string_list(values: Vec<String>) -> Vec<String> {
 fn system_time_to_rfc3339(time: SystemTime) -> String {
     let datetime: chrono::DateTime<chrono::Utc> = time.into();
     datetime.to_rfc3339()
-}
-
-fn is_process_alive(pid: u32) -> bool {
-    // A live process has a positive PID that fits in pid_t (i32). Reject 0 and
-    // anything above i32::MAX: u32::MAX would reach `kill` as -1 and be treated
-    // as a process-group/broadcast target, returning success on Linux and
-    // falsely reporting the monitor alive.
-    if pid == 0 || pid > i32::MAX as u32 {
-        return false;
-    }
-
-    #[cfg(unix)]
-    {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = pid;
-        true
-    }
 }
 
 fn error_string(error: impl std::fmt::Display) -> String {

@@ -46,18 +46,31 @@ impl ResetTarget {
 }
 
 /// Run the reset command.
-pub async fn run(args: &ResetArgs, output: &Output) -> Result<()> {
+///
+/// `before_config_removal` must succeed once the confirmed scope includes the
+/// global configuration. Workspace-only resets never call it, so they keep
+/// the monitoring preference.
+pub async fn run(
+    args: &ResetArgs,
+    output: &Output,
+    before_config_removal: &(dyn Fn() -> Result<()> + Sync),
+) -> Result<()> {
     let target = discover_targets()?;
 
     if target.is_empty() {
-        output.info("Nothing to reset — gisa is not configured.");
+        output.info("Nothing to reset: gisa is not configured.");
         return Ok(());
     }
 
     // --force: delete everything, no prompts
     if args.force {
         display_detailed_targets(&ResetScope::Everything, &target, output);
-        execute_reset(&ResetScope::Everything, &target, output)?;
+        execute_reset_with_precondition(
+            &ResetScope::Everything,
+            &target,
+            output,
+            before_config_removal,
+        )?;
         nudge_daemon_refresh().await;
         return Ok(());
     }
@@ -71,9 +84,21 @@ pub async fn run(args: &ResetArgs, output: &Output) -> Result<()> {
         return Ok(());
     }
 
-    execute_reset(&scope, &target, output)?;
+    execute_reset_with_precondition(&scope, &target, output, before_config_removal)?;
     nudge_daemon_refresh().await;
     Ok(())
+}
+
+fn execute_reset_with_precondition(
+    scope: &ResetScope,
+    target: &ResetTarget,
+    output: &Output,
+    before_config_removal: &(dyn Fn() -> Result<()> + Sync),
+) -> Result<()> {
+    if matches!(scope, ResetScope::Everything | ResetScope::ConfigOnly) {
+        before_config_removal()?;
+    }
+    execute_reset(scope, target, output)
 }
 
 #[cfg(unix)]

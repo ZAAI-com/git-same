@@ -2,6 +2,7 @@
 //!
 //! Handles loading and parsing of config.toml files.
 
+use super::edit;
 use crate::errors::AppError;
 use crate::operations::clone::{DEFAULT_CONCURRENCY, MAX_CONCURRENCY};
 use serde::{Deserialize, Serialize};
@@ -56,12 +57,17 @@ pub struct MonitorConfig {
     /// Seconds between full rescans. The CLI flag `--interval` overrides this.
     #[serde(default = "default_fullscan_interval_secs")]
     pub fullscan_interval_secs: u64,
+    /// Whether the managed background monitor may start automatically.
+    /// `gisa monitor --stop` persists `false`; `--start` persists `true`.
+    #[serde(default = "default_true")]
+    pub autostart: bool,
 }
 
 impl Default for MonitorConfig {
     fn default() -> Self {
         Self {
             fullscan_interval_secs: default_fullscan_interval_secs(),
+            autostart: true,
         }
     }
 }
@@ -425,6 +431,10 @@ exclude_dirs = [
 ]
 
 [monitor]
+# Start the background monitor automatically (at login, after installs, and
+# when the app or CLI notices it stopped). `gisa monitor --stop` sets this to
+# false; `gisa monitor --start` sets it back to true.
+autostart = true
 # Seconds between full rescans by the background monitor. The CLI flag
 # `gisa monitor --interval N` overrides this when set explicitly.
 fullscan_interval_secs = 30
@@ -433,7 +443,7 @@ fullscan_interval_secs = 30
 # Paint the Git-Same logo onto each workspace root folder so Finder shows it
 # in the sidebar, column, list, icon, and Get Info views (similar to how
 # Synology Drive marks its synced folders). Stripped automatically on
-# `gisa reset`. macOS only — the flag is parsed but ignored on Linux/Windows.
+# `gisa reset`. macOS only: the flag is parsed but ignored on Linux/Windows.
 custom_folder_icon = true
 "#
     }
@@ -445,80 +455,23 @@ custom_folder_icon = true
 
     /// Save the default_workspace setting to a specific config file.
     ///
-    /// Uses targeted text replacement to preserve comments and formatting.
+    /// A targeted `toml_edit` change: comments, key order, and unrelated
+    /// values survive, and the replacement is atomic.
     pub fn save_default_workspace_to(path: &Path, workspace: Option<&str>) -> Result<(), AppError> {
-        let content = if path.exists() {
-            std::fs::read_to_string(path)
-                .map_err(|e| AppError::config(format!("Failed to read config: {}", e)))?
-        } else {
+        if !path.exists() {
             return Err(AppError::config(
                 "Config file not found. Run 'gisa init' first.",
             ));
-        };
-
-        let new_line = match workspace {
-            Some(name) => {
-                let escaped = toml::Value::String(name.to_string()).to_string();
-                format!("default_workspace = {}", escaped)
-            }
-            None => String::new(),
-        };
-
-        // Replace existing default_workspace line, or insert after sync_mode
-        let new_content = if content.contains("default_workspace") {
-            let mut lines: Vec<&str> = content.lines().collect();
-            lines.retain(|line| {
-                let trimmed = line.trim();
-                !trimmed.starts_with("default_workspace")
-                    && !trimmed.starts_with("# default_workspace")
-            });
-            let mut result = lines.join("\n");
-            if !new_line.is_empty() {
-                // Insert after sync_mode line
-                if let Some(pos) = result.find("sync_mode") {
-                    if let Some(nl) = result[pos..].find('\n') {
-                        let insert_pos = pos + nl + 1;
-                        result.insert_str(insert_pos, &format!("{}\n", new_line));
-                    }
-                } else {
-                    // Fallback: insert near the top (after first blank line)
-                    if let Some(pos) = result.find("\n\n") {
-                        result.insert_str(pos + 1, &format!("\n{}\n", new_line));
-                    } else {
-                        result = format!("{}\n{}\n", new_line, result);
-                    }
+        }
+        edit::edit_document(path, |doc| {
+            match workspace {
+                Some(name) => doc["default_workspace"] = toml_edit::value(name),
+                None => {
+                    doc.remove("default_workspace");
                 }
             }
-            // Ensure trailing newline
-            if !result.ends_with('\n') {
-                result.push('\n');
-            }
-            result
-        } else if !new_line.is_empty() {
-            // Insert after sync_mode line
-            let mut result = content.clone();
-            if let Some(pos) = result.find("sync_mode") {
-                if let Some(nl) = result[pos..].find('\n') {
-                    let insert_pos = pos + nl + 1;
-                    result.insert_str(insert_pos, &format!("\n{}\n", new_line));
-                }
-            } else {
-                // Fallback: insert near the top (after first blank line)
-                if let Some(pos) = result.find("\n\n") {
-                    result.insert_str(pos + 1, &format!("\n{}\n", new_line));
-                } else {
-                    result = format!("{}\n{}\n", new_line, result);
-                }
-            }
-            result
-        } else {
-            // Nothing to do — clearing a field that doesn't exist
-            content
-        };
-
-        std::fs::write(path, new_content)
-            .map_err(|e| AppError::config(format!("Failed to write config: {}", e)))?;
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Add a workspace path to the global registry.
@@ -550,53 +503,33 @@ custom_folder_icon = true
     }
 
     /// Add or remove a path from the workspaces registry in the config file.
+    ///
+    /// Edits the array in place rather than re-serializing the document, so a
+    /// user's commented `config.toml` survives `gisa setup`, `gisa scan
+    /// --register`, and the app's Save button.
     fn modify_registry_at(
         config_path: &Path,
         add: Option<&str>,
         remove: Option<&str>,
     ) -> Result<(), AppError> {
-        let content = std::fs::read_to_string(config_path)
-            .map_err(|e| AppError::config(format!("Failed to read config: {}", e)))?;
+        edit::edit_document(config_path, |doc| {
+            let item = doc
+                .entry("workspaces")
+                .or_insert_with(|| toml_edit::value(toml_edit::Array::new()));
+            let arr = item
+                .as_array_mut()
+                .ok_or_else(|| AppError::config("Invalid config: 'workspaces' must be an array"))?;
 
-        let mut doc: toml::Value = toml::from_str(&content)
-            .map_err(|e| AppError::config(format!("Failed to parse config: {}", e)))?;
-
-        let table = doc
-            .as_table_mut()
-            .ok_or_else(|| AppError::config("Invalid config: expected root table"))?;
-
-        if let Some(existing) = table.get("workspaces") {
-            if !existing.is_array() {
-                return Err(AppError::config(
-                    "Invalid config: 'workspaces' must be an array",
-                ));
+            if let Some(path_to_add) = add {
+                if !arr.iter().any(|v| v.as_str() == Some(path_to_add)) {
+                    arr.push(path_to_add);
+                }
             }
-        }
-
-        let workspaces = table
-            .entry("workspaces")
-            .or_insert_with(|| toml::Value::Array(Vec::new()));
-        let arr = workspaces
-            .as_array_mut()
-            .ok_or_else(|| AppError::config("Invalid config: 'workspaces' must be an array"))?;
-
-        if let Some(path_to_add) = add {
-            let val = toml::Value::String(path_to_add.to_string());
-            if !arr.contains(&val) {
-                arr.push(val);
+            if let Some(path_to_remove) = remove {
+                arr.retain(|v| v.as_str() != Some(path_to_remove));
             }
-        }
-        if let Some(path_to_remove) = remove {
-            arr.retain(|v| v.as_str().map(|s| s != path_to_remove).unwrap_or(true));
-        }
-
-        let new_content = toml::to_string_pretty(&doc)
-            .map_err(|e| AppError::config(format!("Failed to serialize config: {}", e)))?;
-
-        std::fs::write(config_path, new_content)
-            .map_err(|e| AppError::config(format!("Failed to write config: {}", e)))?;
-
-        Ok(())
+            Ok(())
+        })
     }
 }
 

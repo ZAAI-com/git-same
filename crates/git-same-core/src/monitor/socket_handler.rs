@@ -4,11 +4,11 @@
 //! the corresponding `DaemonCommand`, write a one-line response.
 
 use crate::api::{AmbientUpgradeCache, OwnerTypeCache, RepoScanService};
-use crate::config::Config;
 use crate::git::ShellGit;
 use crate::ipc::unix_socket::DaemonCommand;
 use crate::ipc::StatusFileWriter;
 use crate::monitor::incremental::rescan_and_merge;
+use crate::monitor::live_config::LiveConfig;
 use crate::types::FinderStatus;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -19,9 +19,14 @@ use tracing::{debug, error};
 /// Read one command from `stream`, run it against the live state, write
 /// the response, and close. Errors are logged and swallowed; a misbehaving
 /// client must not take the monitor down.
+///
+/// `REFRESH_ALL` first reloads the configuration if it changed on disk, so a
+/// nudge after registering a workspace reaches a monitor that stays running.
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_socket_connection(
     mut stream: UnixStream,
-    config: &Config,
+    live: &LiveConfig,
+    reload_tx: &tokio::sync::mpsc::UnboundedSender<()>,
     pid: u32,
     status_path: &Path,
     shared_status: Arc<Mutex<FinderStatus>>,
@@ -42,8 +47,12 @@ pub async fn handle_socket_connection(
     }
 
     let cmd = DaemonCommand::parse(&line);
+    if matches!(cmd, DaemonCommand::RefreshAll) && live.reload_if_changed() {
+        let _ = reload_tx.send(());
+    }
+    let config = live.snapshot();
     let git = ShellGit::new();
-    let mut service = RepoScanService::new(&git, config);
+    let mut service = RepoScanService::new(&git, &config);
     if let Some(cache) = owner_types {
         service = service.with_owner_types(cache);
     }

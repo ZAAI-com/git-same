@@ -102,68 +102,70 @@ fn workspace_input(root: &std::path::Path) -> WorkspaceInput {
     }
 }
 
-#[test]
-fn render_monitor_plist_replaces_binary_placeholder() {
-    let temp = TestDir::new("monitor-plist");
-    let binary = temp.path().join("git-same");
-    std::fs::write(&binary, "#!/bin/sh\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&binary, permissions).unwrap();
+fn agent_in(state: MonitorAgentState) -> MonitorLaunchAgentStatusDto {
+    MonitorLaunchAgentStatusDto {
+        state,
+        message: format!("{state:?}"),
+        ..MonitorAgentStatus::unsupported()
     }
-
-    let rendered = render_monitor_plist(&binary).unwrap();
-
-    assert!(rendered.contains(&binary.display().to_string()));
-    assert!(!rendered.contains("__GIT_SAME_MONITOR_BINARY__"));
-    assert!(rendered.contains("com.zaai.git-same.monitor"));
-}
-
-// Executability is a Unix permission concept; is_executable() treats every
-// existing file as runnable on non-Unix, so this rejection only applies there.
-#[cfg(unix)]
-#[test]
-fn render_monitor_plist_rejects_non_executable_binary() {
-    let temp = TestDir::new("monitor-plist-invalid");
-    let binary = temp.path().join("git-same");
-    std::fs::write(&binary, "").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o644);
-        std::fs::set_permissions(&binary, permissions).unwrap();
-    }
-
-    let error = render_monitor_plist(&binary).unwrap_err().to_string();
-
-    assert!(error.contains("not executable"));
 }
 
 #[test]
-fn monitor_requirement_message_distinguishes_missing_plist() {
-    let agent = MonitorLaunchAgentStatusDto {
-        label: MONITOR_LAUNCH_AGENT_LABEL.to_string(),
-        plist_path: "/tmp/missing.plist".to_string(),
-        binary_path: None,
-        installed: false,
-        loaded: false,
-        running: false,
-        state: "missing_plist".to_string(),
-        message: "LaunchAgent plist is missing".to_string(),
-    };
+fn monitor_requirement_treats_a_long_first_scan_as_healthy() {
+    assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Starting)));
+    assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Running)));
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent_in(MonitorAgentState::Starting))),
+        None
+    );
+}
 
+#[test]
+fn monitor_requirement_does_not_call_an_intentional_stop_broken() {
+    let stopped = agent_in(MonitorAgentState::Disabled);
+    assert!(!monitor_is_healthy(&stopped));
     assert_eq!(
-        monitor_requirement_message(Some(&agent), None),
-        "LaunchAgent plist missing"
+        monitor_requirement_suggestion(Some(&stopped)),
+        Some("Start monitoring to see Finder badges".to_string())
     );
+}
+
+#[test]
+fn monitor_requirement_prefers_the_concrete_error_detail() {
+    let failed = agent_in(MonitorAgentState::Failed).failed("launchctl bootstrap failed");
     assert_eq!(
-        monitor_requirement_suggestion(Some(&agent), None),
-        Some("Install the Git-Same monitor LaunchAgent".to_string())
+        monitor_requirement_message(Some(&failed)),
+        "launchctl bootstrap failed"
     );
+}
+
+fn empty_scan_snapshot() -> StatusSnapshot {
+    let mut status = FinderStatus::new(1, chrono::Utc::now().to_rfc3339());
+    status.workspaces = vec![git_same_core::types::FinderWorkspaceInfo {
+        name: "work".to_string(),
+        root: std::path::PathBuf::from("/tmp/work"),
+        orgs: Vec::new(),
+    }];
+    StatusSnapshot {
+        status_path: String::new(),
+        updated_at: None,
+        stale: false,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn no_permission_warning_while_the_first_scan_is_running() {
+    let snapshot = empty_scan_snapshot();
+    assert!(!full_disk_access_needed(
+        Some(&agent_in(MonitorAgentState::Starting)),
+        Some(&snapshot)
+    ));
+    assert!(!full_disk_access_needed(None, Some(&snapshot)));
+    assert!(full_disk_access_needed(
+        Some(&agent_in(MonitorAgentState::Running)),
+        Some(&snapshot)
+    ));
 }
 
 #[test]
@@ -184,7 +186,7 @@ fn read_status_snapshot_returns_none_when_status_file_is_missing() {
 }
 
 #[test]
-fn read_status_snapshot_returns_last_known_status_when_monitor_pid_is_stale() {
+fn read_status_snapshot_freshness_does_not_depend_on_the_monitor_process() {
     let temp = TestDir::new("stale-monitor");
     let ipc = IpcConfig {
         dir: temp.path().join("ipc"),
@@ -199,11 +201,13 @@ fn read_status_snapshot_returns_last_known_status_when_monitor_pid_is_stale() {
 
     let snapshot = read_status_snapshot_with(&ipc).unwrap();
 
-    assert!(snapshot.stale);
+    // The recorded PID is dead, but the data was written just now: process
+    // health is the monitor status's business, not the snapshot's.
+    assert!(!snapshot.stale);
     assert!(snapshot.updated_at.is_some());
     let status = snapshot
         .status
-        .expect("stale monitor should still surface the last-known status from disk");
+        .expect("the last-known status must surface from disk");
     assert!(status.repos.is_empty());
 }
 
@@ -226,7 +230,7 @@ fn save_app_config_round_trips_structured_fields() {
     let _env = ConfigEnvGuard::new(temp.path());
     ensure_config().unwrap();
 
-    let saved = save_app_config(AppConfigInput {
+    let saved = save_app_config_inner(AppConfigInput {
         structure: "{provider}/{org}/{repo}".to_string(),
         concurrency: 3,
         sync_mode: "pull".to_string(),
@@ -250,7 +254,7 @@ fn save_app_config_round_trips_structured_fields() {
             exclude_dirs: vec!["node_modules".to_string(), "target".to_string()],
             show_ambient: false,
         },
-        monitor: MonitorConfigDto {
+        monitor: MonitorConfigInput {
             fullscan_interval_secs: 90,
         },
     })
@@ -455,4 +459,113 @@ fn parse_pluginkit_output_ignores_other_extensions() {
             enabled: false,
         }
     );
+}
+
+/// Spec 7.2: a settings form loaded before `gisa monitor --stop` must not
+/// re-enable monitoring when it is saved afterwards. The same write path
+/// used to reset `[ui] custom_folder_icon`.
+#[test]
+fn stale_settings_form_after_cli_stop_keeps_monitoring_stopped() {
+    let temp = TestDir::new("stale-form");
+    let _env = ConfigEnvGuard::new(temp.path());
+    let form = ensure_config().unwrap();
+    assert!(form.monitor.autostart);
+    let path = std::path::PathBuf::from(&form.config_path);
+
+    // The CLI stops monitoring and the user opts out of folder icons.
+    git_same_core::config::edit::set_monitor_autostart(&path, false).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(text.contains("custom_folder_icon = true"));
+    std::fs::write(
+        &path,
+        text.replace("custom_folder_icon = true", "custom_folder_icon = false"),
+    )
+    .unwrap();
+
+    let saved = save_app_config_inner(AppConfigInput {
+        structure: form.structure,
+        concurrency: 5,
+        sync_mode: form.sync_mode,
+        default_workspace: form.default_workspace,
+        refresh_interval: form.refresh_interval,
+        clone: form.clone,
+        filters: form.filters,
+        workspaces: form.workspaces,
+        finder: form.finder,
+        monitor: MonitorConfigInput {
+            fullscan_interval_secs: form.monitor.fullscan_interval_secs,
+        },
+    })
+    .unwrap();
+
+    assert_eq!(saved.concurrency, 5);
+    assert!(!saved.monitor.autostart, "the CLI stop must survive");
+    let config = Config::load_from(&path).unwrap();
+    assert!(!config.ui.custom_folder_icon, "[ui] must survive");
+}
+
+#[test]
+fn saving_settings_never_replaces_a_malformed_config() {
+    let temp = TestDir::new("malformed-save");
+    let _env = ConfigEnvGuard::new(temp.path());
+    let form = ensure_config().unwrap();
+    let broken = "concurrency = = 1\n";
+    std::fs::write(&form.config_path, broken).unwrap();
+
+    let result = save_app_config_inner(AppConfigInput {
+        structure: form.structure,
+        concurrency: 5,
+        sync_mode: form.sync_mode,
+        default_workspace: None,
+        refresh_interval: form.refresh_interval,
+        clone: form.clone,
+        filters: form.filters,
+        workspaces: form.workspaces,
+        finder: form.finder,
+        monitor: MonitorConfigInput {
+            fullscan_interval_secs: 30,
+        },
+    });
+
+    assert!(result.is_err());
+    assert_eq!(std::fs::read_to_string(&form.config_path).unwrap(), broken);
+}
+
+#[test]
+fn open_url_accepts_the_urls_the_ui_actually_sends() {
+    for url in [
+        "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+        "https://github.com/zaai-com/git-same",
+    ] {
+        assert!(is_openable(url), "{url}");
+    }
+}
+
+#[test]
+fn open_url_refuses_anything_else() {
+    for url in [
+        // `open` would read this as a flag.
+        "-a/Applications/Calculator.app",
+        // Launches a local file rather than a settings pane.
+        "file:///Applications/Calculator.app",
+        "/Applications/Calculator.app",
+        "http://example.com",
+        // Scheme present but nothing to open.
+        "https://",
+        "x-apple.systempreferences:",
+        "",
+        // Whitespace would let a crafted string carry a second argument.
+        "https://example.com /Applications/Calculator.app",
+    ] {
+        assert!(!is_openable(url), "{url}");
+    }
+}
+
+#[test]
+fn open_url_scheme_match_is_case_insensitive() {
+    assert!(is_openable("HTTPS://example.com"));
+    assert!(is_openable(
+        "X-Apple.SystemPreferences:com.apple.LoginItems-Settings.extension"
+    ));
 }

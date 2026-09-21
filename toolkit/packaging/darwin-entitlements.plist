@@ -2,5 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- The standalone CLI can become the background monitor helper, which
+         shares status with the Finder extension through the app group. Must
+         match the app and extension (check-entitlements-parity.sh). -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.57KL6Y7V32.com.zaai.git-same</string>
+    </array>
 </dict>
 </plist>

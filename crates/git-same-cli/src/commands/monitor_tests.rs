@@ -1,28 +1,5 @@
 use super::*;
-
-#[test]
-fn test_is_process_alive_self() {
-    let pid = std::process::id();
-    assert!(is_process_alive(pid));
-}
-
-// Probing a specific not-running PID only works where we can actually signal
-// processes; the non-Unix fallback optimistically assumes in-range PIDs are
-// alive, so this assertion is Unix-only.
-#[cfg(unix)]
-#[test]
-fn test_is_process_alive_nonexistent() {
-    // PID 99999 is very unlikely to exist
-    assert!(!is_process_alive(99999));
-}
-
-#[test]
-fn test_is_process_alive_rejects_out_of_range_pid() {
-    // u32::MAX is the staleness sentinel; as a signed pid_t it is -1, which must
-    // never be reported alive (it would broadcast to a process group on Linux).
-    assert!(!is_process_alive(u32::MAX));
-    assert!(!is_process_alive(0));
-}
+use git_same_core::types::FinderStatus;
 
 #[test]
 fn cli_flag_overrides_config_interval() {
@@ -32,4 +9,58 @@ fn cli_flag_overrides_config_interval() {
 #[test]
 fn config_interval_used_when_flag_absent() {
     assert_eq!(resolve_interval_secs(None, 90), 90);
+}
+
+#[test]
+fn state_names_match_the_typescript_union() {
+    assert_eq!(state_name(MonitorAgentState::NotInstalled), "not_installed");
+    assert_eq!(state_name(MonitorAgentState::Starting), "starting");
+}
+
+#[test]
+fn unmanaged_status_without_a_monitor_is_informative() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = IpcConfig {
+        dir: dir.path().join("ipc"),
+    };
+    let status = unmanaged_status(&ipc);
+    assert!(!status.running);
+    assert_eq!(status.message, "Monitor is not running");
+    assert!(read_data_summary(&ipc).is_none());
+}
+
+#[test]
+fn stale_status_file_pid_is_not_reported_as_a_running_monitor() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = IpcConfig {
+        dir: dir.path().join("ipc"),
+    };
+    StatusFileWriter::new(ipc.status_file_path())
+        .write(&FinderStatus::new(std::process::id(), "then".to_string()))
+        .unwrap();
+
+    let status = unmanaged_status(&ipc);
+
+    assert!(!status.running, "a status-file PID alone proves nothing");
+    assert_eq!(read_data_summary(&ipc).unwrap().last_written, "then");
+}
+
+#[test]
+fn lock_holder_is_starting_until_it_writes_its_own_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipc = IpcConfig {
+        dir: dir.path().join("ipc"),
+    };
+    let _guard = runtime_guard::RuntimeGuard::acquire(&ipc, MonitorMode::Foreground).unwrap();
+
+    let starting = unmanaged_status(&ipc);
+    assert!(starting.running);
+    assert!(starting.message.contains("initial scan in progress"));
+
+    StatusFileWriter::new(ipc.status_file_path())
+        .write(&FinderStatus::new(std::process::id(), "now".to_string()))
+        .unwrap();
+    assert!(unmanaged_status(&ipc)
+        .message
+        .starts_with("Monitor is running"));
 }

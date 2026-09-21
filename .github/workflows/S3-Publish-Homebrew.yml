@@ -16,19 +16,32 @@ env:
 permissions:
   contents: read
 
+# Two dispatches would otherwise race the unrebased `git push origin HEAD`
+# into the tap at the end of the job.
+concurrency:
+  group: publish-homebrew
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   publish-homebrew:
     name: Publish Cask + Formula to Tap
     runs-on: macos-latest
+    # A wedged `hdiutil attach` would otherwise hang to the 6h default.
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: Get version from tag
         id: version
+        env:
+          # Passed through the environment, not interpolated into the script:
+          # template expansion happens before the semver check below.
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ inputs.tag }}"
+          set -euo pipefail
+          TAG="$INPUT_TAG"
           if [ -z "$TAG" ]; then
             TAG="${GITHUB_REF#refs/tags/}"
           fi
@@ -43,13 +56,33 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
+      # The cask template and the released binaries must come from the same
+      # tag: the template calls the private installer interface of that CLI.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          persist-credentials: false
+
+      - name: Verify tag matches workspace version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          MANIFEST_VERSION=$(awk -F'"' '/^version *=/ {print $2; exit}' Cargo.toml)
+          if [ "$MANIFEST_VERSION" != "$VERSION" ]; then
+            echo "Tag $VERSION does not match workspace version $MANIFEST_VERSION" >&2
+            exit 1
+          fi
+
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
+          set -euo pipefail
           mkdir -p assets
-          VERSION="${{ steps.version.outputs.version }}"
-          gh release download "${{ steps.version.outputs.tag }}" \
+          gh release download "$TAG" \
             --pattern "git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             --pattern "git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
             --pattern "git-same-${VERSION}-x86_64-apple-darwin.tar.gz" \
@@ -58,42 +91,158 @@ jobs:
             --pattern "git-same-${VERSION}-aarch64.dmg" \
             --dir assets
 
+          # `gh release download` exits 0 when only some patterns match, and
+          # the missing file would not surface until `shasum` several steps
+          # later. Assert all six here, where the message is actionable.
+          MISSING=0
+          for asset in \
+            "git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            "git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
+            "git-same-${VERSION}-x86_64-apple-darwin.tar.gz" \
+            "git-same-${VERSION}-aarch64-apple-darwin.tar.gz" \
+            "git-same-${VERSION}-x86_64.dmg" \
+            "git-same-${VERSION}-aarch64.dmg"; do
+            if [ ! -s "assets/$asset" ]; then
+              echo "ERROR: release $TAG is missing asset $asset" >&2
+              MISSING=1
+            fi
+          done
+          [ "$MISSING" -eq 0 ] || exit 1
+          echo "OK: all six release assets present"
+
+      - name: Verify the bundled CLI speaks the cask's installer protocol
+        # Runs before anything is rendered or pushed. A release that predates
+        # the private installer interface (3.1.1 and older) rejects the flag,
+        # and a cask rendered against it could not install the monitor.
+        #
+        # Both DMGs are inspected, because both are hashed into the same cask
+        # and a broken non-native bundle would otherwise ship unprobed and
+        # abort every `brew install --cask` on that architecture.
+        env:
+          EXPECTED_PROTOCOL: "1"
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          case "$(uname -m)" in
+            arm64) NATIVE_ARCH="arm64" ;;
+            *)     NATIVE_ARCH="x86_64" ;;
+          esac
+
+          CURRENT_MOUNT=""
+          cleanup() {
+            [ -n "$CURRENT_MOUNT" ] && hdiutil detach "$CURRENT_MOUNT" -quiet >/dev/null 2>&1 || true
+          }
+          # Armed before the first attach: a failure between `attach` and a
+          # later `trap` would leak the mount.
+          trap cleanup EXIT
+
+          for slice in aarch64:arm64 x86_64:x86_64; do
+            DMG_ARCH="${slice%%:*}"
+            LIPO_ARCH="${slice##*:}"
+            DMG="assets/git-same-${VERSION}-${DMG_ARCH}.dmg"
+
+            # Gatekeeper assessment before any code from the image is run.
+            # S2 notarises and staples both DMGs, so a failure here means the
+            # release artifact itself is not distributable.
+            if ! spctl --assess --type open --context context:primary-signature -v "$DMG" 2>&1; then
+              echo "ERROR: $DMG failed Gatekeeper assessment; it is not notarised/stapled." >&2
+              exit 1
+            fi
+
+            MOUNT="$(mktemp -d)"
+            hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null
+            CURRENT_MOUNT="$MOUNT"
+
+            CLI="$MOUNT/Git-Same.app/Contents/Helpers/git-same"
+            if [ ! -x "$CLI" ]; then
+              echo "ERROR: $DMG has no executable at Git-Same.app/Contents/Helpers/git-same" >&2
+              exit 1
+            fi
+            if ! lipo -archs "$CLI" | tr ' ' '\n' | grep -qx "$LIPO_ARCH"; then
+              echo "ERROR: the CLI in $DMG has no $LIPO_ARCH slice (got: $(lipo -archs "$CLI"))" >&2
+              exit 1
+            fi
+
+            if [ "$LIPO_ARCH" = "$NATIVE_ARCH" ]; then
+              # The probe prints only the version and has no side effects.
+              if ! ACTUAL="$("$CLI" monitor --agent-protocol-version)"; then
+                echo "ERROR: $DMG does not implement the monitor installer interface." >&2
+                echo "Do not render this cask against releases older than 3.1.2." >&2
+                exit 1
+              fi
+              if [ "$ACTUAL" != "$EXPECTED_PROTOCOL" ]; then
+                echo "ERROR: bundled CLI reports installer protocol '$ACTUAL', the cask template needs '$EXPECTED_PROTOCOL'." >&2
+                exit 1
+              fi
+              echo "OK: $DMG signed, $LIPO_ARCH slice present, reports installer protocol $ACTUAL"
+            else
+              # Executing this one would depend on Rosetta 2 being installed
+              # on the runner, which is not guaranteed. Structure and slice
+              # are checked instead; the protocol answer is a compile-time
+              # constant shared by both builds of the same commit.
+              echo "OK: $DMG signed and $LIPO_ARCH slice present (not executed: non-native)"
+            fi
+
+            hdiutil detach "$MOUNT" -quiet >/dev/null
+            CURRENT_MOUNT=""
+          done
+
       - name: Compute SHA256 hashes
         id: sha
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          LINUX_X86="assets/git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-          LINUX_ARM="assets/git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
-          MAC_X86="assets/git-same-${VERSION}-x86_64-apple-darwin.tar.gz"
-          MAC_ARM="assets/git-same-${VERSION}-aarch64-apple-darwin.tar.gz"
-          CASK_MAC_X86="assets/git-same-${VERSION}-x86_64.dmg"
-          CASK_MAC_ARM="assets/git-same-${VERSION}-aarch64.dmg"
-          echo "linux_x86_64=$(shasum -a 256 "$LINUX_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "linux_aarch64=$(shasum -a 256 "$LINUX_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "macos_x86_64=$(shasum -a 256 "$MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "macos_aarch64=$(shasum -a 256 "$MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "cask_macos_x86_64=$(shasum -a 256 "$CASK_MAC_X86" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "cask_macos_aarch64=$(shasum -a 256 "$CASK_MAC_ARM" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Without pipefail a failing `shasum` inside the substitution used to
+          # write an empty hash to $GITHUB_OUTPUT and keep the step green.
+          emit() {
+            local key="$1" file="$2" hash
+            hash="$(shasum -a 256 "$file" | cut -d' ' -f1)"
+            if [ -z "$hash" ]; then
+              echo "ERROR: could not hash $file" >&2
+              exit 1
+            fi
+            echo "$key=$hash" >> "$GITHUB_OUTPUT"
+          }
+          emit linux_x86_64       "assets/git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          emit linux_aarch64      "assets/git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+          emit macos_x86_64       "assets/git-same-${VERSION}-x86_64-apple-darwin.tar.gz"
+          emit macos_aarch64      "assets/git-same-${VERSION}-aarch64-apple-darwin.tar.gz"
+          emit cask_macos_x86_64  "assets/git-same-${VERSION}-x86_64.dmg"
+          emit cask_macos_aarch64 "assets/git-same-${VERSION}-aarch64.dmg"
 
       - name: Render formula-cli
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SHA_MACOS_ARM: ${{ steps.sha.outputs.macos_aarch64 }}
+          SHA_MACOS_INTEL: ${{ steps.sha.outputs.macos_x86_64 }}
+          SHA_LINUX_ARM: ${{ steps.sha.outputs.linux_aarch64 }}
+          SHA_LINUX_INTEL: ${{ steps.sha.outputs.linux_x86_64 }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
+          set -euo pipefail
           REPO_URL="https://github.com/zaai-com/git-same/releases/download/${TAG}"
           bash toolkit/homebrew/render-formula.sh \
-            "${{ steps.version.outputs.version }}" \
+            "$VERSION" \
             --url "${REPO_URL}" \
-            --sha-macos-arm   "${{ steps.sha.outputs.macos_aarch64 }}" \
-            --sha-macos-intel "${{ steps.sha.outputs.macos_x86_64 }}" \
-            --sha-linux-arm   "${{ steps.sha.outputs.linux_aarch64 }}" \
-            --sha-linux-intel "${{ steps.sha.outputs.linux_x86_64 }}" \
+            --sha-macos-arm   "$SHA_MACOS_ARM" \
+            --sha-macos-intel "$SHA_MACOS_INTEL" \
+            --sha-linux-arm   "$SHA_LINUX_ARM" \
+            --sha-linux-intel "$SHA_LINUX_INTEL" \
             --out formula-cli.rb
 
       - name: Render cask
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA_CASK_ARM: ${{ steps.sha.outputs.cask_macos_aarch64 }}
+          SHA_CASK_INTEL: ${{ steps.sha.outputs.cask_macos_x86_64 }}
         run: |
+          set -euo pipefail
           bash toolkit/homebrew/render-cask.sh \
-            "${{ steps.version.outputs.version }}" \
-            --sha-arm   "${{ steps.sha.outputs.cask_macos_aarch64 }}" \
-            --sha-intel "${{ steps.sha.outputs.cask_macos_x86_64 }}" \
+            "$VERSION" \
+            --sha-arm   "$SHA_CASK_ARM" \
+            --sha-intel "$SHA_CASK_INTEL" \
             --out cask.rb
 
       - name: Verify rendered cask + formula against a temp tap
@@ -102,9 +251,16 @@ jobs:
         # which the shared runner IP routinely exhausts ("API rate limit
         # exceeded"). GITHUB_TOKEN raises it to the authenticated tier and is
         # read-only here.
+        #
+        # This is style + audit only. `--install-smoke` is deliberately not
+        # passed: it would run the cask's unsandboxed installer script against
+        # launchd on a runner with no GUI session, where the monitor can only
+        # land as `deferred`. Real install coverage lives in section 8 of
+        # toolkit/packaging/release-checklist.md.
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           bash toolkit/homebrew/verify-tap.sh \
             --cask cask.rb \
             --formula-cli formula-cli.rb
@@ -119,12 +275,16 @@ jobs:
 
       - name: Stage rendered files into tap
         run: |
+          set -euo pipefail
           mkdir -p tap/Formula tap/Casks
           cp formula-cli.rb  "tap/Formula/${FORMULA_NAME}.rb"
           cp cask.rb         "tap/Casks/${CASK_NAME}.rb"
 
       - name: Commit and push to tap
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -134,6 +294,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Cask + formula unchanged, skipping commit"
           else
-            git commit -m "Update git-same to ${{ steps.version.outputs.version }} (cask + formula-cli)"
+            git commit -m "Update git-same to ${VERSION} (cask + formula-cli)"
             git push origin HEAD
           fi

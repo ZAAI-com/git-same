@@ -40,7 +40,7 @@ use std::path::PathBuf;
 pub const APP_GROUP_ID: &str = "group.57KL6Y7V32.com.zaai.git-same";
 
 /// IPC configuration paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IpcConfig {
     /// Directory containing IPC files (status.json, finder.sock).
     pub dir: PathBuf,
@@ -91,6 +91,18 @@ impl IpcConfig {
     /// Path to the preferences JSON file.
     pub fn preferences_path(&self) -> PathBuf {
         self.dir.join("preferences.json")
+    }
+
+    /// Path to the monitor's runtime lock, held for the whole process lifetime.
+    ///
+    /// Never symlinked or recreated: locking is per inode.
+    pub fn runtime_lock_path(&self) -> PathBuf {
+        self.dir.join("monitor.lock")
+    }
+
+    /// Path to the runtime identity record of the lock holder.
+    pub fn runtime_identity_path(&self) -> PathBuf {
+        self.dir.join("monitor-runtime.json")
     }
 
     /// Ensures the IPC directory exists.

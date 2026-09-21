@@ -6,3 +6,4 @@
 //! expose no-op stubs so callers can stay platform-agnostic.
 
 pub mod folder_icon;
+pub mod monitor_agent;

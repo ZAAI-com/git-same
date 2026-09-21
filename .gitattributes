@@ -1,0 +1,4 @@
+# The LaunchAgent template is embedded verbatim with include_str! and rendered
+# into a plist whose exact bytes the tests assert. A Windows checkout with
+# core.autocrlf=true would rewrite it to CRLF and change the rendered output.
+*.plist text eol=lf

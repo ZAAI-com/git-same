@@ -5,11 +5,13 @@
     ExternalLink,
     FolderSearch,
     Info,
-    Play,
   } from '@lucide/svelte';
   import BadgeChip from '../lib/BadgeChip.svelte';
   import EmptyState from '../lib/EmptyState.svelte';
-  import { extensionStatus, installMonitor, restartMonitor, snapshot, workspaces } from '../stores/status';
+  import MonitorPanel from '../lib/MonitorPanel.svelte';
+  import { presentMonitor, shouldSuggestFullDiskAccess } from '../lib/monitorPresentation';
+  import { monitorStatus } from '../stores/monitor';
+  import { extensionStatus, snapshot, workspaces } from '../stores/status';
   import { openUrl } from '../lib/tauri';
   import { relativeTime } from '../lib/utils';
 
@@ -20,10 +22,13 @@
 
   $: status = $snapshot?.status ?? null;
   $: roots = status?.monitored_roots ?? [];
-  $: needsFda =
-    Boolean($extensionStatus?.enabled) &&
-    $workspaces.length > 0 &&
-    (status?.repos.length ?? 0) === 0;
+  $: monitorView = presentMonitor($monitorStatus);
+  $: needsFda = shouldSuggestFullDiskAccess({
+    status: $monitorStatus,
+    extensionEnabled: Boolean($extensionStatus?.enabled),
+    workspaceCount: $workspaces.length,
+    repoCount: status?.repos.length ?? 0,
+  });
   $: setupRows = [
     {
       label: 'Finder extension installed',
@@ -38,10 +43,16 @@
       action: EXTENSIONS_URL,
     },
     {
-      label: 'Monitor status file fresh',
-      passed: Boolean($snapshot && !$snapshot.stale),
-      detail: $snapshot?.updated_at ? `Updated ${relativeTime($snapshot.updated_at)}` : 'No status update yet',
-      action: $snapshot?.updated_at ? 'restart-monitor' : 'install-monitor',
+      // Controls live in the Monitor panel above; an intentional stop is
+      // listed here without being presented as something broken to fix.
+      label: 'Monitor',
+      passed:
+        monitorView.healthy ||
+        ($monitorStatus?.state === 'disabled' && !$monitorStatus?.autostart),
+      detail: $monitorStatus?.state === 'running' && $snapshot?.updated_at
+        ? `Running. Badge data updated ${relativeTime($snapshot.updated_at)}`
+        : monitorView.title,
+      action: null,
     },
     {
       label: 'Full Disk Access',
@@ -52,14 +63,14 @@
   ];
 
   function runAction(action: string | null) {
-    if (!action) return;
-    if (action === 'install-monitor') void installMonitor();
-    else if (action === 'restart-monitor') void restartMonitor();
-    else void openUrl(action);
+    if (action) void openUrl(action);
   }
 </script>
 
 <section class="finder-screen">
+  {#if !monitorView.banner}
+    <MonitorPanel />
+  {/if}
   <section class="panel">
     <div class="panel-head">
       <h2>Setup Checklist</h2>
@@ -77,8 +88,8 @@
           </div>
           {#if row.action && !row.passed}
             <button type="button" on:click={() => runAction(row.action)}>
-              {#if row.action.includes('monitor')}<Play size={15} />{:else}<ExternalLink size={15} />{/if}
-              <span>{row.action === 'install-monitor' ? 'Install' : row.action === 'restart-monitor' ? 'Restart' : 'Open'}</span>
+              <ExternalLink size={15} />
+              <span>Open</span>
             </button>
           {/if}
         </article>

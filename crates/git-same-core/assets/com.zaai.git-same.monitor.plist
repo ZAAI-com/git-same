@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zaai.git-same.monitor</string>
+    <key>Program</key>
+    <string>__GIT_SAME_HELPER__</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__GIT_SAME_HELPER__</string>
+        <string>monitor</string>
+        <string>--foreground</string>
+        <string>--managed</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__GIT_SAME_HOME__</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>__GIT_SAME_HOME__</string>
+    <!--__GIT_SAME_ASSOCIATED_BUNDLE__-->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__GIT_SAME_STDOUT__</string>
+    <key>StandardErrorPath</key>
+    <string>__GIT_SAME_STDERR__</string>
+</dict>
+</plist>

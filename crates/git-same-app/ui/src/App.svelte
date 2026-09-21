@@ -4,16 +4,21 @@
   import Sidebar from './lib/Sidebar.svelte';
   import StatusBanner from './lib/StatusBanner.svelte';
   import TitleBar from './lib/TitleBar.svelte';
+  import { loadMonitorStatus, subscribeMonitor } from './stores/monitor';
   import { errorMessage, loading, refresh, subscribePush } from './stores/status';
   import { routes } from './routes/router';
 
   let unsubscribe: (() => void) | undefined;
+  let unsubscribeMonitor: (() => void) | undefined;
 
   onMount(() => {
     void (async () => {
       try {
-        await refresh();
+        // Listen before fetching: an update emitted in between (the app's
+        // own startup recovery, for one) would otherwise be lost.
         unsubscribe = await subscribePush();
+        unsubscribeMonitor = await subscribeMonitor();
+        await Promise.all([refresh(), loadMonitorStatus()]);
       } catch (err) {
         errorMessage.set(String(err));
       } finally {
@@ -24,6 +29,7 @@
 
   onDestroy(() => {
     unsubscribe?.();
+    unsubscribeMonitor?.();
   });
 </script>
 

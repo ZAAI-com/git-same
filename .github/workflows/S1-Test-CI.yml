@@ -133,8 +133,36 @@ jobs:
       - name: Verify entitlements parity
         run: bash toolkit/packaging/macos/check-entitlements-parity.sh
 
+      - name: Lint property lists
+        # A malformed entitlements plist only fails late at codesign time, and a
+        # malformed LaunchAgent template fails silently on a user's machine.
+        run: |
+          plutil -lint \
+            crates/git-same-core/assets/com.zaai.git-same.monitor.plist \
+            crates/git-same-app/entitlements.plist \
+            toolkit/packaging/darwin-entitlements.plist \
+            macos/GitSameBadges/GitSameBadges.entitlements \
+            macos/GitSameBadges/Info.plist
+
+      - name: Verify core crate package contents
+        # Must run on macOS: only this target compiles the code that embeds the
+        # LaunchAgent template, so only here does packaging prove it ships.
+        run: |
+          cargo package -p git-same-core --allow-dirty
+          CRATE="$(ls target/package/git-same-core-*.crate | head -n 1)"
+          for asset in assets/com.zaai.git-same.monitor.plist assets/workspace-folder.icns; do
+            tar -tzf "$CRATE" | grep -q "/${asset}\$" \
+              || { echo "ERROR: ${asset} missing from ${CRATE}"; exit 1; }
+          done
+
       - name: Install frontend dependencies
         run: pnpm --dir crates/git-same-app/ui install --frozen-lockfile
+
+      - name: Type-check frontend
+        run: pnpm --dir crates/git-same-app/ui check
+
+      - name: Test frontend
+        run: pnpm --dir crates/git-same-app/ui test
 
       - name: Build frontend
         run: pnpm --dir crates/git-same-app/ui build
@@ -268,7 +296,52 @@ jobs:
           grep -q 'binary-aliases.txt' toolkit/conductor/run.sh || { echo "ERROR: run.sh missing manifest ref"; exit 1; }
           grep -q 'binary-aliases.txt' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh missing manifest ref"; exit 1; }
 
+          # Dev scripts must never manage the developer's live monitor.
+          grep -q 'GIT_SAME_DISABLE_MONITOR_AUTOSTART' toolkit/conductor/run.sh || { echo "ERROR: run.sh no longer suppresses automatic monitor management"; exit 1; }
+          grep -Eq 'PROJECT_DIR=.*pwd -P' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh no longer canonicalizes its owner path"; exit 1; }
+          grep -Eq 'grep -qF .*PROJECT_DIR' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost its executable owner guard"; exit 1; }
+          grep -Eq 'MANAGED_HELPER.*--quiet monitor --uninstall' toolkit/conductor/archive.sh || { echo "ERROR: archive.sh lost owner-scoped monitor uninstall"; exit 1; }
+
           echo "All alias drift checks passed."
+
+      - name: Verify packaging version and protocol drift
+        run: |
+          set -e
+
+          # S3 renders the cask against a hand-copied protocol number. If the
+          # Rust constant moves and the workflow does not, the probe silently
+          # accepts an installer the cask cannot drive.
+          RUST_PROTOCOL="$(sed -nE 's/^pub const PACKAGING_PROTOCOL_VERSION: u32 = ([0-9]+);.*/\1/p' \
+            crates/git-same-core/src/macos/monitor_agent/mod.rs)"
+          if [ -z "$RUST_PROTOCOL" ]; then
+            echo "ERROR: PACKAGING_PROTOCOL_VERSION not found in monitor_agent/mod.rs"; exit 1
+          fi
+          YAML_PROTOCOL="$(sed -nE 's/^[[:space:]]*EXPECTED_PROTOCOL:[[:space:]]*"?([0-9]+)"?[[:space:]]*$/\1/p' \
+            .github/workflows/S3-Publish-Homebrew.yml)"
+          if [ -z "$YAML_PROTOCOL" ]; then
+            echo "ERROR: EXPECTED_PROTOCOL not found in S3-Publish-Homebrew.yml"; exit 1
+          fi
+          if [ "$RUST_PROTOCOL" != "$YAML_PROTOCOL" ]; then
+            echo "ERROR: protocol drift: mod.rs says $RUST_PROTOCOL, S3 expects $YAML_PROTOCOL"
+            exit 1
+          fi
+
+          # The FinderSync extension's Info.plist is hand-maintained and only
+          # plutil-linted, so a release can ship a badge bundle stamped with
+          # the previous version.
+          WORKSPACE_VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' Cargo.toml | head -1)"
+          if [ -z "$WORKSPACE_VERSION" ]; then
+            echo "ERROR: workspace version not found in Cargo.toml"; exit 1
+          fi
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            value="$(/usr/libexec/PlistBuddy -c "Print :$key" macos/GitSameBadges/Info.plist)"
+            if [ "$value" != "$WORKSPACE_VERSION" ]; then
+              echo "ERROR: macos/GitSameBadges/Info.plist $key is $value, workspace is $WORKSPACE_VERSION"
+              exit 1
+            fi
+          done
+
+          echo "Packaging version and protocol drift checks passed ($WORKSPACE_VERSION, protocol $RUST_PROTOCOL)."
 
   workflow-secret-safety:
     name: Workflow Secret Safety

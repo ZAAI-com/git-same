@@ -203,3 +203,112 @@ fn verify_cli() {
     use clap::CommandFactory;
     Cli::command().debug_assert();
 }
+
+fn monitor_args(args: &[&str]) -> Result<MonitorArgs, clap::Error> {
+    let mut full = vec!["gisa", "monitor"];
+    full.extend_from_slice(args);
+    Cli::try_parse_from(full).map(|cli| match cli.command {
+        Some(Command::Monitor(args)) => args,
+        other => panic!("expected monitor, got {other:?}"),
+    })
+}
+
+#[test]
+fn monitor_foreground_forms_still_parse() {
+    assert!(!monitor_args(&[]).unwrap().is_control());
+    assert!(monitor_args(&["--foreground"]).unwrap().foreground);
+    assert_eq!(
+        monitor_args(&["--interval", "60"]).unwrap().interval,
+        Some(60)
+    );
+    let daemon = Cli::try_parse_from(["gisa", "daemon"]).unwrap();
+    assert!(matches!(daemon.command, Some(Command::Monitor(_))));
+}
+
+#[test]
+fn monitor_public_controls_parse() {
+    assert!(monitor_args(&["--start"]).unwrap().start);
+    assert!(monitor_args(&["--stop"]).unwrap().stop);
+    assert!(monitor_args(&["--status"]).unwrap().status);
+    assert!(monitor_args(&["--uninstall"]).unwrap().uninstall);
+    assert!(monitor_args(&["--status"]).unwrap().is_control());
+}
+
+#[test]
+fn monitor_modes_are_mutually_exclusive() {
+    for pair in [
+        ["--start", "--stop"],
+        ["--status", "--stop"],
+        ["--status", "--uninstall"],
+        ["--start", "--foreground"],
+        ["--uninstall", "--foreground"],
+    ] {
+        assert!(monitor_args(&pair).is_err(), "{pair:?} must conflict");
+    }
+}
+
+#[test]
+fn monitor_interval_applies_only_to_foreground_runs() {
+    assert!(monitor_args(&["--foreground", "--interval", "30"]).is_ok());
+    for control in ["--start", "--stop", "--status", "--uninstall"] {
+        assert!(
+            monitor_args(&[control, "--interval", "30"]).is_err(),
+            "{control} must reject --interval"
+        );
+    }
+}
+
+#[test]
+fn monitor_private_modes_parse_and_validate() {
+    let managed = monitor_args(&["--foreground", "--managed"]).unwrap();
+    assert!(managed.managed && managed.is_private() && !managed.is_control());
+    assert!(
+        monitor_args(&["--managed"]).is_err(),
+        "--managed needs --foreground"
+    );
+
+    let install = monitor_args(&[
+        "--install-agent",
+        "--app-path",
+        "/Applications/Git-Same.app",
+        "--installer-copy",
+        "/opt/homebrew/Caskroom/git-same/3.1.2/git-same-service-tool",
+    ])
+    .unwrap();
+    assert!(install.install_agent && install.is_control() && install.is_private());
+    assert!(monitor_args(&["--install-agent"]).is_err());
+    assert!(monitor_args(&["--install-agent", "--app-path", "/x"]).is_err());
+
+    assert!(
+        monitor_args(&["--remove-agent", "--app-path", "/x"])
+            .unwrap()
+            .remove_agent
+    );
+    assert!(monitor_args(&["--remove-agent"]).is_err());
+    assert!(
+        monitor_args(&["--agent-protocol-version"])
+            .unwrap()
+            .agent_protocol_version
+    );
+}
+
+#[test]
+fn monitor_private_flags_stay_out_of_help() {
+    use clap::CommandFactory;
+    let mut command = Cli::command();
+    let monitor = command.find_subcommand_mut("monitor").unwrap();
+    let help = monitor.render_long_help().to_string();
+    for hidden in [
+        "--managed",
+        "--install-agent",
+        "--remove-agent",
+        "--app-path",
+        "--installer-copy",
+        "--agent-protocol-version",
+    ] {
+        assert!(!help.contains(hidden), "{hidden} leaked into help");
+    }
+    for public in ["--start", "--stop", "--status", "--uninstall"] {
+        assert!(help.contains(public), "{public} missing from help");
+    }
+}

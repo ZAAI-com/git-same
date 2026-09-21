@@ -1,0 +1,139 @@
+<script lang="ts">
+  import { AlertTriangle, CheckCircle2, Info } from '@lucide/svelte';
+  import {
+    loadMonitorStatus,
+    monitorBusy,
+    monitorError,
+    monitorStatus,
+    runMonitorAction,
+  } from '../stores/monitor';
+  import { actionLabel, presentMonitor } from './monitorPresentation';
+
+  $: view = presentMonitor($monitorStatus);
+</script>
+
+<section class="monitor-panel {view.tone}" aria-live="polite">
+  <div class="icon">
+    {#if view.tone === 'ok'}
+      <CheckCircle2 size={18} />
+    {:else if view.tone === 'info'}
+      <Info size={18} />
+    {:else}
+      <AlertTriangle size={18} />
+    {/if}
+  </div>
+  <div class="copy">
+    <strong>{view.title}</strong>
+    {#if $monitorError}
+      <small class="error-text">{$monitorError}</small>
+    {:else if view.detail}
+      <small>{view.detail}</small>
+    {/if}
+  </div>
+  <div class="actions">
+    {#if !$monitorStatus && $monitorError}
+      <button type="button" class="primary" disabled={$monitorBusy} on:click={() => loadMonitorStatus()}>
+        Retry
+      </button>
+    {/if}
+    {#each view.actions as action, index}
+      <button
+        type="button"
+        class:primary={index === 0 && !view.healthy}
+        disabled={$monitorBusy}
+        on:click={() => runMonitorAction(action)}
+      >
+        {actionLabel(action, $monitorStatus)}
+      </button>
+    {/each}
+  </div>
+</section>
+
+<style>
+  .monitor-panel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+  }
+
+  .icon {
+    display: flex;
+    flex: none;
+  }
+
+  .ok .icon {
+    color: var(--ok, #2e9e5b);
+  }
+
+  .warning .icon {
+    color: var(--warning, #c98a12);
+  }
+
+  .error .icon {
+    color: var(--danger, #c0392b);
+  }
+
+  .copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .copy small {
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .copy .error-text {
+    color: var(--danger, #c0392b);
+  }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex: none;
+  }
+
+  /* Svelte scopes styles per component, so the identical rules in
+     StatusBanner and Settings do not reach these buttons. Without them the
+     Start/Stop/Restart controls render as raw OS buttons directly below a
+     fully styled banner. */
+  .actions button {
+    white-space: nowrap;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-alt);
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+  }
+
+  .actions button:hover:not(:disabled) {
+    background: var(--hover);
+  }
+
+  .actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .actions button.primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+  }
+</style>

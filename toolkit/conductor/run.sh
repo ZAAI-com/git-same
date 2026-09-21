@@ -132,10 +132,12 @@ echo "  $GS_COMMAND scan ~/projects --register        # Auto-register found work
 echo ""
 echo "Finder extension monitor (macOS):"
 echo ""
-echo "  $GS_COMMAND monitor                           # Start the monitor"
-echo "  $GS_COMMAND monitor --interval 60             # Poll every 60 seconds"
-echo "  $GS_COMMAND monitor --status                  # Check if the monitor is running"
-echo "  $GS_COMMAND monitor --stop                    # Stop a running monitor"
+echo "  $GS_COMMAND monitor --status                  # State, PID, last scan"
+echo "  $GS_COMMAND monitor --start                   # Enable + start the background monitor"
+echo "  $GS_COMMAND monitor --stop                    # Stop until the next --start (persists)"
+echo "  $GS_COMMAND monitor --uninstall               # Stop and remove the background monitor"
+echo "  $GS_COMMAND monitor                           # Run in the foreground instead"
+echo "  $GS_COMMAND monitor --interval 60             # Foreground, full scan every 60 seconds"
 echo "  $GS_COMMAND refresh                           # Force immediate status.json rewrite"
 echo "  $GS_COMMAND refresh --path ~/work/org         # Refresh a single folder"
 echo ""
@@ -164,6 +166,14 @@ if ! [[ "$APP_PORT" =~ ^[0-9]+$ ]] || [ "$APP_PORT" -lt 1 ] || [ "$APP_PORT" -gt
     exit 1
 fi
 export GIT_SAME_APP_PORT="$APP_PORT"
+
+# Dev builds must never manage the developer's live monitor LaunchAgent: the
+# helper would be copied from this disposable worktree. Opt in deliberately
+# with GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART=1 when testing the lifecycle.
+if [ "${GIT_SAME_DEV_ALLOW_MONITOR_AUTOSTART:-0}" != "1" ]; then
+    export GIT_SAME_DISABLE_MONITOR_AUTOSTART=1
+    echo "Automatic monitor management is suppressed for this dev app launch."
+fi
 
 TAURI_DEV_CONFIG="$(mktemp -t git-same-tauri-dev.XXXXXX.json)"
 trap 'rm -f "$TAURI_DEV_CONFIG"' EXIT
