@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -881,7 +880,7 @@ impl ExtensionElection {
 fn set_extension_election(election: ExtensionElection) -> Result<(), AppError> {
     #[cfg(target_os = "macos")]
     {
-        let output = Command::new("/usr/bin/pluginkit")
+        let output = std::process::Command::new("/usr/bin/pluginkit")
             .args(["-e", election.pluginkit_arg(), "-i", FINDER_EXTENSION_ID])
             .output()
             .map_err(|error| AppError::config(format!("pluginkit invocation failed: {error}")))?;

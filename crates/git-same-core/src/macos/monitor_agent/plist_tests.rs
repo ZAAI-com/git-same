@@ -1,4 +1,6 @@
 use super::*;
+// Only the `#[cfg(unix)]` app-owned render below needs these.
+#[cfg(unix)]
 use crate::macos::monitor_agent::source::{app_main_executable, APP_BUNDLE_ID};
 
 fn render_for(home: &str, bundle: Option<&str>) -> String {
@@ -9,6 +11,7 @@ fn render_for(home: &str, bundle: Option<&str>) -> String {
 
 /// An app-owned installation execs the bundle's own main executable, so the
 /// Full Disk Access grant for "Git-Same" covers the monitor.
+#[cfg(unix)]
 fn render_for_app(home: &str, bundle_path: &str) -> String {
     let paths = MonitorAgentPaths::for_home(Path::new(home));
     let program = app_main_executable(Path::new(bundle_path));
