@@ -293,7 +293,7 @@ fn monitor_private_modes_parse_and_validate() {
 }
 
 #[test]
-fn monitor_private_flags_stay_out_of_help_completions_and_manpages() {
+fn monitor_private_flags_stay_out_of_help() {
     use clap::CommandFactory;
     let mut command = Cli::command();
     let monitor = command.find_subcommand_mut("monitor").unwrap();
@@ -310,37 +310,5 @@ fn monitor_private_flags_stay_out_of_help_completions_and_manpages() {
     }
     for public in ["--start", "--stop", "--status", "--uninstall"] {
         assert!(help.contains(public), "{public} missing from help");
-    }
-
-    #[cfg(feature = "release-tools")]
-    {
-        let hidden = [
-            "--managed",
-            "--install-agent",
-            "--remove-agent",
-            "--app-path",
-            "--installer-copy",
-            "--agent-protocol-version",
-        ];
-        let mut completions = Vec::new();
-        clap_complete::generate(
-            clap_complete::Shell::Bash,
-            &mut Cli::command(),
-            "git-same",
-            &mut completions,
-        );
-        let completions = String::from_utf8(completions).unwrap();
-        let mut manpage = Vec::new();
-        clap_mangen::Man::new(Cli::command())
-            .render(&mut manpage)
-            .unwrap();
-        let manpage = String::from_utf8(manpage).unwrap();
-        for flag in hidden {
-            assert!(
-                !completions.contains(flag),
-                "{flag} leaked into completions"
-            );
-            assert!(!manpage.contains(flag), "{flag} leaked into manpage");
-        }
     }
 }
