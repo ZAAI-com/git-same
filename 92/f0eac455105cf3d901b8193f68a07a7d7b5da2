@@ -1,3 +1,19 @@
+crates/git-same-app/src/commands.rs
+  s_ca5a7db15db3f8::t_c609aa6a8f36b8 1251-1253
+  s_ca5a7db15db3f8::t_fce2554c436729 413,666,1232-1238,1242-1243
+  s_ca5a7db15db3f8::t_6182aa3acd1432 12,1257,1259
+crates/git-same-core/src/ipc/mod.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 14-23,33,76-78,94-97,107-131
+crates/git-same-core/src/monitor/run.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 141
+crates/git-same-core/src/ipc/status_file.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 50-55,62-68,92-129
+crates/git-same-core/src/ipc/mod_tests.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 112-115,122-154
+crates/git-same-app/src/commands_tests.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 254-260,262,264-267
+crates/git-same-core/src/ipc/status_file_tests.rs
+  s_ca5a7db15db3f8::t_fce2554c436729 133-187
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -5,6 +21,14 @@
   "base_commit_sha": "92f0eac455105cf3d901b8193f68a07a7d7b5da2",
   "prompts": {},
   "sessions": {
+    "s_ca5a7db15db3f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d3bd8ecd-cb3e-4648-90d2-1956d5fbda3f",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
     "s_d2f2c98d3ed29b": {
       "agent_id": {
         "tool": "claude",
