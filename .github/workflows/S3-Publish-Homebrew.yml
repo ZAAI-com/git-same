@@ -76,24 +76,17 @@ jobs:
 
       - name: Download release assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p assets
-          gh release download "$TAG" \
-            --pattern "git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
-            --pattern "git-same-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" \
-            --pattern "git-same-${VERSION}-x86_64-apple-darwin.tar.gz" \
-            --pattern "git-same-${VERSION}-aarch64-apple-darwin.tar.gz" \
-            --pattern "git-same-${VERSION}-x86_64.dmg" \
-            --pattern "git-same-${VERSION}-aarch64.dmg" \
-            --dir assets
-
-          # `gh release download` exits 0 when only some patterns match, and
-          # the missing file would not surface until `shasum` several steps
-          # later. Assert all six here, where the message is actionable.
+          # Fetch from the public download URLs, the same ones the rendered
+          # formula and cask point users at, not `gh release download`. That
+          # resolves the release through the by-tag API, which kept serving a
+          # zero-asset copy of 3.2.0 after the upload finished while these
+          # URLs were correct throughout. A partial match also exited 0 there.
+          BASE="https://github.com/zaai-com/git-same/releases/download/${TAG}"
           MISSING=0
           for asset in \
             "git-same-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
@@ -102,7 +95,9 @@ jobs:
             "git-same-${VERSION}-aarch64-apple-darwin.tar.gz" \
             "git-same-${VERSION}-x86_64.dmg" \
             "git-same-${VERSION}-aarch64.dmg"; do
-            if [ ! -s "assets/$asset" ]; then
+            if ! curl -fsSL --retry 3 --retry-all-errors \
+                   -o "assets/$asset" "$BASE/$asset" \
+               || [ ! -s "assets/$asset" ]; then
               echo "ERROR: release $TAG is missing asset $asset" >&2
               MISSING=1
             fi
