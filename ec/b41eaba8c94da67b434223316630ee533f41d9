@@ -1,0 +1,34 @@
+crates/git-same-core/src/macos/monitor_agent/controller.rs
+  s_73cf10d28de5bc::t_081d71ae711064 474-475,481-484
+  s_73cf10d28de5bc::t_c17037c88d7be4 317-328,336-337,344-351
+  s_73cf10d28de5bc::t_3707f505d23fe2 802
+  s_73cf10d28de5bc::t_1fc7bd3cd63acf 756
+  s_73cf10d28de5bc::t_52bb1c8848f260 889-897
+  s_73cf10d28de5bc::t_e39226fba55643 352-353
+crates/git-same-cli/src/commands/monitor_tests.rs
+  s_73cf10d28de5bc::t_fac971a3a1a17e 57-105
+crates/git-same-cli/src/commands/monitor.rs
+  s_73cf10d28de5bc::t_e8e3b50046b8f3 232-248
+crates/git-same-core/src/macos/monitor_agent/controller_tests.rs
+  s_73cf10d28de5bc::t_400d423dedae59 905-908
+  s_73cf10d28de5bc::t_ccbed69bef6c6d 109-128,286,297-301,750-752,754,763-767,818,829-831,834,838,845-846,849,851-852,854-890,894-904,909-937,944-945,947-950,1269-1270
+crates/git-same-core/src/macos/monitor_agent/fake.rs
+  s_73cf10d28de5bc::t_400d423dedae59 201-205
+  s_73cf10d28de5bc::t_091a7219716719 33-39,178-191,206-208,268-273,282-283,296-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ecb41eaba8c94da67b434223316630ee533f41d9",
+  "prompts": {},
+  "sessions": {
+    "s_73cf10d28de5bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac35d16-4322-4d9b-8004-b4757128c9cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
