@@ -229,7 +229,23 @@ fn install_agent(args: &ControlArgs, config_override: bool) -> Result<Report> {
     let app_path = args.app_path.as_deref().unwrap_or(Path::new(""));
     let retained = args.installer_copy.as_deref().unwrap_or(Path::new(""));
     let status = controller.install_for_cask(&staged, app_path, retained)?;
-    Ok(report(status))
+    Ok(install_agent_report(status, app_path))
+}
+
+/// Homebrew runs the installer before it moves the app into place, so the
+/// monitor cannot start yet. Say when it will, rather than the generic
+/// "installed but not running", which reads like a failure in `brew` output.
+fn install_agent_report(status: MonitorAgentStatus, app_path: &Path) -> Report {
+    let app_pending = !monitor_agent::source::app_main_executable(app_path).exists();
+    if status.running || status.state != MonitorAgentState::Stopped || !app_pending {
+        return report(status);
+    }
+    Report {
+        headline: "Monitor installed; it starts when you open Git-Same or at next login"
+            .to_string(),
+        status: Some(status),
+        data: None,
+    }
 }
 
 /// Persistent Stop on macOS. Elsewhere there is no managed service, so stop

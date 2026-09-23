@@ -24,8 +24,13 @@ cask "git-same" do
   depends_on macos: :ventura
 
   app "Git-Same.app"
-  # Installs the background monitor LaunchAgent and starts it when monitoring
-  # is enabled. The agent execs the app bundle's own main executable in
+  # Installs the background monitor LaunchAgent but does not start it: the
+  # program it names is not on disk yet (see below), and launchd parks a job
+  # whose program is missing at load (EX_CONFIG) and never retries it. Unless
+  # the user stopped monitoring (a Stop survives upgrades), the monitor starts
+  # when Homebrew reopens the app after an upgrade, when the user next opens
+  # Git-Same, or at the next login. The agent execs the app
+  # bundle's own main executable in
   # headless `monitor` mode, not the CLI helper: macOS TCC attributes a
   # launchd-spawned process to its bundle only when the executable is the
   # bundle's CFBundleExecutable, so this is what lets one Full Disk Access

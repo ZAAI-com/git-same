@@ -1589,7 +1589,7 @@ dependencies = [
 
 [[package]]
 name = "git-same"
-version = "3.2.0"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "git-same-app"
-version = "3.2.0"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1635,7 +1635,7 @@ dependencies = [
 
 [[package]]
 name = "git-same-core"
-version = "3.2.0"
+version = "3.2.1"
 dependencies = [
  "anyhow",
  "async-trait",

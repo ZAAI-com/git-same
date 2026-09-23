@@ -284,6 +284,8 @@ Finder badges need Full Disk Access. The monitor reads every repository folder, 
 3. The Finder extension is installed.
 4. Enable badges. The app sets the extension election itself; if macOS ignores that, use the Open button to toggle Git-Same Badges in Login Items & Extensions.
 
+After `brew install` or `brew upgrade`, unless you stopped monitoring with `gisa monitor --stop`, the monitor starts the next time you open Git-Same (Homebrew reopens it for you if it was running during the upgrade) or at your next login. Homebrew places the app only after the cask's installer runs, so the installer cannot start it.
+
 One grant covers both the app and the monitor because the LaunchAgent runs the monitor through the app's own executable (`Git-Same.app/Contents/MacOS/git-same-app monitor`). Two things the grant never covers: `gisa` run from a terminal uses the terminal's permissions, and a development build under `target/` is a separate identity that macOS prompts for again.
 
 Useful checks:
