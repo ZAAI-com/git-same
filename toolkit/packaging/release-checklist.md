@@ -68,7 +68,10 @@ After every step check `gisa monitor --status`, `launchctl print gui/$(id -u)/co
 
 | Scenario | Required result |
 |---|---|
-| Fresh signed cask install | Monitor active without opening the app. The plist `Program` is `<appdir>/Git-Same.app/Contents/MacOS/git-same-app` and the managed root holds no helper copy |
+| Fresh signed cask install | `brew` exits 0 and reports "Monitor installed; it starts when you open Git-Same or at next login". The agent is written but not loaded; the plist `Program` is `<appdir>/Git-Same.app/Contents/MacOS/git-same-app` and the managed root holds no helper copy. Opening the app starts the monitor |
+| Upgrade with the app running | Homebrew quits the app, installs, and reopens it; the monitor is running within seconds of `brew` returning, with no error |
+| Upgrade with the app closed | `brew` exits 0; no monitor until the app is opened or the next login, then exactly one |
+| App missing when the agent loads at login | `gisa monitor --start` fails naming the missing `git-same-app` and leaves launchd untouched; once the app is back, opening it starts the monitor (a fresh bootstrap, never `kickstart`) |
 | Upgrade from the 3.1.2 cask | Legacy helper copy removed, the agent re-rendered onto the bundle executable, no second monitor |
 | Pre-3.2 agent still installed, app launched once | Startup recovery re-renders the plist onto the bundle executable and restarts the monitor exactly once; `install.json` records the app as owner |
 | App upgraded while the old monitor keeps running | The app flags the build skew and restarts the installed agent on launch; `status.json` `monitor_version` matches the app afterwards |
