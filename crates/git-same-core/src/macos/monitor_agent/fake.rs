@@ -37,6 +37,10 @@ pub struct FakeState {
     /// the file appears; `kickstart` blocks instead of reviving it. Only a
     /// bootout clears the state.
     pub parked: HashSet<String>,
+    /// How many `print` queries still report a job loaded after its bootout,
+    /// modelling launchd finishing the removal asynchronously.
+    pub bootout_lingers: u32,
+    lingering: HashMap<String, u32>,
     /// Scripted `codesign`. `None` keeps the default: every binary is
     /// unsigned, which is true of test binaries and short-circuits
     /// `verify_signature` before it can check anything.
@@ -230,6 +234,10 @@ impl FakeState {
                     };
                 }
                 let label = label_of(target);
+                if let Some(left) = self.lingering.get_mut(&label).filter(|left| **left > 0) {
+                    *left -= 1;
+                    return ok(format!("{target} = {{\n\tstate = not running\n}}\n"));
+                }
                 if !self.gui || !self.loaded.contains(&label) {
                     return fail(113, "Could not find service");
                 }
@@ -262,6 +270,9 @@ impl FakeState {
                 if self.disabled.contains(&label) {
                     return fail(5, "Bootstrap failed: 5: Input/output error");
                 }
+                if self.lingering.get(&label).is_some_and(|left| *left > 0) {
+                    return fail(37, "Bootstrap failed: 37: Operation already in progress");
+                }
                 if !self.loaded.insert(label.clone()) {
                     return fail(37, "Operation already in progress");
                 }
@@ -281,6 +292,9 @@ impl FakeState {
                 }
                 self.parked.remove(&label);
                 self.programs.remove(&label);
+                if self.bootout_lingers > 0 {
+                    self.lingering.insert(label.clone(), self.bootout_lingers);
+                }
                 let pid = self.pids.remove(&label);
                 if self.active.as_ref().map(|a| a.pid) == pid {
                     self.active = None;

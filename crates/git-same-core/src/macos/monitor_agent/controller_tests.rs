@@ -911,6 +911,47 @@ fn explicit_start_with_the_app_missing_names_it() {
     assert!(!calls.iter().any(|c| c.contains("bootstrap")), "{calls:?}");
 }
 
+#[test]
+fn reload_waits_for_launchd_to_finish_removing_the_job() {
+    let env = env();
+    env.controller().ensure_running().unwrap();
+    env.system.with(|s| {
+        s.pids.clear();
+        s.active = None;
+        s.bootout_lingers = 3;
+    });
+
+    let status = env.controller().ensure_running().unwrap();
+
+    assert!(status.running, "{status:?}");
+    assert!(!env.system.with(|s| s
+        .calls
+        .iter()
+        .any(|c| c.contains("bootstrap") && c.contains("37"))));
+}
+
+#[test]
+fn explicit_start_with_the_app_missing_keeps_a_persistent_stop() {
+    let env = env();
+    // Without a config file only launchd's disable records a Stop.
+    env.write_config("");
+    let (staged, app, tool) = env.cask_bundle();
+    let controller = env.controller_for(None);
+    controller.install_for_cask(&staged, &app, &tool).unwrap();
+    controller.stop().unwrap();
+    assert!(!read_monitor_autostart(&env.paths.config).unwrap());
+    assert!(env.system.with(|s| s.disabled.contains(LABEL)));
+
+    let error = controller.start().unwrap_err();
+
+    assert!(
+        matches!(error, MonitorAgentError::MissingSource(_)),
+        "{error}"
+    );
+    assert!(!read_monitor_autostart(&env.paths.config).unwrap());
+    assert!(env.system.with(|s| s.disabled.contains(LABEL)));
+}
+
 // A login while the app was missing leaves launchd holding the job parked
 // with EX_CONFIG. kickstart never revives that; a fresh bootstrap does.
 #[test]

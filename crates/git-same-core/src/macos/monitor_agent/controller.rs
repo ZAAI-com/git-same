@@ -246,10 +246,26 @@ impl Controller {
                 return Err(MonitorAgentError::ForegroundActive { pid: active.pid });
             }
         }
+        let stopped_before = read_monitor_autostart(&self.paths.config).is_ok_and(|on| !on);
+        let disabled_before = self.launchd().is_disabled(LABEL)?;
         set_monitor_autostart(&self.paths.config, true)
             .map_err(|e| MonitorAgentError::Configuration(e.to_string()))?;
         self.launchd().enable(LABEL)?;
-        self.bring_up(Intent::Explicit, restart)?;
+        if let Err(error) = self.bring_up(Intent::Explicit, restart) {
+            // Nothing exists to run (the app is missing), which only shows
+            // once the recorded owner is resolved. Put the persistent Stop
+            // back so a later login does not load a job that cannot start.
+            if matches!(error, MonitorAgentError::MissingSource(_)) {
+                if stopped_before {
+                    set_monitor_autostart(&self.paths.config, false)
+                        .map_err(|e| MonitorAgentError::Configuration(e.to_string()))?;
+                }
+                if disabled_before {
+                    self.launchd().disable(LABEL)?;
+                }
+            }
+            return Err(error);
+        }
         self.inspect()
     }
 
@@ -348,6 +364,21 @@ impl Controller {
     fn reload_service(&self) -> Result<()> {
         let launchd = self.launchd();
         launchd.bootout(LABEL)?;
+        // Removal can finish after bootout returns. Bootstrapping into that
+        // window fails with "Operation already in progress", which the
+        // wrapper would read as success because the old job is still loaded.
+        let mut waited = Duration::ZERO;
+        while launchd.service(LABEL)?.loaded {
+            if waited >= EXIT_WAIT {
+                return Err(MonitorAgentError::Launchd {
+                    operation: "bootout".to_string(),
+                    code: None,
+                    detail: format!("{LABEL} was still loaded after bootout"),
+                });
+            }
+            self.system.sleep(POLL);
+            waited += POLL;
+        }
         launchd.bootstrap(LABEL, &self.paths.launch_agent)
     }
 
