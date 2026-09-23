@@ -30,9 +30,7 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     // Check list or spinner
     if state.checks_loading {
-        let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        let frame_idx = (state.tick_count as usize / 2) % spinner_frames.len();
-        let spinner = spinner_frames[frame_idx];
+        let spinner = crate::tui::widgets::spinner::frame(state.tick_count);
         let loading = Paragraph::new(Line::from(vec![
             Span::styled(
                 format!("  {} ", spinner),

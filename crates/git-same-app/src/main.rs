@@ -1,7 +1,18 @@
 mod commands;
+mod monitor_mode;
 mod status_stream;
 
+use tauri::Manager;
+
 fn main() {
+    // Headless monitor mode: the LaunchAgent runs this executable so the
+    // monitor shares the app bundle's TCC identity (one Full Disk Access grant
+    // covers app and monitor). Must run before any Tauri/AppKit initialisation
+    // so no window or Dock icon appears.
+    if monitor_mode::is_monitor_invocation(std::env::args_os()) {
+        std::process::exit(monitor_mode::run());
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -21,16 +32,40 @@ fn main() {
             commands::monitor_launch_agent_status,
             commands::install_monitor_launch_agent,
             commands::restart_monitor_launch_agent,
+            commands::restart_monitor_if_agent_installed,
             commands::discover_provider_orgs,
             commands::read_workspace_structure,
             commands::read_status,
             commands::start_sync,
             commands::extension_status,
+            commands::enable_finder_extension,
+            commands::disable_finder_extension,
+            commands::full_disk_access_status,
             commands::open_url,
         ])
         .manage(commands::MonitorStatusCache::default())
         .setup(|app| {
-            if let Err(error) = status_stream::spawn_watcher(app.handle().clone()) {
+            // Resolve the host-facing IPC config once and share it with every
+            // command handler via state, so handlers read the mirrored
+            // status.json from the host's own home rather than reaching into the
+            // app-group container (which triggers the "access data from other
+            // apps" TCC prompt).
+            let host_ipc = git_same_core::ipc::IpcConfig::host_status_path()?;
+            app.manage(commands::HostIpc(host_ipc.clone()));
+
+            // An old monitor build can still be running after an upgrade: it
+            // writes the container but never mirrors a real status.json into the
+            // host dir, so the app would show "monitor not running" until the
+            // user restarted it by hand. Restart the installed service so the
+            // upgraded build takes over. See `monitor_needs_startup_recovery`
+            // for the two signals. Never installs a service implicitly, and runs
+            // through the shared monitor-operation lock so it serializes with
+            // `ensure_monitor_on_startup` below and publishes its result.
+            if commands::monitor_needs_startup_recovery(&host_ipc) {
+                commands::recover_monitor_on_startup(app.handle().clone());
+            }
+
+            if let Err(error) = status_stream::spawn_watcher(app.handle().clone(), host_ipc) {
                 eprintln!("failed to start status watcher: {error}");
             }
             // Recover monitoring in the background; the window stays responsive.

@@ -11,9 +11,16 @@
 //!
 //! On macOS, IPC files live in the app-group container at
 //! `~/Library/Group Containers/<APP_GROUP_ID>/` so the sandboxed Badges
-//! extension and the (non-sandboxed) Tauri host can both reach them via the
-//! `application-groups` entitlement, instead of via per-path absolute-path
-//! exceptions that cannot be expanded for arbitrary users.
+//! extension can reach them via the `application-groups` entitlement, instead
+//! of via per-path absolute-path exceptions that cannot be expanded for
+//! arbitrary users.
+//!
+//! The non-sandboxed Tauri host deliberately does NOT read from the container:
+//! for a non-sandboxed process, reaching into an app container triggers the
+//! "access data from other apps" TCC prompt. Instead the monitor mirrors a
+//! real `status.json` into the host-facing dir from
+//! [`IpcConfig::host_status_path`] (`~/.config/git-same/finder/`), and only
+//! `finder.sock` is symlinked there (see `status_file::ensure_legacy_symlinks`).
 //!
 //! On non-macOS platforms (Linux, Windows), IPC files live under the user's
 //! XDG config dir at `~/.config/git-same/finder/`.
@@ -23,7 +30,7 @@ pub mod status_file;
 #[cfg(unix)]
 pub mod unix_socket;
 
-pub use status_file::StatusFileWriter;
+pub use status_file::{remove_symlink_if_present, StatusFileWriter};
 
 #[cfg(unix)]
 pub use unix_socket::{UnixSocketClient, UnixSocketListener};
@@ -66,7 +73,9 @@ impl IpcConfig {
     /// Returns the legacy `~/.config/git-same/finder/` path.
     ///
     /// Used as the macOS fallback and as the source side of legacy-symlink
-    /// migration on macOS (see `status_file::ensure_legacy_symlinks`).
+    /// migration on macOS (see `status_file::ensure_legacy_symlinks`). This is
+    /// the same directory as [`Self::host_status_path`], which is the
+    /// host-facing name for it; hosts reading live status should use that name.
     pub fn legacy_default_path() -> Result<Self, AppError> {
         let config_dir = crate::config::Config::default_path()?;
         let base_dir = config_dir
@@ -77,9 +86,49 @@ impl IpcConfig {
         })
     }
 
+    /// Returns the host-facing, non-container IPC dir (`~/.config/git-same/finder/`).
+    ///
+    /// On macOS the monitor mirrors a real `status.json` here so the
+    /// non-sandboxed Tauri host can read live status without reaching into the
+    /// app-group container, which would trigger the "access data from other
+    /// apps" TCC prompt. This is the same directory as
+    /// [`Self::legacy_default_path`]: the distinct name documents the
+    /// host-facing role, while the legacy name documents its role as the
+    /// source side of the symlink migration.
+    pub fn host_status_path() -> Result<Self, AppError> {
+        Self::legacy_default_path()
+    }
+
     /// Path to the status JSON file.
     pub fn status_file_path(&self) -> PathBuf {
         self.dir.join("status.json")
+    }
+
+    /// Returns the status writer for this config, with the platform's mirror
+    /// policy applied.
+    ///
+    /// On macOS, when this config points at the app-group container (the
+    /// monitor's primary location), the writer also mirrors `status.json`
+    /// into the host-facing dir from [`Self::host_status_path`] so the
+    /// non-sandboxed Tauri host can read live status without crossing the
+    /// container boundary (which would trigger the "access data from other
+    /// apps" TCC prompt). Custom directories (tests, embedders) and other
+    /// platforms get a plain, mirror-less writer, so a caller-supplied dir
+    /// never leaks writes into the real user's host dir.
+    pub fn status_writer(&self) -> StatusFileWriter {
+        let primary = self.status_file_path();
+        #[cfg(target_os = "macos")]
+        {
+            if Some(self.dir.as_path()) == macos_group_container_dir().as_deref() {
+                if let Ok(host) = Self::host_status_path() {
+                    let mirror = host.status_file_path();
+                    if mirror != primary {
+                        return StatusFileWriter::new_with_mirrors(primary, vec![mirror]);
+                    }
+                }
+            }
+        }
+        StatusFileWriter::new(primary)
     }
 
     /// Path to the Unix socket (macOS/Linux).

@@ -13,6 +13,15 @@ impl ConfigEnvGuard {
         let lock = CONFIG_ENV_LOCK.lock().unwrap();
         let previous = std::env::var("GIT_SAME_CONFIG_DIR").ok();
         std::env::set_var("GIT_SAME_CONFIG_DIR", path);
+        // Fail fast if isolation ever breaks: writing through the real user
+        // config would leave temp workspaces registered on the developer's Mac.
+        let resolved = Config::default_path().expect("default_path");
+        assert!(
+            resolved.starts_with(path),
+            "test config path {} escaped {}",
+            resolved.display(),
+            path.display()
+        );
         Self {
             _lock: lock,
             previous,
@@ -115,7 +124,7 @@ fn monitor_requirement_treats_a_long_first_scan_as_healthy() {
     assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Starting)));
     assert!(monitor_is_healthy(&agent_in(MonitorAgentState::Running)));
     assert_eq!(
-        monitor_requirement_suggestion(Some(&agent_in(MonitorAgentState::Starting))),
+        monitor_requirement_suggestion(Some(&agent_in(MonitorAgentState::Starting)), None, "3.2.0"),
         None
     );
 }
@@ -125,7 +134,7 @@ fn monitor_requirement_does_not_call_an_intentional_stop_broken() {
     let stopped = agent_in(MonitorAgentState::Disabled);
     assert!(!monitor_is_healthy(&stopped));
     assert_eq!(
-        monitor_requirement_suggestion(Some(&stopped)),
+        monitor_requirement_suggestion(Some(&stopped), None, "3.2.0"),
         Some("Start monitoring to see Finder badges".to_string())
     );
 }
@@ -134,38 +143,9 @@ fn monitor_requirement_does_not_call_an_intentional_stop_broken() {
 fn monitor_requirement_prefers_the_concrete_error_detail() {
     let failed = agent_in(MonitorAgentState::Failed).failed("launchctl bootstrap failed");
     assert_eq!(
-        monitor_requirement_message(Some(&failed)),
+        monitor_requirement_message(Some(&failed), None, "3.2.0"),
         "launchctl bootstrap failed"
     );
-}
-
-fn empty_scan_snapshot() -> StatusSnapshot {
-    let mut status = FinderStatus::new(1, chrono::Utc::now().to_rfc3339());
-    status.workspaces = vec![git_same_core::types::FinderWorkspaceInfo {
-        name: "work".to_string(),
-        root: std::path::PathBuf::from("/tmp/work"),
-        orgs: Vec::new(),
-    }];
-    StatusSnapshot {
-        status_path: String::new(),
-        updated_at: None,
-        stale: false,
-        status: Some(status),
-    }
-}
-
-#[test]
-fn no_permission_warning_while_the_first_scan_is_running() {
-    let snapshot = empty_scan_snapshot();
-    assert!(!full_disk_access_needed(
-        Some(&agent_in(MonitorAgentState::Starting)),
-        Some(&snapshot)
-    ));
-    assert!(!full_disk_access_needed(None, Some(&snapshot)));
-    assert!(full_disk_access_needed(
-        Some(&agent_in(MonitorAgentState::Running)),
-        Some(&snapshot)
-    ));
 }
 
 #[test]
@@ -209,6 +189,62 @@ fn read_status_snapshot_freshness_does_not_depend_on_the_monitor_process() {
         .status
         .expect("the last-known status must surface from disk");
     assert!(status.repos.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn read_status_snapshot_removes_a_status_symlink_and_reports_absent() {
+    use std::os::unix::fs::symlink;
+
+    let temp = TestDir::new("status-symlink");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+
+    // Simulate the pre-upgrade layout: status.json is a symlink into another
+    // location (the app-group container). Following it would re-trigger the
+    // cross-app TCC prompt.
+    let external_target = temp.path().join("container-status.json");
+    let mut external = FinderStatus::new(4242, chrono::Utc::now().to_rfc3339());
+    external.repos = Vec::new();
+    StatusFileWriter::new(external_target.clone())
+        .write(&external)
+        .unwrap();
+    let status_path = ipc.status_file_path();
+    symlink(&external_target, &status_path).unwrap();
+    assert!(std::fs::symlink_metadata(&status_path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
+
+    // The guard unlinks the symlink and reports status absent rather than
+    // dereferencing it into the container.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(
+        std::fs::symlink_metadata(&status_path).is_err(),
+        "status.json symlink must be removed"
+    );
+}
+
+#[test]
+fn read_status_snapshot_reports_stale_when_status_file_is_corrupt() {
+    let temp = TestDir::new("status-corrupt");
+    let ipc = IpcConfig {
+        dir: temp.path().join("ipc"),
+    };
+    ipc.ensure_dir().unwrap();
+    std::fs::write(ipc.status_file_path(), "{ not json").unwrap();
+
+    let snapshot = read_status_snapshot_with(&ipc).unwrap();
+
+    // A corrupt file must degrade to "no status, stale", not an error.
+    assert!(snapshot.status.is_none());
+    assert!(snapshot.stale);
+    assert!(snapshot.updated_at.is_some());
 }
 
 #[test]
@@ -568,4 +604,215 @@ fn open_url_scheme_match_is_case_insensitive() {
     assert!(is_openable(
         "X-Apple.SystemPreferences:com.apple.LoginItems-Settings.extension"
     ));
+}
+
+fn running_agent() -> MonitorLaunchAgentStatusDto {
+    agent_in(MonitorAgentState::Running)
+}
+
+fn snapshot_with_monitor_version(version: Option<&str>) -> StatusSnapshot {
+    let mut status = FinderStatus::new(4242, "2026-07-07T00:00:00Z".to_string());
+    status.monitor_version = version.map(str::to_string);
+    StatusSnapshot {
+        status_path: "/tmp/status.json".to_string(),
+        updated_at: Some("2026-07-07T00:00:00Z".to_string()),
+        stale: false,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn monitor_requirement_flags_version_skew() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.1.0"));
+
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Monitor is running a different build (3.1.0) than the app (3.2.0)"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        Some("Restart the monitor so it runs the same build as the app".to_string())
+    );
+}
+
+#[test]
+fn monitor_requirement_ignores_matching_version() {
+    let agent = running_agent();
+    let snapshot = snapshot_with_monitor_version(Some("3.2.0"));
+
+    // Matching versions leave the healthy agent message and no skew hint.
+    assert_eq!(
+        monitor_requirement_message(Some(&agent), Some(&snapshot), "3.2.0"),
+        "Running"
+    );
+    assert_eq!(
+        monitor_requirement_suggestion(Some(&agent), Some(&snapshot), "3.2.0"),
+        None
+    );
+}
+
+#[test]
+fn monitor_requirement_fails_pass_on_version_skew() {
+    let agent = running_agent();
+
+    // A running monitor on a mismatched build must not pass, so the row's
+    // state agrees with its "different build" message and restart suggestion.
+    let skewed = snapshot_with_monitor_version(Some("3.1.0"));
+    assert!(!monitor_requirement_passed(
+        Some(&agent),
+        Some(&skewed),
+        "3.2.0"
+    ));
+
+    // Matching builds still pass.
+    let matched = snapshot_with_monitor_version(Some("3.2.0"));
+    assert!(monitor_requirement_passed(
+        Some(&agent),
+        Some(&matched),
+        "3.2.0"
+    ));
+}
+
+#[test]
+fn extension_election_maps_to_pluginkit_verbs() {
+    assert_eq!(ExtensionElection::Use.pluginkit_arg(), "use");
+    assert_eq!(ExtensionElection::Ignore.pluginkit_arg(), "ignore");
+}
+
+fn snapshot_with_fda(monitor: Option<bool>, stale: bool) -> StatusSnapshot {
+    let mut status = FinderStatus::new(4242, "2026-07-07T00:00:00Z".to_string());
+    status.full_disk_access = monitor;
+    StatusSnapshot {
+        status_path: "/tmp/status.json".to_string(),
+        updated_at: Some("2026-07-07T00:00:00Z".to_string()),
+        stale,
+        status: Some(status),
+    }
+}
+
+#[test]
+fn fda_gate_prefers_a_fresh_monitor_answer() {
+    // The monitor holds the grant even though this process does not (for
+    // example a dev build): badges can render, so the gate passes. The monitor's
+    // own answer wins regardless of which agent installed it.
+    assert!(fda_gate_passes(
+        FullDiskAccess::Denied,
+        Some(true),
+        true,
+        false
+    ));
+    assert!(fda_gate_passes(
+        FullDiskAccess::Denied,
+        Some(true),
+        true,
+        true
+    ));
+    // The monitor lacks the grant even though this process has it (grant
+    // landed after the monitor started): badges would stay blank.
+    assert!(!fda_gate_passes(
+        FullDiskAccess::Granted,
+        Some(false),
+        true,
+        true
+    ));
+}
+
+#[test]
+fn fda_gate_falls_back_to_the_host_probe_without_a_fresh_monitor() {
+    assert!(fda_gate_passes(
+        FullDiskAccess::Granted,
+        Some(false),
+        false,
+        false
+    ));
+    assert!(!fda_gate_passes(FullDiskAccess::Denied, None, false, true));
+    // Unknown never passes: the gate must not enable badges on a guess.
+    assert!(!fda_gate_passes(FullDiskAccess::Unknown, None, true, true));
+    assert!(!fda_gate_passes(
+        FullDiskAccess::NotApplicable,
+        None,
+        false,
+        true
+    ));
+}
+
+#[test]
+fn fda_gate_withholds_the_host_probe_from_a_foreign_identity_monitor() {
+    // A fresh monitor reporting no answer is a pre-3.2 build. The host probe
+    // only transfers to it when the agent runs this app's executable; a
+    // CLI-owned (or unknown) agent runs a helper under its own TCC identity, so
+    // enabling badges would leave them silently blank.
+    assert!(!fda_gate_passes(FullDiskAccess::Granted, None, true, false));
+    assert!(fda_gate_passes(FullDiskAccess::Granted, None, true, true));
+
+    // A stale or absent monitor keeps the plain fallback, so a first-run setup
+    // with nothing installed yet is never blocked by this.
+    assert!(fda_gate_passes(FullDiskAccess::Granted, None, false, false));
+}
+
+#[test]
+fn full_disk_access_dto_reports_both_identities() {
+    let stale_snapshot = snapshot_with_fda(Some(false), true);
+
+    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&stale_snapshot), true);
+
+    assert_eq!(dto.host, "granted");
+    assert_eq!(dto.monitor, Some(false));
+    assert!(!dto.monitor_fresh);
+    // Stale monitor: the host probe decides.
+    assert!(dto.granted);
+
+    let fresh_snapshot = snapshot_with_fda(Some(false), false);
+    let dto = full_disk_access_dto(FullDiskAccess::Granted, Some(&fresh_snapshot), true);
+    assert!(dto.monitor_fresh);
+    // Fresh monitor without the grant: its answer wins.
+    assert!(!dto.granted);
+
+    let dto = full_disk_access_dto(FullDiskAccess::Denied, None, true);
+    assert_eq!(dto.host, "denied");
+    assert_eq!(dto.monitor, None);
+    assert!(!dto.monitor_fresh);
+    assert!(!dto.granted);
+}
+
+#[test]
+fn full_disk_access_message_explains_each_state() {
+    let granted = full_disk_access_dto(FullDiskAccess::Granted, None, true);
+    assert_eq!(full_disk_access_message(&granted), "granted to Git-Same");
+
+    let stale_monitor = full_disk_access_dto(
+        FullDiskAccess::Granted,
+        Some(&snapshot_with_fda(Some(false), true)),
+        true,
+    );
+    assert!(
+        stale_monitor.granted,
+        "stale monitor must not block the host grant"
+    );
+
+    let fresh_lagging_monitor = full_disk_access_dto(
+        FullDiskAccess::Granted,
+        Some(&snapshot_with_fda(Some(false), false)),
+        true,
+    );
+    assert!(full_disk_access_message(&fresh_lagging_monitor).contains("restart the monitor"));
+
+    let denied = full_disk_access_dto(FullDiskAccess::Denied, None, true);
+    assert_eq!(
+        full_disk_access_message(&denied),
+        "not granted (required for Finder badges)"
+    );
+
+    let unknown = full_disk_access_dto(FullDiskAccess::Unknown, None, true);
+    assert_eq!(
+        full_disk_access_message(&unknown),
+        "could not be determined"
+    );
+
+    let not_applicable = full_disk_access_dto(FullDiskAccess::NotApplicable, None, true);
+    assert_eq!(
+        full_disk_access_message(&not_applicable),
+        "not applicable on this platform"
+    );
 }

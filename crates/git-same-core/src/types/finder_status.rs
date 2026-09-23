@@ -25,7 +25,7 @@ pub enum Badge {
     /// Main branch is safe; other branches or worktrees have local-only data.
     Orange,
     /// Staged, unstaged, untracked, or unpushed commits.
-    /// DO NOT delete — uncommitted work or unpushed commits would be lost.
+    /// DO NOT delete: uncommitted work or unpushed commits would be lost.
     Red,
     /// Ambient git repo discovered outside any configured workspace.
     /// Upgraded to a semantic color on demand (right-click → REFRESH /path).
@@ -154,6 +154,18 @@ pub struct FinderStatus {
     /// container.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boot_volume_aliases: Vec<String>,
+    /// Version of the monitor build that wrote this status (CARGO_PKG_VERSION).
+    /// Hosts compare it against their own build to detect app/monitor skew.
+    /// Absent in status files written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monitor_version: Option<String>,
+    /// Whether the monitor process that wrote this status holds Full Disk
+    /// Access. TCC keys the grant on the writing executable, so this is the
+    /// authoritative answer for "can the monitor read protected folders";
+    /// hosts gate Finder badge setup on it. `None` when the monitor could not
+    /// determine it or the status predates this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_disk_access: Option<bool>,
 }
 
 impl FinderStatus {
@@ -172,6 +184,8 @@ impl FinderStatus {
             org_folders: Vec::new(),
             monitored_roots: Vec::new(),
             boot_volume_aliases: Vec::new(),
+            monitor_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            full_disk_access: None,
         }
     }
 }

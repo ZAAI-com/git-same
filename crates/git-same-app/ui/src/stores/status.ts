@@ -1,17 +1,20 @@
 import { derived, get, writable } from 'svelte/store';
-import { runMonitorAction } from './monitor';
+import { monitorStatus, runMonitorAction } from './monitor';
 import { createStatusSequencer } from '../lib/monitorPresentation';
 import {
   checkRequirements,
   deleteWorkspace,
+  enableFinderExtension,
   ensureConfig,
   listWorkspaces,
   onStatusUpdated,
   onSyncProgress,
   readAppConfig,
   readExtensionStatus,
+  readFullDiskAccess,
   readStatus,
   readWorkspaceStructure,
+  restartMonitorIfAgentInstalled,
   saveAppConfig,
   setDefaultWorkspace,
   startSync,
@@ -20,6 +23,8 @@ import type {
   AppConfigDto,
   AppConfigInput,
   ExtensionStatus,
+  FullDiskAccessDto,
+  MonitorAgentStatusDto,
   ProgressEvent,
   RequirementCheckDto,
   StatusSnapshot,
@@ -36,6 +41,7 @@ export const NEW_WORKSPACE_ID = '__new_workspace__';
 export const snapshot = writable<StatusSnapshot | null>(null);
 export const workspaces = writable<WorkspaceSummary[]>([]);
 export const extensionStatus = writable<ExtensionStatus | null>(null);
+export const fullDiskAccess = writable<FullDiskAccessDto | null>(null);
 export const appConfig = writable<AppConfigDto | null>(null);
 export const requirements = writable<RequirementCheckDto[]>([]);
 export const workspaceStructure = writable<WorkspaceStructureDto | null>(null);
@@ -70,7 +76,7 @@ const snapshotSequencer = createStatusSequencer<StatusSnapshot | null>();
 export async function refresh(): Promise<void> {
   errorMessage.set('');
   const token = snapshotSequencer.beginFetch();
-  const [workspaceList, status, ext, config] = await Promise.all([
+  const [workspaceList, status, ext, fda, config] = await Promise.all([
     listWorkspaces().catch((err) => {
       errorMessage.set(String(err));
       return [] as WorkspaceSummary[];
@@ -80,14 +86,104 @@ export async function refresh(): Promise<void> {
       return null;
     }),
     readExtensionStatus().catch(() => null),
+    readFullDiskAccess().catch(() => null),
     readAppConfig().catch(() => null),
   ]);
   workspaces.set(workspaceList);
   const accepted = snapshotSequencer.acceptFetch(token, status);
   if (accepted !== undefined) snapshot.set(accepted);
   extensionStatus.set(ext);
+  fullDiskAccess.set(fda);
   appConfig.set(config);
   reconcileSelectedWorkspace(workspaceList);
+  await kickMonitorIfLagging(fda);
+}
+
+/**
+ * Re-read only the permission-shaped state (Full Disk Access, extension
+ * election). Called when the window regains focus so the badge checklist
+ * reflects what the user just changed in System Settings.
+ */
+export async function refreshPermissions(): Promise<void> {
+  const [fda, ext] = await Promise.all([
+    readFullDiskAccess().catch(() => null),
+    readExtensionStatus().catch(() => null),
+  ]);
+  fullDiskAccess.set(fda);
+  extensionStatus.set(ext);
+  await kickMonitorIfLagging(fda);
+}
+
+// One restart per lag episode: cleared when the monitor reports the grant,
+// so a monitor that can never hold it (a helper-identity agent) is not
+// restarted in a loop.
+let monitorKickPending = false;
+
+/** Reset between tests; the latch is module state. */
+export function __resetMonitorKickForTests(): void {
+  monitorKickPending = false;
+}
+
+/**
+ * Whether an automatic restart can actually help.
+ *
+ * Only a managed service may be restarted on the app's initiative. A monitor
+ * the user started by hand (`gisa monitor`) is foreground: the backend refuses
+ * to kill it, so kicking it would just raise the same error on every refresh
+ * and window focus. With nothing installed there is no service to restart, and
+ * the recovery command deliberately will not create one.
+ */
+function monitorIsRecoverable(status: MonitorAgentStatusDto | null): boolean {
+  if (!status) return false;
+  if (status.mode === 'foreground') return false;
+  return status.installed;
+}
+
+/**
+ * The app holds Full Disk Access but the running monitor was started before
+ * the grant landed (macOS applies TCC grants on process start). Restart it
+ * once so its scans and watchers pick up the grant.
+ */
+async function kickMonitorIfLagging(fda: FullDiskAccessDto | null): Promise<void> {
+  if (!fda) return;
+  if (fda.monitor === true) {
+    monitorKickPending = false;
+    return;
+  }
+  if (fda.host !== 'granted' || fda.monitor !== false || !fda.monitor_fresh) return;
+  if (monitorKickPending) return;
+  if (!monitorIsRecoverable(get(monitorStatus))) return;
+  monitorKickPending = true;
+  try {
+    // The guarded command: never installs a service implicitly.
+    await restartMonitorIfAgentInstalled();
+    // The restarted monitor holds the grant now, but the store still carries
+    // the pre-restart answer, which keeps the Finder-badge action disabled
+    // until the next window focus. Re-read so the UI unlocks immediately.
+    try {
+      fullDiskAccess.set(await readFullDiskAccess());
+    } catch {
+      // A failed re-read leaves the stale value; the next refresh corrects it.
+    }
+    successMessage.set('Full Disk Access granted, monitor restarted');
+  } catch (err) {
+    // Clear the latch so a transient launchctl failure can be retried rather
+    // than disabling recovery for the rest of the session.
+    monitorKickPending = false;
+    errorMessage.set(String(err));
+  }
+}
+
+/** Enable Finder badges; the backend refuses until Full Disk Access is granted. */
+export async function enableExtension(): Promise<void> {
+  errorMessage.set('');
+  try {
+    extensionStatus.set(await enableFinderExtension());
+    successMessage.set('Finder badges enabled');
+  } catch (err) {
+    errorMessage.set(String(err));
+  }
+  await refreshPermissions();
 }
 
 export async function loadAppConfig(): Promise<void> {

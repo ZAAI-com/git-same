@@ -10,11 +10,7 @@
     requirementsLoading,
   } from '../stores/status';
   import { openUrl } from '../lib/tauri';
-
-  const EXTENSIONS_URL =
-    'x-apple.systempreferences:com.apple.LoginItems-Settings.extension';
-  const FDA_URL =
-    'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+  import { EXTENSIONS_URL, FDA_URL } from '../lib/systemSettings';
 
   onMount(() => {
     void loadRequirements();

@@ -1,21 +1,19 @@
 <script lang="ts">
   import { AlertTriangle, CheckCircle2, Info, X } from '@lucide/svelte';
   import {
+    enableExtension,
     errorMessage,
     extensionStatus,
+    fullDiskAccess,
     snapshot,
     successMessage,
     syncProgress,
     workspaces,
   } from '../stores/status';
   import { monitorBusy, monitorError, monitorStatus, runMonitorAction } from '../stores/monitor';
-  import { actionLabel, presentMonitor, shouldSuggestFullDiskAccess } from './monitorPresentation';
+  import { actionLabel, presentMonitor } from './monitorPresentation';
   import { openUrl } from './tauri';
-
-  const EXTENSIONS_URL =
-    'x-apple.systempreferences:com.apple.LoginItems-Settings.extension';
-  const FDA_URL =
-    'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+  import { EXTENSIONS_URL, FDA_URL } from './systemSettings';
 
   $: showSuccess = Boolean($successMessage);
   $: showError = !showSuccess && Boolean($errorMessage);
@@ -43,22 +41,25 @@
   $: monitorView = presentMonitor($monitorStatus);
   $: showMonitor =
     !showSuccess && !showError && !showProgress && (monitorView.banner || Boolean($monitorError));
-  $: showAllowExt =
-    !showSuccess &&
-    !showError &&
-    !showMonitor &&
-    Boolean($extensionStatus?.installed && !$extensionStatus?.enabled);
+  // Full Disk Access is the prerequisite for badges: the monitor cannot read
+  // protected folders without it, so ask for it before offering to enable the
+  // extension, and never offer the extension until it is granted. The verdict
+  // is the backend's probe, not a guess from an empty repository list.
+  $: fdaGranted = Boolean($fullDiskAccess?.granted);
   $: showFda =
     !showSuccess &&
     !showError &&
     !showMonitor &&
-    !showAllowExt &&
-    shouldSuggestFullDiskAccess({
-      status: $monitorStatus,
-      extensionEnabled: Boolean($extensionStatus?.enabled),
-      workspaceCount: $workspaces.length,
-      repoCount: $snapshot?.status?.repos?.length ?? 0,
-    });
+    Boolean($extensionStatus?.installed) &&
+    $workspaces.length > 0 &&
+    !fdaGranted;
+  $: showAllowExt =
+    !showSuccess &&
+    !showError &&
+    !showMonitor &&
+    !showFda &&
+    fdaGranted &&
+    Boolean($extensionStatus?.installed && !$extensionStatus?.enabled);
 
   function openExtensions() {
     void openUrl(EXTENSIONS_URL);
@@ -117,17 +118,17 @@
       </button>
     {/if}
   </div>
-{:else if showAllowExt}
-  <div class="banner info">
-    <Info size={18} />
-    <span>Allow Finder badges in System Settings to see git status icons in Finder.</span>
-    <button type="button" on:click={openExtensions}>Open Extensions</button>
-  </div>
 {:else if showFda}
   <div class="banner info">
     <Info size={18} />
-    <span>Grant Full Disk Access to Git-Same so badges can render on repository folders.</span>
+    <span>Grant Full Disk Access to Git-Same so the monitor can read your repositories, then quit and reopen the app.</span>
     <button type="button" on:click={openFullDiskAccess}>Grant Full Disk Access</button>
+  </div>
+{:else if showAllowExt}
+  <div class="banner info">
+    <Info size={18} />
+    <span>Enable Finder badges to see git status icons on your repository folders.</span>
+    <button type="button" on:click={enableExtension}>Enable badges</button>
   </div>
 {/if}
 

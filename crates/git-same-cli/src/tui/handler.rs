@@ -34,12 +34,12 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 }
             );
 
-            // Keep sync animation/throughput sampling active even when progress popup is hidden.
-            if sync_in_progress {
+            // Keep operation animations active even when their UI is hidden.
+            if sync_in_progress || app.status_loading {
                 app.tick_count = app.tick_count.wrapping_add(1);
 
                 // Sample throughput every 10 ticks (1 second at 100ms tick rate)
-                if app.tick_count.is_multiple_of(10) {
+                if sync_in_progress && app.tick_count.is_multiple_of(10) {
                     if let OperationState::Running {
                         operation: Operation::Sync,
                         completed,
@@ -131,15 +131,11 @@ pub async fn handle_event(app: &mut App, event: AppEvent, backend_tx: &Unbounded
                 .and_then(|ws| ws.refresh_interval)
                 .unwrap_or(app.config.refresh_interval);
             if app.screen == Screen::Dashboard
-                && app.active_workspace.is_some()
-                && !app.status_loading
-                && !sync_in_progress
                 && app
                     .last_status_scan
                     .is_none_or(|t| t.elapsed().as_secs() >= refresh_interval)
             {
-                app.status_loading = true;
-                super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
+                super::backend::try_start_status_refresh(app, backend_tx);
             }
         }
         AppEvent::Resize(_, _) => {} // ratatui handles resize
@@ -315,7 +311,18 @@ fn handle_backend_message(
             app.all_repos = repos;
         }
         BackendMessage::DiscoveryError(msg) => {
-            app.operation_state = OperationState::Idle;
+            // Discovery errors are per-org and non-fatal: the provider logs the
+            // failure and keeps walking the remaining orgs, so the operation is
+            // still in flight. Resetting to Idle here would drop the guards that
+            // keep a status refresh (and a second sync) from starting mid-run,
+            // and the operation would then finish into an already-idle state.
+            // Only clear state that is not backed by a running task.
+            if matches!(
+                app.operation_state,
+                OperationState::Idle | OperationState::Finished { .. }
+            ) {
+                app.operation_state = OperationState::Idle;
+            }
             app.error_message = Some(msg);
         }
         BackendMessage::SetupOrgsDiscovered(orgs) => {
@@ -504,6 +511,10 @@ fn handle_backend_message(
                     *total_new_commits,
                     started_at.elapsed().as_secs_f64(),
                 ),
+                // A run that short-circuits (for example an empty repo set)
+                // completes while still Discovering; keep its real operation so
+                // a Status run is never recorded as a sync.
+                OperationState::Discovering { operation, .. } => (*operation, 0, 0, 0, 0, 0.0),
                 _ => (Operation::Sync, 0, 0, 0, 0, 0.0),
             };
 
@@ -544,9 +555,6 @@ fn handle_backend_message(
                         let _ = manager.save(&app.sync_history);
                     }
                 }
-
-                // Auto-trigger status scan so dashboard is fresh
-                super::backend::spawn_operation(Operation::Status, app, backend_tx.clone());
             }
 
             // Default to Updated filter if there were updates, else All
@@ -566,16 +574,29 @@ fn handle_backend_message(
                 total_new_commits: tnc,
                 duration_secs: dur,
             };
+
+            // Auto-trigger a guarded status scan after leaving the active Sync state.
+            // Setting status_loading in the shared helper prevents the next dashboard
+            // tick from launching a duplicate scan.
+            if op == Operation::Sync {
+                super::backend::try_start_status_refresh(app, backend_tx);
+            }
         }
         BackendMessage::OperationError(msg) => {
             app.operation_state = OperationState::Idle;
+            // A failed status scan must not leave the flag latched: it gates both
+            // the next refresh and every sync.
+            app.status_loading = false;
             app.error_message = Some(msg);
         }
         BackendMessage::StatusResults(entries) => {
             app.local_repos = entries;
             if matches!(
                 app.operation_state,
-                OperationState::Running {
+                OperationState::Discovering {
+                    operation: Operation::Status,
+                    ..
+                } | OperationState::Running {
                     operation: Operation::Status,
                     ..
                 }

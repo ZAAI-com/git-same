@@ -2,8 +2,9 @@
 //!
 //! The run loop lives in `git_same_core::monitor` and the service lifecycle
 //! in `git_same_core::macos::monitor_agent`. This file is the CLI surface:
-//! pick the mode, adapt output (human text or one JSON object), and build
-//! the shutdown future from `ctrl_c` + SIGTERM.
+//! pick the mode and adapt output (human text or one JSON object). The
+//! options and the shutdown future come from core, so the Tauri app's
+//! headless monitor mode runs on exactly the same two helpers.
 //!
 //! Control modes are dispatched before any configuration is loaded: stopping
 //! or inspecting the service must work without a valid repository config.
@@ -16,8 +17,7 @@ use git_same_core::macos::monitor_agent::{self, MonitorAgentState, MonitorAgentS
 use git_same_core::monitor::{self, runtime_guard, MonitorMode, RunContext};
 use git_same_core::output::Output;
 use std::path::Path;
-use std::time::Duration;
-use tracing::{error, info};
+use tracing::info;
 
 /// Run a control or packaging mode. Needs no configuration.
 pub async fn run_control(
@@ -321,7 +321,7 @@ pub async fn run_foreground(
     output: &Output,
 ) -> Result<()> {
     if args.managed {
-        return run_managed(output).await;
+        return monitor::run_managed(output).await;
     }
 
     let path = match config_path {
@@ -333,99 +333,20 @@ pub async fn run_foreground(
     let ipc_config = IpcConfig::default_path()?;
     info!("Starting git-same monitor");
 
-    let interval_secs = resolve_interval_secs(args.interval, config.monitor.fullscan_interval_secs);
-    let opts = monitor::Options {
-        interval: Duration::from_secs(interval_secs),
-        ipc_config,
-    };
+    let opts = monitor::Options::from_config(&config, ipc_config, args.interval);
     let context = RunContext {
         mode: MonitorMode::Foreground,
         config_path: Some(path),
         interval_explicit: args.interval.is_some(),
     };
-    monitor::run_with(&config, output, opts, context, shutdown_signal()).await
-}
-
-/// launchd restarts the helper after every unsuccessful exit
-/// (`KeepAlive = { SuccessfulExit = false }`). Conditions that a restart
-/// cannot fix therefore exit successfully after one logged line; only
-/// transient failures return an error.
-async fn run_managed(output: &Output) -> Result<()> {
-    let prepared = tokio::task::spawn_blocking(prepare_managed)
-        .await
-        .map_err(|e| AppError::Other(anyhow::anyhow!("managed startup task failed: {e}")))?;
-    let (config, path, ipc_config) = match prepared {
-        Ok(prepared) => prepared,
-        Err(reason) => {
-            error!("{reason}");
-            eprintln!("git-same monitor: {reason}");
-            return Ok(());
-        }
-    };
-
-    let opts = monitor::Options {
-        interval: Duration::from_secs(config.monitor.fullscan_interval_secs),
-        ipc_config,
-    };
-    let context = RunContext {
-        mode: MonitorMode::Managed,
-        config_path: Some(path),
-        interval_explicit: false,
-    };
-    match monitor::run_with(&config, output, opts, context, shutdown_signal()).await {
-        Err(AppError::MonitorAgent(MonitorAgentError::AlreadyRunning { pid })) => {
-            eprintln!("git-same monitor: another monitor is already running ({pid:?}); exiting");
-            Ok(())
-        }
-        other => other,
-    }
-}
-
-/// Checks that must pass before the helper's first side effect. `Err` is a
-/// reason to exit successfully without running.
-fn prepare_managed() -> std::result::Result<(Config, std::path::PathBuf, IpcConfig), String> {
-    let controller = monitor_agent::controller_for_current_user(false)
-        .map_err(|e| format!("not starting: {e}"))?;
-    match controller.monitoring_enabled() {
-        Ok(true) => {}
-        Ok(false) => return Err("monitoring is disabled; not starting".to_string()),
-        Err(e) => return Err(format!("not starting: {e}")),
-    }
-    let paths = controller.paths();
-    // Never rewritten, never replaced with defaults.
-    let config = Config::load_from(&paths.config)
-        .map_err(|e| format!("not starting until the configuration is fixed: {e}"))?;
-    Ok((config, paths.config.clone(), paths.ipc.clone()))
-}
-
-/// Resolve the effective polling interval: an explicit `--interval` flag wins,
-/// otherwise fall back to the value from `config.toml`.
-fn resolve_interval_secs(cli_flag: Option<u64>, config_value: u64) -> u64 {
-    cli_flag.unwrap_or(config_value)
-}
-
-/// Resolve when the user hits ctrl-c (SIGINT) or a stop request sends
-/// SIGTERM. Used as the shutdown future for the monitor loop.
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        let mut sigterm =
-            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-                Ok(s) => s,
-                Err(_) => {
-                    let _ = tokio::signal::ctrl_c().await;
-                    return;
-                }
-            };
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {},
-            _ = sigterm.recv() => {},
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
-    }
+    monitor::run_with(
+        &config,
+        output,
+        opts,
+        context,
+        monitor::default_shutdown_signal(),
+    )
+    .await
 }
 
 #[cfg(test)]

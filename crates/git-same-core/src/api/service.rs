@@ -1,7 +1,7 @@
 //! Repository scanning service.
 //!
 //! `RepoScanService` is the API for scanning repositories and computing badge
-//! status. It owns no state — callers construct it with references to a git
+//! status. It owns no state: callers construct it with references to a git
 //! backend and a config, then invoke `scan_all()`, `scan_workspace()`, or
 //! `scan_repo()`.
 
@@ -112,7 +112,7 @@ impl<'a> RepoScanService<'a> {
                 orgs: org_names.clone(),
             });
 
-            // Add org folder entries — scan filesystem for org directories
+            // Add org folder entries: scan the filesystem for org directories
             // If orgs list is specified, use it; otherwise discover from directory listing
             let org_dirs: Vec<String> = if org_names.is_empty() {
                 std::fs::read_dir(&base_path)
@@ -182,6 +182,11 @@ impl<'a> RepoScanService<'a> {
         // ops (no filesystem access). Always set, independent of ambient
         // mode, since workspace roots can also be browsed through the alias.
         status.boot_volume_aliases = detect_boot_volume_aliases();
+
+        // Stamp this process's Full Disk Access state. TCC keys the grant on
+        // the executable, so only the monitor itself can answer whether it may
+        // read protected folders; hosts read the answer from status.json.
+        status.full_disk_access = crate::macos::full_disk_access::probe().is_granted();
 
         // Always publish workspace roots so the extension can register them.
         for ws in &status.workspaces {

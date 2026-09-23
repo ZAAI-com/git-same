@@ -34,6 +34,24 @@ pub mod setup;
 pub mod types;
 pub mod workflows;
 
+/// Shared helpers for this crate's unit tests.
+#[cfg(test)]
+pub(crate) mod test_support {
+    /// Serializes tests that read or write process-wide environment variables.
+    ///
+    /// `HOME`, `XDG_CONFIG_HOME` and `GIT_SAME_CONFIG_DIR` are process state, so
+    /// a test that swaps them races every test that resolves a config or IPC
+    /// path. Both sides must take this lock: a per-file lock only disciplines
+    /// the writers and still lets readers in other modules observe a temp home
+    /// mid-flight. Poisoning is ignored so one failing test does not cascade.
+    pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire [`ENV_LOCK`], ignoring poisoning from an unrelated failure.
+    pub(crate) fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 /// Re-export commonly used types for convenience.
 pub mod prelude {
     pub use crate::auth::{get_auth, get_auth_for_provider, AuthResult};

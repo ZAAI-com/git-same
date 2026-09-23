@@ -5,6 +5,7 @@ import type {
   AppConfigDto,
   AppConfigInput,
   ExtensionStatus,
+  FullDiskAccessDto,
   MonitorAgentStatusDto,
   MonitorLaunchAgentStatusDto,
   ProviderDiscoveryDto,
@@ -84,6 +85,11 @@ export function restartMonitorLaunchAgent(): Promise<MonitorLaunchAgentStatusDto
   return invoke('restart_monitor_launch_agent');
 }
 
+/** Restart only an already-installed monitor; never installs one implicitly. */
+export function restartMonitorIfAgentInstalled(): Promise<MonitorAgentStatusDto> {
+  return invoke('restart_monitor_if_agent_installed');
+}
+
 export function discoverProviderOrgs(
   provider: WorkspaceProviderDto,
 ): Promise<ProviderDiscoveryDto> {
@@ -106,6 +112,18 @@ export function startSync(workspaceId: string): Promise<StatusSnapshot> {
 
 export function readExtensionStatus(): Promise<ExtensionStatus> {
   return invoke('extension_status');
+}
+
+export function enableFinderExtension(): Promise<ExtensionStatus> {
+  return invoke('enable_finder_extension');
+}
+
+export function disableFinderExtension(): Promise<ExtensionStatus> {
+  return invoke('disable_finder_extension');
+}
+
+export function readFullDiskAccess(): Promise<FullDiskAccessDto> {
+  return invoke('full_disk_access_status');
 }
 
 export function openUrl(url: string): Promise<void> {

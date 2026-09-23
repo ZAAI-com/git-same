@@ -8,9 +8,9 @@
 //!
 //! Temp files of atomic writes, the lock file, and caches are ignored.
 
-use crate::commands::{read_status_snapshot, refresh_monitor_status};
+use crate::commands::{read_status_snapshot_with, refresh_monitor_status};
 use git_same_core::ipc::IpcConfig;
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -98,6 +98,25 @@ fn file_name_of(path: &Path) -> OsString {
     path.file_name().unwrap_or(path.as_os_str()).to_os_string()
 }
 
+/// What a watcher event means for the UI.
+///
+/// A rescan event says the backend dropped kernel-side events, so the status
+/// file may have changed without a path-bearing event ever arriving; the same
+/// goes for a path-less event on backends that use those to signal a missed
+/// update. Both are treated as new data rather than ignored, otherwise the
+/// dashboard can sit on stale status indefinitely.
+pub(crate) fn event_relevance(targets: &WatchTargets, event: &Event) -> Relevance {
+    if event.need_rescan() || event.paths.is_empty() {
+        return Relevance::DataAndMonitor;
+    }
+    event
+        .paths
+        .iter()
+        .map(|path| targets.relevance(path))
+        .max()
+        .unwrap_or(Relevance::Ignore)
+}
+
 /// Collects a burst of events into one update.
 ///
 /// Trailing edge: each further event pushes the deadline out, so a scan no
@@ -141,8 +160,10 @@ impl Debouncer {
     }
 }
 
-pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
-    let ipc = IpcConfig::default_path()?;
+/// `ipc` is the resolved host-facing config (`~/.config/git-same/finder/`,
+/// where the monitor mirrors a real `status.json`), so neither the watch nor
+/// the reads cross into the app-group container.
+pub fn spawn_watcher(app: AppHandle, ipc: IpcConfig) -> anyhow::Result<()> {
     ipc.ensure_dir()?;
 
     std::thread::Builder::new()
@@ -174,22 +195,23 @@ pub fn spawn_watcher(app: AppHandle) -> anyhow::Result<()> {
                 let timeout = debouncer.timeout(Instant::now());
                 match rx.recv_timeout(timeout) {
                     Ok(Ok(event)) => {
-                        let relevance = event
-                            .paths
-                            .iter()
-                            .map(|path| targets.relevance(path))
-                            .max()
-                            .unwrap_or(Relevance::Ignore);
-                        debouncer.record(relevance, Instant::now());
+                        debouncer.record(event_relevance(&targets, &event), Instant::now());
                     }
-                    Ok(Err(_)) => {}
+                    Ok(Err(error)) => {
+                        eprintln!("status watcher event error: {error}");
+                    }
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         let Some(fired) = debouncer.take_due(Instant::now()) else {
                             continue;
                         };
                         if fired == Relevance::DataAndMonitor {
-                            if let Ok(snapshot) = read_status_snapshot() {
-                                let _ = app.emit("status-updated", snapshot);
+                            match read_status_snapshot_with(&ipc) {
+                                Ok(snapshot) => {
+                                    let _ = app.emit("status-updated", snapshot);
+                                }
+                                Err(error) => {
+                                    eprintln!("failed to read status snapshot: {error}");
+                                }
                             }
                         }
                         if fired != Relevance::Ignore {
