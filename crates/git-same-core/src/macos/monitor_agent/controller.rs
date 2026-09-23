@@ -314,6 +314,18 @@ impl Controller {
             }
         }
 
+        // Re-read: an `Install` above may have just changed the owner.
+        let program = self.program(InstallRecord::load(&self.paths.install_record)?.as_ref());
+        if !program_placed(&program) {
+            return match intent {
+                // The app's next launch or the next login starts it.
+                Intent::Automatic => Ok(()),
+                Intent::Explicit => Err(MonitorAgentError::MissingSource(format!(
+                    "'{}' does not exist; reinstall or move Git-Same.app back",
+                    program.display()
+                ))),
+            };
+        }
         if !launchd.gui_session_available()? {
             // The plist is in place; launchd starts it at the next login.
             return Ok(());
@@ -321,12 +333,22 @@ impl Controller {
         let service = launchd.service(LABEL)?;
         if !service.loaded {
             launchd.bootstrap(LABEL, &self.paths.launch_agent)?;
+        } else if service.pid.is_none() {
+            self.reload_service()?;
         } else if restart {
             launchd.kickstart(LABEL, true)?;
-        } else if service.pid.is_none() {
-            launchd.kickstart(LABEL, false)?;
         }
         self.confirm_started()
+    }
+
+    /// Starts a loaded job that has no process. A fresh bootstrap rather than
+    /// `kickstart`: a job launchd parked with `EX_CONFIG` (loaded at login
+    /// while the app was missing) never starts from `kickstart`, which blocks
+    /// instead. `RunAtLoad` makes the bootstrap start it either way.
+    fn reload_service(&self) -> Result<()> {
+        let launchd = self.launchd();
+        launchd.bootout(LABEL)?;
+        launchd.bootstrap(LABEL, &self.paths.launch_agent)
     }
 
     /// launchd accepted the service and reports a process. Does not wait for
@@ -449,16 +471,17 @@ impl Controller {
             }
         }
         self.wait_for_managed_exit()?;
-        let rendered = self.render_plist(
-            &staged.source.program(&self.paths.helper),
-            Some(staged.source.owner_kind),
-        )?;
+        let program = staged.source.program(&self.paths.helper);
+        let rendered = self.render_plist(&program, Some(staged.source.owner_kind))?;
         self.installer().activate(staged, &rendered)?;
         let foreground_active = !matches!(
             self.system.monitor_state(&self.paths.ipc),
             RuntimeMonitorState::Stopped
         );
-        if start_if_possible && gui && !foreground_active {
+        // A cask install runs before Homebrew places the app, so the bundle
+        // executable is usually still missing here; the installation is
+        // committed and the app's next launch or the next login starts it.
+        if start_if_possible && gui && !foreground_active && program_placed(&program) {
             launchd.bootstrap(LABEL, &self.paths.launch_agent)?;
             self.confirm_started()?;
         }
@@ -730,7 +753,7 @@ impl Controller {
 
         let source = source::cask_source(staged_executable, final_app_path);
         if self.cask_install_is_current(&source)? {
-            if enabled {
+            if enabled && program_placed(&source.source_binary) {
                 self.bring_up_installed()?;
             }
         } else {
@@ -776,7 +799,7 @@ impl Controller {
         if !service.loaded {
             launchd.bootstrap(LABEL, &self.paths.launch_agent)?;
         } else if service.pid.is_none() {
-            launchd.kickstart(LABEL, false)?;
+            self.reload_service()?;
         }
         self.confirm_started()
     }
@@ -861,6 +884,15 @@ fn program_installed(program: &Path, record: Option<&InstallRecord>) -> bool {
         Some(record) if record.owner_kind.is_app() => true,
         _ => is_executable(program),
     }
+}
+
+/// Whether launchd may be asked to start `program`. launchd parks a job whose
+/// program is missing at load (`EX_CONFIG`) and never retries it, even once
+/// the file appears, so nothing bootstraps the monitor before its executable
+/// is on disk. During a cask install it is not: Homebrew runs the installer
+/// before it moves the app into place.
+fn program_placed(program: &Path) -> bool {
+    is_executable(program)
 }
 
 /// Whether the installed program still matches what was recorded. Used to

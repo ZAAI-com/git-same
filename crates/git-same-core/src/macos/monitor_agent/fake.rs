@@ -30,6 +30,13 @@ pub struct FakeState {
     pub corrupt_copies: bool,
     /// launchd accepts the job but its process never appears.
     pub jobs_never_start: bool,
+    /// `Program` of each bootstrapped plist.
+    pub programs: HashMap<String, PathBuf>,
+    /// Jobs whose program was missing when launchd tried to spawn them. Real
+    /// launchd records `EX_CONFIG` and never retries such a job, even once
+    /// the file appears; `kickstart` blocks instead of reviving it. Only a
+    /// bootout clears the state.
+    pub parked: HashSet<String>,
     /// Scripted `codesign`. `None` keeps the default: every binary is
     /// unsigned, which is true of test binaries and short-circuits
     /// `verify_signature` before it can check anything.
@@ -168,6 +175,20 @@ fn fail(code: i32, stderr: &str) -> CommandOutput {
     }
 }
 
+/// The `Program` path of a rendered plist, XML-unescaped.
+fn plist_program(plist: &str) -> Option<PathBuf> {
+    let after = &plist[plist.find("<key>Program</key>")?..];
+    let start = after.find("<string>")? + "<string>".len();
+    let end = after[start..].find("</string>")? + start;
+    let value = after[start..end]
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&");
+    Some(PathBuf::from(value))
+}
+
 fn label_of(target: &str) -> String {
     target.rsplit('/').next().unwrap_or_default().to_string()
 }
@@ -175,6 +196,14 @@ fn label_of(target: &str) -> String {
 impl FakeState {
     fn spawn(&mut self, label: &str) {
         if self.jobs_never_start {
+            return;
+        }
+        if self
+            .programs
+            .get(label)
+            .is_some_and(|program| !program.exists())
+        {
+            self.parked.insert(label.to_string());
             return;
         }
         self.next_pid += 1;
@@ -236,6 +265,12 @@ impl FakeState {
                 if !self.loaded.insert(label.clone()) {
                     return fail(37, "Operation already in progress");
                 }
+                if let Some(program) = std::fs::read_to_string(args[2])
+                    .ok()
+                    .and_then(|plist| plist_program(&plist))
+                {
+                    self.programs.insert(label.clone(), program);
+                }
                 self.spawn(&label);
                 ok("")
             }
@@ -244,6 +279,8 @@ impl FakeState {
                 if !self.loaded.remove(&label) {
                     return fail(3, "Boot-out failed: 3: No such process");
                 }
+                self.parked.remove(&label);
+                self.programs.remove(&label);
                 let pid = self.pids.remove(&label);
                 if self.active.as_ref().map(|a| a.pid) == pid {
                     self.active = None;
@@ -255,6 +292,10 @@ impl FakeState {
                 let label = label_of(args[args.len() - 1]);
                 if !self.loaded.contains(&label) {
                     return fail(113, "Could not find service");
+                }
+                if self.parked.contains(&label) {
+                    // The real call blocks until our launchctl timeout.
+                    return fail(1, "kickstart timed out: job parked with EX_CONFIG");
                 }
                 if restart || !self.pids.contains_key(&label) {
                     self.spawn(&label);

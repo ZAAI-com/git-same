@@ -106,6 +106,26 @@ impl Env {
             .is_ok_and(|plist| plist.contains(program.to_str().unwrap()))
     }
 
+    /// Homebrew moving the staged bundle to `app` once the installer script
+    /// has exited. Returns the placed bundle executable.
+    fn place_app(&self, staged: &Path, app: &Path) -> PathBuf {
+        let executable = source::app_main_executable(app);
+        write_executable(&executable, &std::fs::read(staged_app(staged)).unwrap());
+        executable
+    }
+
+    /// Git-Same.app at `app` launching, as Homebrew's reopen or the user does.
+    fn launch_app(&self, app: &Path) -> Result<MonitorAgentStatus> {
+        let executable = source::app_main_executable(app);
+        self.controller_for(Some(HelperSource {
+            owner_kind: OwnerKind::App,
+            owner_path: app.to_path_buf(),
+            source_binary: executable.clone(),
+            copy_from: executable,
+        }))
+        .ensure_running()
+    }
+
     /// `(staged installer, final app path, retained service tool)`, matching
     /// what the cask passes: the installer is the staged bundle's CLI helper,
     /// while the program that gets installed is the staged bundle's main
@@ -263,7 +283,7 @@ fn unloaded_service_is_bootstrapped() {
 }
 
 #[test]
-fn loaded_service_without_a_process_is_kickstarted_without_killing() {
+fn loaded_service_without_a_process_is_reloaded_not_kickstarted() {
     let env = env();
     env.controller().ensure_running().unwrap();
     env.system.with(|s| {
@@ -274,10 +294,11 @@ fn loaded_service_without_a_process_is_kickstarted_without_killing() {
 
     env.controller().ensure_running().unwrap();
 
-    assert_eq!(
-        env.system.mutating_calls(),
-        vec![format!("launchctl kickstart gui/501/{LABEL}")]
-    );
+    let calls = env.system.mutating_calls();
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0], format!("launchctl bootout gui/501/{LABEL}"));
+    assert!(calls[1].starts_with("launchctl bootstrap gui/501 "));
+    assert!(env.system.with(|s| s.active.is_some()));
 }
 
 #[test]
@@ -726,8 +747,11 @@ fn staged_app(staged_cli: &Path) -> PathBuf {
 
 // ------------------------------------------------------------------ cask
 
+// Homebrew runs the installer script before it moves the app into place, so
+// the bundle executable the agent names does not exist yet. launchd would park
+// such a job with EX_CONFIG and never start it, which is what broke 3.2.0.
 #[test]
-fn cask_install_starts_monitoring_without_the_app() {
+fn cask_install_defers_start_until_the_app_is_placed() {
     let env = env();
     let (staged, app, tool) = env.cask_bundle();
 
@@ -736,7 +760,11 @@ fn cask_install_starts_monitoring_without_the_app() {
         .install_for_cask(&staged, &app, &tool)
         .unwrap();
 
-    assert!(status.running);
+    assert!(!status.running);
+    assert!(status.installed);
+    assert_eq!(status.state, MonitorAgentState::Stopped);
+    let calls = env.system.mutating_calls();
+    assert!(!calls.iter().any(|c| c.contains("bootstrap")), "{calls:?}");
     assert_eq!(status.owner_kind, Some(OwnerKind::HomebrewCask));
     assert_eq!(status.source.as_deref(), Some(app.to_str().unwrap()));
     assert_eq!(std::fs::read(&tool).unwrap(), b"cask cli v1");
@@ -787,7 +815,7 @@ fn cask_upgrade_after_a_stop_updates_the_helper_but_stays_stopped() {
 }
 
 #[test]
-fn cask_upgrade_while_enabled_starts_the_new_helper() {
+fn cask_upgrade_while_enabled_starts_the_new_build_on_the_next_app_launch() {
     let env = env();
     let (staged, app, tool) = env.cask_bundle();
     let controller = env.controller_for(None);
@@ -798,40 +826,113 @@ fn cask_upgrade_while_enabled_starts_the_new_helper() {
     write_executable(&staged_app(&staged), b"cask helper v2");
 
     let status = controller.install_for_cask(&staged, &app, &tool).unwrap();
+    assert!(!status.running);
+    let placed = env.place_app(&staged, &app);
+    let status = env.launch_app(&app).unwrap();
 
     assert!(status.running);
-    assert_eq!(
-        std::fs::read(staged_app(&staged)).unwrap(),
-        b"cask helper v2"
-    );
+    assert_eq!(std::fs::read(placed).unwrap(), b"cask helper v2");
 }
 
 #[test]
-fn app_launch_right_after_a_cask_install_changes_nothing() {
+fn app_launch_after_a_cask_install_starts_the_monitor() {
     let env = env();
     let (staged, app, tool) = env.cask_bundle();
     env.controller_for(None)
         .install_for_cask(&staged, &app, &tool)
         .unwrap();
     // Homebrew has moved the bundle into place and reopens the app.
-    let installed_executable = app.join("Contents/MacOS/git-same-app");
-    write_executable(&installed_executable, b"cask helper v1");
-    let app_caller = HelperSource {
-        owner_kind: OwnerKind::App,
-        owner_path: app.clone(),
-        source_binary: installed_executable.clone(),
-        copy_from: installed_executable,
-    };
-    let (pid, stamps) = (env.pid(), env.stamps());
+    env.place_app(&staged, &app);
+    let stamps = env.stamps();
     env.system.with(|s| s.calls.clear());
 
-    env.controller_for(Some(app_caller))
-        .ensure_running()
-        .unwrap();
+    let status = env.launch_app(&app).unwrap();
 
-    assert_eq!(env.pid(), pid);
+    assert!(status.running);
+    // The installation is already current: nothing is rewritten or copied.
     assert_eq!(env.stamps(), stamps);
+    let calls = env.system.mutating_calls();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    assert!(calls[0].starts_with("launchctl bootstrap gui/501 "));
+
+    // A second launch finds it healthy and changes nothing.
+    let pid = env.pid();
+    env.system.with(|s| s.calls.clear());
+    env.launch_app(&app).unwrap();
+    assert_eq!(env.pid(), pid);
     assert!(env.system.mutating_calls().is_empty());
+}
+
+#[test]
+fn reinstalling_before_the_app_is_placed_starts_nothing() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    let controller = env.controller_for(None);
+    controller.install_for_cask(&staged, &app, &tool).unwrap();
+
+    controller.install_for_cask(&staged, &app, &tool).unwrap();
+
+    let calls = env.system.mutating_calls();
+    assert!(!calls.iter().any(|c| c.contains("bootstrap")), "{calls:?}");
+    assert!(env.system.with(|s| s.loaded.is_empty()));
+}
+
+#[test]
+fn automatic_ensure_with_the_app_missing_leaves_launchd_alone() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    env.controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .unwrap();
+    env.system.with(|s| s.calls.clear());
+
+    env.controller_for(None).ensure_running().unwrap();
+
+    assert!(env.system.mutating_calls().is_empty());
+}
+
+#[test]
+fn explicit_start_with_the_app_missing_names_it() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    env.controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .unwrap();
+    env.system.with(|s| s.calls.clear());
+
+    let error = env.controller_for(None).start().unwrap_err();
+
+    assert!(
+        matches!(error, MonitorAgentError::MissingSource(_)),
+        "{error}"
+    );
+    assert!(error.to_string().contains("git-same-app"), "{error}");
+    let calls = env.system.mutating_calls();
+    assert!(!calls.iter().any(|c| c.contains("bootstrap")), "{calls:?}");
+}
+
+// A login while the app was missing leaves launchd holding the job parked
+// with EX_CONFIG. kickstart never revives that; a fresh bootstrap does.
+#[test]
+fn a_job_parked_while_the_app_was_missing_starts_once_it_is_back() {
+    let env = env();
+    let (staged, app, tool) = env.cask_bundle();
+    env.controller_for(None)
+        .install_for_cask(&staged, &app, &tool)
+        .unwrap();
+    env.system.with(|s| {
+        s.loaded.insert(LABEL.to_string());
+        s.parked.insert(LABEL.to_string());
+    });
+    env.place_app(&staged, &app);
+    env.system.with(|s| s.calls.clear());
+
+    let status = env.launch_app(&app).unwrap();
+
+    assert!(status.running);
+    let calls = env.system.mutating_calls();
+    assert!(!calls.iter().any(|c| c.contains("kickstart")), "{calls:?}");
+    assert_eq!(calls[0], format!("launchctl bootout gui/501/{LABEL}"));
 }
 
 #[test]
@@ -840,7 +941,13 @@ fn reinstalling_the_same_cask_keeps_exactly_one_monitor() {
     let (staged, app, tool) = env.cask_bundle();
     let controller = env.controller_for(None);
     controller.install_for_cask(&staged, &app, &tool).unwrap();
+    let placed = env.place_app(&staged, &app);
+    env.launch_app(&app).unwrap();
     let pid = env.pid();
+    assert!(pid.is_some());
+    // Homebrew moves the installed app aside before the installer runs; the
+    // running monitor keeps going from the moved bundle.
+    std::fs::remove_file(placed).unwrap();
 
     controller.install_for_cask(&staged, &app, &tool).unwrap();
 
@@ -1159,6 +1266,8 @@ fn headless_cask_removal_signals_the_managed_monitor() {
     env.controller_for(None)
         .install_for_cask(&staged, &app, &tool)
         .unwrap();
+    env.place_app(&staged, &app);
+    env.launch_app(&app).unwrap();
     let pid = env.system.with(|s| s.active.as_ref().unwrap().pid);
     env.system.with(|s| s.gui = false);
 
