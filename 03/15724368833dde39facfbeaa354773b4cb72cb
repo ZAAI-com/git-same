@@ -1,0 +1,29 @@
+macos/GitSameBadges/Info.plist
+  s_12e838b879a0fb::t_2e59ed5e2aacd6 20,22
+crates/git-same-app/ui/package.json
+  s_12e838b879a0fb::t_2e59ed5e2aacd6 4
+Cargo.toml
+  s_12e838b879a0fb::t_2e59ed5e2aacd6 10
+crates/git-same-cli/Cargo.toml
+  s_12e838b879a0fb::t_2e59ed5e2aacd6 43
+crates/git-same-app/tauri.conf.json
+  s_12e838b879a0fb::t_2e59ed5e2aacd6 4
+Cargo.lock
+  s_12e838b879a0fb::t_b1ad8f78bbccd3 1592,1617,1638,1929,1931,2187,2189,2530,2532,2581,2583,3248,3250,3258,3260,3268,3270,3281,3283,3590,3659,3661,4779,4781
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0315724368833dde39facfbeaa354773b4cb72cb",
+  "prompts": {},
+  "sessions": {
+    "s_12e838b879a0fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "430bf977-eb9d-4098-ac6e-87fce580f2f0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
