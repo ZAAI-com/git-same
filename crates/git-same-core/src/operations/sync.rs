@@ -224,6 +224,7 @@ impl<G: GitOperations + 'static> SyncManager<G> {
             let skip_uncommitted = self.options.skip_uncommitted;
             let dry_run = self.options.dry_run;
             let progress = Arc::clone(&progress);
+            let panic_repo = local_repo.clone();
 
             let handle = tokio::spawn(async move {
                 // Notify progress - sync starting
@@ -411,14 +412,14 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                 }
             });
 
-            handles.push(handle);
+            handles.push((panic_repo, handle));
         }
 
         // Collect results
         let mut summary = OpSummary::new();
         let mut results = Vec::with_capacity(total);
 
-        for (index, handle) in handles.into_iter().enumerate() {
+        for (index, (panic_repo, handle)) in handles.into_iter().enumerate() {
             match handle.await {
                 Ok(sync_result) => {
                     // Notify progress based on result using actual operation results
@@ -452,7 +453,21 @@ impl<G: GitOperations + 'static> SyncManager<G> {
                     results.push(sync_result);
                 }
                 Err(e) => {
-                    summary.record(&OpResult::Failed(format!("Task panicked: {}", e)));
+                    // Report and record the panicked repo like any other
+                    // failure, so the result list matches the summary counts.
+                    let err = format!("Task panicked: {}", e);
+                    progress.on_error(&panic_repo.repo, &err, index, total);
+                    let failed = SyncResult {
+                        repo: panic_repo.repo,
+                        path: panic_repo.path,
+                        result: OpResult::Failed(err),
+                        had_updates: false,
+                        status: None,
+                        fetch_result: None,
+                        pull_result: None,
+                    };
+                    summary.record(&failed.result);
+                    results.push(failed);
                 }
             }
         }

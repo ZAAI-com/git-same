@@ -3,7 +3,7 @@
 //! Main entry point for the git-same CLI application.
 
 use git_same::app::cli::{run_command, Cli};
-use git_same_core::output::{Output, Verbosity};
+use git_same_core::output::Verbosity;
 use std::process::ExitCode;
 use tracing::debug;
 
@@ -48,8 +48,8 @@ async fn main() -> ExitCode {
     match cli.command {
         Some(ref command) => {
             // CLI subcommand mode — existing behavior
-            let verbosity = Verbosity::from(cli.verbosity());
-            let output = Output::new(verbosity, cli.is_json());
+            let output = cli.output();
+            let verbosity = output.verbosity();
 
             let result = run_command(command, cli.config.as_deref(), &output, cli.is_quiet()).await;
 

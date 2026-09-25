@@ -109,3 +109,49 @@ fn sync_workspace_request_holds_expected_values() {
         std::path::PathBuf::from("/tmp/team")
     );
 }
+
+#[tokio::test]
+async fn phases_return_none_without_touching_progress_when_idle() {
+    let prepared = prepared_workspace(false, false);
+    assert!(execute_prepared_clone(&prepared, Arc::new(NoProgress))
+        .await
+        .is_none());
+    assert!(execute_prepared_fetch(&prepared, Arc::new(NoSyncProgress))
+        .await
+        .is_none());
+}
+
+#[test]
+fn from_phases_keeps_summaries_and_results_of_both_phases() {
+    use crate::operations::clone::CloneResult;
+    use crate::types::OpResult;
+
+    let mut clone_summary = OpSummary::new();
+    clone_summary.record(&OpResult::Failed("boom".to_string()));
+    let clone_results = vec![CloneResult {
+        repo: sample_repo(),
+        path: PathBuf::from("/tmp/acme/rocket"),
+        result: OpResult::Failed("boom".to_string()),
+    }];
+
+    let outcome = SyncExecutionOutcome::from_phases(Some((clone_summary, clone_results)), None);
+    assert_eq!(outcome.clone_summary.unwrap().failed, 1);
+    assert_eq!(outcome.clone_results.len(), 1);
+    assert!(outcome.sync_summary.is_none());
+    assert!(outcome.sync_results.is_empty());
+}
+
+#[test]
+fn skipped_at_planning_leaves_out_repos_about_to_be_cloned() {
+    let mut prepared = prepared_workspace(true, false);
+    let other = OwnedRepo::new("acme", Repo::test("dirty", "acme"));
+    prepared.skipped_sync = vec![
+        (sample_repo(), "not cloned locally".to_string()),
+        (other.clone(), "uncommitted changes".to_string()),
+    ];
+
+    let skipped = prepared.skipped_at_planning();
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].0.full_name(), other.full_name());
+    assert_eq!(skipped[0].1, "uncommitted changes");
+}

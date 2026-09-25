@@ -46,3 +46,15 @@ fn test_format_functions() {
     let warning = format_warning("caution");
     assert!(warning.contains("caution"));
 }
+
+#[test]
+fn test_summary_shows_by_default_but_not_when_quiet_requested_or_json() {
+    // The CLI default level is Quiet, yet summaries must show.
+    assert!(Output::new(Verbosity::Quiet, false).shows_summary());
+    assert!(!Output::new(Verbosity::Quiet, false)
+        .with_quiet_requested(true)
+        .shows_summary());
+    assert!(!Output::new(Verbosity::Normal, true).shows_summary());
+    assert!(!Output::quiet().shows_summary());
+    assert!(Output::quiet().is_quiet_requested());
+}

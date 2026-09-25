@@ -4,6 +4,7 @@
 //! including all subcommands and their options.
 
 use clap::{Args, Parser, Subcommand};
+use git_same_core::output::{Output, Verbosity};
 use std::path::PathBuf;
 
 /// Git-Same - Mirror GitHub structure /orgs/repos/ to local file system
@@ -199,9 +200,11 @@ Examples:
     /// Ask the running monitor to refresh status.json immediately
     #[command(
         long_about = "Send a refresh request to the background monitor so it \
-            rewrites ~/.config/git-same/finder/status.json right now. Useful \
-            after manually deleting a repo, or when debugging Finder badges. \
-            Fails with a clear error if the monitor is not running.",
+            rescans now and rewrites its status file when the scan completes. \
+            Useful after manually deleting a repo, or when debugging Finder \
+            badges. Returns once the request is queued (or after 5 seconds if \
+            the monitor is busy). Fails with a clear error if the monitor is \
+            not running.",
         after_help = "\
 Examples:
   gisa refresh                      Refresh everything the monitor knows about
@@ -478,6 +481,15 @@ impl Cli {
     /// Check if JSON output is requested.
     pub fn is_json(&self) -> bool {
         self.json
+    }
+
+    /// Build the output handler for subcommand mode.
+    ///
+    /// Carries `-q` separately from the level: the default level is also
+    /// quiet, and end-of-command summaries must still show without `-q`.
+    pub fn output(&self) -> Output {
+        Output::new(Verbosity::from(self.verbosity()), self.is_json())
+            .with_quiet_requested(self.is_quiet())
     }
 }
 

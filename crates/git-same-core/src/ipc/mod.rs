@@ -33,7 +33,11 @@ pub mod unix_socket;
 pub use status_file::{remove_symlink_if_present, StatusFileWriter};
 
 #[cfg(unix)]
-pub use unix_socket::{UnixSocketClient, UnixSocketListener};
+pub use unix_socket::{nudge_refresh_all, Reply, UnixSocketClient, UnixSocketListener};
+
+/// No monitor socket on this platform: nothing to nudge.
+#[cfg(not(unix))]
+pub async fn nudge_refresh_all() {}
 
 use crate::errors::AppError;
 use std::path::PathBuf;

@@ -116,3 +116,169 @@ async fn test_socket_client_server_roundtrip() {
     server.await.unwrap();
     listener.cleanup();
 }
+
+#[test]
+fn test_display_renders_the_wire_text_parse_reads() {
+    for cmd in [
+        DaemonCommand::Refresh(PathBuf::from("/path/to/my repo")),
+        DaemonCommand::RefreshAll,
+        DaemonCommand::Status,
+        DaemonCommand::Ping,
+        DaemonCommand::Unknown("FOOBAR".to_string()),
+    ] {
+        assert_eq!(DaemonCommand::parse(&cmd.to_string()), cmd);
+    }
+    assert_eq!(DaemonCommand::RefreshAll.to_string(), "REFRESH_ALL");
+}
+
+/// Timeout for the "busy monitor" tests. Real callers wait seconds.
+const SHORT: Duration = Duration::from_millis(100);
+
+/// Upper bound for a call made with [`SHORT`], generous for a slow CI host.
+const PROMPTLY: Duration = Duration::from_secs(5);
+
+#[tokio::test]
+async fn test_request_is_pending_when_the_monitor_never_accepts() {
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("busy.sock");
+    // Bound and listening, but never accepting: a monitor stuck in a scan.
+    let _listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+    let client = UnixSocketClient::new(sock_path);
+
+    let started = std::time::Instant::now();
+    assert_eq!(client.request("PING", SHORT).await.unwrap(), Reply::Pending);
+    client.notify("REFRESH_ALL", SHORT).await.unwrap();
+    assert!(started.elapsed() < PROMPTLY, "took {:?}", started.elapsed());
+}
+
+#[tokio::test]
+async fn test_request_is_pending_when_the_monitor_never_answers() {
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("mute.sock");
+    let tokio_listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+
+    // Accepts and reads the command, then holds the connection open without
+    // answering: an older monitor running a full scan before its "OK".
+    let server = tokio::spawn(async move {
+        let (stream, _) = tokio_listener.accept().await.unwrap();
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        std::future::pending::<()>().await;
+    });
+
+    let client = UnixSocketClient::new(sock_path);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        client.request("REFRESH_ALL", SHORT).await.unwrap(),
+        Reply::Pending
+    );
+    assert!(started.elapsed() < PROMPTLY, "took {:?}", started.elapsed());
+    server.abort();
+}
+
+/// A nudge that gives up before the monitor accepts must still be delivered:
+/// the monitor reads the command once it gets to the connection.
+#[tokio::test]
+async fn test_a_command_written_before_accept_survives_the_client_leaving() {
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("late.sock");
+    let tokio_listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+
+    UnixSocketClient::new(sock_path)
+        .notify("REFRESH_ALL", SHORT)
+        .await
+        .unwrap();
+
+    let (stream, _) = tokio_listener.accept().await.unwrap();
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(DaemonCommand::parse(&line), DaemonCommand::RefreshAll);
+}
+
+#[tokio::test]
+async fn test_request_to_a_missing_monitor_is_an_error() {
+    let temp = tempfile::tempdir().unwrap();
+    let client = UnixSocketClient::new(temp.path().join("absent.sock"));
+
+    assert!(client.request("PING", SHORT).await.is_err());
+    assert!(client.notify("REFRESH_ALL", SHORT).await.is_err());
+}
+
+#[tokio::test]
+async fn test_request_returns_an_empty_answer_when_the_monitor_hangs_up() {
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("hangup.sock");
+    let tokio_listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+
+    // Reads the command, then drops the stream without answering.
+    let server = tokio::spawn(async move {
+        let (stream, _) = tokio_listener.accept().await.unwrap();
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+    });
+
+    let reply = UnixSocketClient::new(sock_path)
+        .request("REFRESH_ALL", PROMPTLY)
+        .await
+        .unwrap();
+    assert_eq!(reply, Reply::Answered(String::new()));
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn test_request_returns_the_answer_line() {
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("ok.sock");
+    let tokio_listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+
+    let server = tokio::spawn(async move {
+        let (stream, _) = tokio_listener.accept().await.unwrap();
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        write_response(reader.get_mut(), "OK\n").await.unwrap();
+        line
+    });
+
+    let reply = UnixSocketClient::new(sock_path)
+        .request("REFRESH /tmp/x", PROMPTLY)
+        .await
+        .unwrap();
+    assert_eq!(reply, Reply::Answered("OK\n".to_string()));
+    assert_eq!(server.await.unwrap(), "REFRESH /tmp/x\n");
+}
+
+#[tokio::test]
+async fn test_send_gives_up_instead_of_hanging() {
+    assert!(SEND_TIMEOUT > NUDGE_TIMEOUT);
+
+    let temp = tempfile::tempdir().unwrap();
+    let sock_path = temp.path().join("stuck.sock");
+    let _listener = UnixSocketListener::new(sock_path.clone())
+        .bind()
+        .await
+        .unwrap();
+    let client = UnixSocketClient::new(sock_path);
+
+    let started = std::time::Instant::now();
+    assert!(client.send_within("PING", SHORT).await.is_err());
+    assert!(started.elapsed() < PROMPTLY, "took {:?}", started.elapsed());
+}

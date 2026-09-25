@@ -141,3 +141,118 @@ fn from_config_lets_explicit_override_win() {
 
     assert_eq!(opts.interval, Duration::from_secs(10));
 }
+
+#[test]
+fn only_badge_relevant_paths_inside_git_pass_the_watcher() {
+    let repo = Path::new("/Users/me/ws/org/repo");
+    let dropped = [
+        ".git",
+        ".git/index.lock",
+        ".git/worktrees/x/index.lock",
+        ".git/worktrees/tirana/conductor-checkpoint-tmp",
+        ".git/refs/heads/main.lock",
+        ".git/objects/ab/cdef",
+        ".git/FETCH_HEAD",
+        ".git/ORIG_HEAD",
+        ".git/logs/HEAD",
+        ".git/config.lock",
+    ];
+    let kept = [
+        ".git/refs/heads/main",
+        ".git/refs/remotes/origin/main",
+        ".git/HEAD",
+        ".git/index",
+        ".git/config",
+        ".git/packed-refs",
+        ".git/logs/refs/stash",
+        ".git/MERGE_HEAD",
+        ".git/rebase-merge/done",
+        ".git/worktrees/x/HEAD",
+        ".git/worktrees/x/index",
+        "src/main.rs",
+        "Cargo.lock",
+        ".gitignore",
+        ".gitmodules",
+        ".github/workflows/ci.yml",
+    ];
+    for rel in dropped {
+        assert!(!is_badge_relevant(&repo.join(rel)), "{rel} must be dropped");
+    }
+    for rel in kept {
+        assert!(is_badge_relevant(&repo.join(rel)), "{rel} must pass");
+    }
+}
+
+#[test]
+fn full_scan_delay_stretches_after_a_slow_pass() {
+    let secs = Duration::from_secs;
+    assert_eq!(full_scan_delay(secs(30), secs(130)), secs(520));
+    assert_eq!(full_scan_delay(secs(30), secs(1)), secs(30));
+    assert_eq!(
+        full_scan_delay(secs(0), Duration::ZERO),
+        MIN_FULLSCAN_INTERVAL
+    );
+    assert_eq!(full_scan_delay(secs(30), Duration::MAX), Duration::MAX);
+}
+
+#[test]
+fn deadline_after_saturates_instead_of_panicking() {
+    let now = Instant::now();
+    assert!(deadline_after(now, Duration::MAX) > now);
+    assert_eq!(
+        deadline_after(now, Duration::from_secs(5)),
+        now + Duration::from_secs(5)
+    );
+}
+
+#[test]
+fn repeated_full_requests_collapse_into_one_due_scan() {
+    let now = Instant::now();
+    let mut next_full_scan = now + Duration::from_secs(600);
+    let mut pending = HashSet::new();
+    let mut explicit = HashSet::new();
+    for _ in 0..3 {
+        apply_scan_request(
+            ScanRequest::Full,
+            now,
+            &mut next_full_scan,
+            &mut pending,
+            &mut explicit,
+        );
+    }
+    assert_eq!(next_full_scan, now, "one scan, due now");
+
+    // A later request never pushes an already due scan back.
+    apply_scan_request(
+        ScanRequest::Full,
+        now + Duration::from_secs(1),
+        &mut next_full_scan,
+        &mut pending,
+        &mut explicit,
+    );
+    assert_eq!(next_full_scan, now);
+    assert!(pending.is_empty() && explicit.is_empty());
+}
+
+#[test]
+fn repo_requests_join_the_flush_as_explicit() {
+    let now = Instant::now();
+    let later = now + Duration::from_secs(60);
+    let mut next_full_scan = later;
+    let mut pending = HashSet::new();
+    let mut explicit = HashSet::new();
+    let repo = PathBuf::from("/tmp/repo");
+    apply_scan_request(
+        ScanRequest::Repo(repo.clone()),
+        now,
+        &mut next_full_scan,
+        &mut pending,
+        &mut explicit,
+    );
+    assert!(pending.contains(&repo));
+    assert!(explicit.contains(&repo));
+    assert_eq!(
+        next_full_scan, later,
+        "a repo request never forces a full scan"
+    );
+}

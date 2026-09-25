@@ -590,22 +590,10 @@ fn nudge_monitor_refresh() {
     spawn_refresh_all();
 }
 
-/// The monitor is reachable over a Unix socket only.
-#[cfg(unix)]
+/// Bounded, so a busy monitor cannot pin a task and a socket per save.
 fn spawn_refresh_all() {
-    tauri::async_runtime::spawn(async {
-        let Ok(ipc) = IpcConfig::default_path() else {
-            return;
-        };
-        let _ = git_same_core::ipc::UnixSocketClient::new(ipc.socket_path())
-            .refresh_all()
-            .await;
-    });
+    tauri::async_runtime::spawn(git_same_core::ipc::nudge_refresh_all());
 }
-
-/// No socket on this platform: nothing to nudge.
-#[cfg(not(unix))]
-fn spawn_refresh_all() {}
 
 #[tauri::command]
 pub async fn discover_provider_orgs(

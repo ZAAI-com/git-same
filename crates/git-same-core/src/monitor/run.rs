@@ -5,7 +5,12 @@
 //! for events `notify` may have dropped and for ambient repos that appear
 //! in scan roots without a parent we are subscribed to. The full-scan
 //! cadence is controlled by `Options::interval` (in turn driven by the CLI
-//! `--interval` flag and `config.monitor.fullscan_interval_secs`).
+//! `--interval` flag and `config.monitor.fullscan_interval_secs`), stretched
+//! when a pass is slow so full scans never run back to back.
+//!
+//! The loop runs every scan and is the only writer of `status.json`. Socket
+//! tasks answer at once and hand refresh requests to the loop as
+//! [`ScanRequest`]s.
 //!
 //! Startup order matters: the runtime lock is taken before anything is
 //! written or any existing socket is removed, so a second monitor can never
@@ -25,10 +30,11 @@ use crate::output::Output;
 use crate::types::FinderStatus;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::future::Future;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
+use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use super::owner_classifier::spawn_owner_classifier;
@@ -40,12 +46,36 @@ const FS_EVENT_DEBOUNCE: Duration = Duration::from_millis(750);
 /// Lower bound for the full-scan cadence so a zero in config cannot spin.
 const MIN_FULLSCAN_INTERVAL: Duration = Duration::from_secs(5);
 
+/// A full scan is followed by at least this many times its own duration
+/// before the next one starts, so even a slow pass leaves the loop idle about
+/// four fifths of the time.
+const FULL_SCAN_REST_FACTOR: u32 = 4;
+
+/// Stand-in for "never" when a deadline would overflow `Instant` (the same
+/// 30-year horizon tokio uses).
+const FAR_FUTURE: Duration = Duration::from_secs(86_400 * 365 * 30);
+
+/// Work a socket client asked the monitor loop to do.
+///
+/// Socket tasks only queue requests: the loop runs every scan and is the
+/// only writer of `status.json`, so a client is answered without waiting for
+/// a scan and two scans never race on the status file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanRequest {
+    /// `REFRESH_ALL`: run the safety-net full scan now. Any number of
+    /// requests that arrive before it starts collapse into that one scan.
+    Full,
+    /// `REFRESH <path>`: rescan this canonical path with the next flush.
+    Repo(PathBuf),
+}
+
 /// Options for [`run`].
 #[derive(Debug, Clone)]
 pub struct Options {
     /// Cadence of the safety-net full `scan_all`. Most updates flow through
     /// the FSEvents arm; this timer covers dropped events and catches
-    /// ambient repos that appear without a parent we subscribed to.
+    /// ambient repos that appear without a parent we subscribed to. The
+    /// loop waits longer after a slow pass (see `full_scan_delay`).
     pub interval: Duration,
     /// Resolved IPC paths (status file + socket).
     pub ipc_config: IpcConfig,
@@ -194,7 +224,10 @@ where
             .scan_all(pid)
     };
 
-    let initial_status = match scan(&live.snapshot()) {
+    let scan_started = Instant::now();
+    let initial_result = scan(&live.snapshot());
+    let mut last_scan = scan_started.elapsed();
+    let initial_status = match initial_result {
         Ok(status) => status,
         // A persistently failing scan (for example a permission denial) would
         // loop forever under launchd. Stay up with an empty status and let the
@@ -223,6 +256,7 @@ where
         repos = initial_status.repos.len(),
         workspace = workspace_count,
         ambient = ambient_count,
+        took = ?last_scan,
         "Initial scan complete, status written"
     );
     output.info(&format!(
@@ -235,7 +269,8 @@ where
 
     reapply_workspace_folder_icons(&live.snapshot(), &initial_status);
     let mut watched_roots = collect_watched_roots(&live.snapshot(), &initial_status);
-    let shared_status = Arc::new(Mutex::new(initial_status));
+    // Owned by the loop alone: socket tasks never read or write it.
+    let mut status = initial_status;
 
     #[cfg(unix)]
     let socket_listener = crate::ipc::UnixSocketListener::new(ipc_config.socket_path());
@@ -258,68 +293,29 @@ where
     let mut watcher = start_watcher_or_warn(&watched_roots, fs_tx.clone());
     // Socket tasks report a reload here so the loop can rebuild what it owns.
     let (reload_tx, mut reload_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+    // Socket tasks queue refresh requests here; the loop runs the scans.
+    let (scan_tx, mut scan_rx) = tokio::sync::mpsc::unbounded_channel::<ScanRequest>();
 
     let mut pending: HashSet<PathBuf> = HashSet::new();
+    // The subset of `pending` a client named in `REFRESH <path>`.
+    let mut explicit: HashSet<PathBuf> = HashSet::new();
     let mut interval = interval.max(MIN_FULLSCAN_INTERVAL);
     // A deadline, not a per-iteration sleep: a steady stream of filesystem
     // events must not postpone the safety-net scan forever.
-    let mut next_full_scan = tokio::time::Instant::now() + interval;
+    let mut next_full_scan = deadline_after(Instant::now(), full_scan_delay(interval, last_scan));
 
     tokio::pin!(shutdown);
 
     loop {
         let debounce_active = !pending.is_empty();
         let mut config_changed = false;
+        let mut rescanned = false;
 
         tokio::select! {
-            _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
-                let config = live.snapshot();
-                let service = RepoScanService::new(&git, &config)
-                    .with_owner_types(owner_types.clone())
-                    .with_ambient_upgrades(ambient_upgrades.clone());
-                flush_pending(&service, &shared_status, &status_writer, &ambient_upgrades, &mut pending);
-            },
-            _ = tokio::time::sleep_until(next_full_scan) => {
-                debug!("Safety-net full scan");
-                config_changed = live.reload_if_changed();
-                let config = live.snapshot();
-                match scan(&config) {
-                    Ok(new_status) => {
-                        reapply_workspace_folder_icons(&config, &new_status);
-                        let mut status = shared_status.lock().expect("status mutex poisoned");
-                        *status = new_status;
-                        if let Err(e) = status_writer.write(&status) {
-                            error!(error = %e, "Failed to write status file after full scan");
-                        } else {
-                            debug!(repos = status.repos.len(), "Full scan complete");
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Full scan failed");
-                    }
-                }
-                next_full_scan = tokio::time::Instant::now() + interval;
-            },
-            Some(repo_path) = fs_rx.recv() => {
-                pending.insert(repo_path);
-            },
-            Some(()) = reload_rx.recv() => {
-                config_changed = true;
-            },
-            connection = next_connection(&tokio_listener) => {
-                serve_connection(
-                    connection,
-                    ConnectionState {
-                        live: live.clone(),
-                        reload_tx: reload_tx.clone(),
-                        pid,
-                        status_writer: status_writer.clone(),
-                        shared_status: shared_status.clone(),
-                        owner_types: owner_types.clone(),
-                        ambient_upgrades: ambient_upgrades.clone(),
-                    },
-                );
-            },
+            // Polled in this order. Shutdown and accept only become ready on a
+            // real signal or connection, so they cannot starve the rest, and a
+            // client is answered before a due scan occupies the loop.
+            biased;
             _ = &mut shutdown => {
                 info!("Monitor shutting down");
                 output.info("Monitor shutting down...");
@@ -327,12 +323,81 @@ where
                 socket_listener.cleanup();
                 break;
             },
+            connection = next_connection(&tokio_listener) => {
+                serve_connection(
+                    connection,
+                    ConnectionState {
+                        live: live.clone(),
+                        reload_tx: reload_tx.clone(),
+                        scan_tx: scan_tx.clone(),
+                        status_writer: status_writer.clone(),
+                    },
+                );
+            },
+            Some(request) = scan_rx.recv() => {
+                apply_scan_request(
+                    request,
+                    Instant::now(),
+                    &mut next_full_scan,
+                    &mut pending,
+                    &mut explicit,
+                );
+            },
+            Some(()) = reload_rx.recv() => {
+                config_changed = true;
+            },
+            _ = tokio::time::sleep_until(next_full_scan) => {
+                debug!("Safety-net full scan");
+                config_changed = live.reload_if_changed();
+                let config = live.snapshot();
+                let started = Instant::now();
+                match scan(&config) {
+                    Ok(new_status) => {
+                        reapply_workspace_folder_icons(&config, &new_status);
+                        status = new_status;
+                        rescanned = true;
+                        if let Err(e) = status_writer.write(&status) {
+                            error!(error = %e, "Failed to write status file after full scan");
+                        } else {
+                            debug!(
+                                repos = status.repos.len(),
+                                took = ?started.elapsed(),
+                                "Full scan complete"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Full scan failed");
+                    }
+                }
+                last_scan = started.elapsed();
+                next_full_scan =
+                    deadline_after(Instant::now(), full_scan_delay(interval, last_scan));
+            },
+            Some(repo_path) = fs_rx.recv() => {
+                pending.insert(repo_path);
+            },
+            _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
+                let config = live.snapshot();
+                let service = RepoScanService::new(&git, &config)
+                    .with_owner_types(owner_types.clone())
+                    .with_ambient_upgrades(ambient_upgrades.clone());
+                flush_pending(
+                    &service,
+                    &mut status,
+                    &status_writer,
+                    &ambient_upgrades,
+                    &mut pending,
+                    &mut explicit,
+                );
+            },
         }
 
-        if config_changed {
-            let config = live.snapshot();
-            let status = shared_status.lock().expect("status mutex poisoned").clone();
-            let roots = collect_watched_roots(&config, &status);
+        // A reload can change the configured roots, and a full scan can find
+        // workspace roots that appeared or vanished (including one that a
+        // `REFRESH_ALL` reload registered before its scan ran).
+        if config_changed || rescanned {
+            let roots = collect_watched_roots(&live.snapshot(), &status);
             if roots != watched_roots {
                 info!(
                     roots = roots.len(),
@@ -341,12 +406,16 @@ where
                 watched_roots = roots;
                 watcher = start_watcher_or_warn(&watched_roots, fs_tx.clone());
             }
+        }
+        if config_changed {
+            let config = live.snapshot();
             if !context.interval_explicit {
                 let configured = Duration::from_secs(config.monitor.fullscan_interval_secs)
                     .max(MIN_FULLSCAN_INTERVAL);
                 if configured != interval {
                     interval = configured;
-                    next_full_scan = tokio::time::Instant::now() + interval;
+                    next_full_scan =
+                        deadline_after(Instant::now(), full_scan_delay(interval, last_scan));
                 }
             }
             // Cheap when nothing is missing: the classifier returns early.
@@ -358,6 +427,42 @@ where
     Ok(())
 }
 
+/// Delay from the end of one full scan to the start of the next: the
+/// configured interval, stretched to `FULL_SCAN_REST_FACTOR` times the last
+/// pass when that pass was slow, so full scans never run back to back.
+fn full_scan_delay(interval: Duration, last_scan: Duration) -> Duration {
+    interval
+        .max(MIN_FULLSCAN_INTERVAL)
+        .max(last_scan.saturating_mul(FULL_SCAN_REST_FACTOR))
+}
+
+/// `now + delay`, saturating instead of panicking on an absurd configured
+/// interval.
+fn deadline_after(now: Instant, delay: Duration) -> Instant {
+    now.checked_add(delay).unwrap_or_else(|| now + FAR_FUTURE)
+}
+
+/// Fold one socket request into the loop's schedule.
+///
+/// `Full` only pulls the deadline forward, so any number of requests that
+/// arrive before the scan starts collapse into it. `Repo` joins the
+/// debounced flush and is marked explicit (see [`flush_pending`]).
+fn apply_scan_request(
+    request: ScanRequest,
+    now: Instant,
+    next_full_scan: &mut Instant,
+    pending: &mut HashSet<PathBuf>,
+    explicit: &mut HashSet<PathBuf>,
+) {
+    match request {
+        ScanRequest::Full => *next_full_scan = (*next_full_scan).min(now),
+        ScanRequest::Repo(path) => {
+            pending.insert(path.clone());
+            explicit.insert(path);
+        }
+    }
+}
+
 /// Everything a socket task needs, cloned out of the loop.
 // Only the `#[cfg(unix)]` `serve_connection` reads these fields; off Unix the
 // struct is still built but never consumed, so every field reads as dead.
@@ -365,11 +470,8 @@ where
 struct ConnectionState {
     live: LiveConfig,
     reload_tx: tokio::sync::mpsc::UnboundedSender<()>,
-    pid: u32,
+    scan_tx: tokio::sync::mpsc::UnboundedSender<ScanRequest>,
     status_writer: StatusFileWriter,
-    shared_status: Arc<Mutex<FinderStatus>>,
-    owner_types: OwnerTypeCache,
-    ambient_upgrades: AmbientUpgradeCache,
 }
 
 #[cfg(unix)]
@@ -407,11 +509,9 @@ fn serve_connection(connection: Connection, state: ConnectionState) {
             stream,
             &state.live,
             &state.reload_tx,
-            state.pid,
-            state.status_writer,
-            state.shared_status,
-            Some(state.owner_types),
-            Some(state.ambient_upgrades),
+            &state.scan_tx,
+            &state.status_writer,
+            super::socket_handler::CLIENT_TIMEOUT,
         )
         .await;
     });
@@ -435,28 +535,37 @@ fn start_watcher_or_warn(
     }
 }
 
+/// Rescan every pending repo and write the status file once if anything
+/// changed.
+///
+/// A changed repo refreshes its ambient-upgrade entry. So does every repo in
+/// `explicit` (named by a client in `REFRESH <path>`) even when unchanged:
+/// that request is how a right-click upgrades a gray ambient repo, and the
+/// entry is what keeps the upgrade across later full scans.
 fn flush_pending(
     service: &RepoScanService<'_>,
-    shared_status: &Arc<Mutex<FinderStatus>>,
+    status: &mut FinderStatus,
     status_writer: &StatusFileWriter,
     ambient_upgrades: &AmbientUpgradeCache,
     pending: &mut HashSet<PathBuf>,
+    explicit: &mut HashSet<PathBuf>,
 ) {
     if pending.is_empty() {
         return;
     }
     let mut any_changed = false;
-    let mut status = shared_status.lock().expect("status mutex poisoned");
     for repo in pending.drain() {
-        if rescan_and_merge(service, &mut status, &repo) {
-            any_changed = true;
+        let changed = rescan_and_merge(service, status, &repo);
+        any_changed |= changed;
+        if changed || explicit.contains(&repo) {
             if let Some(entry) = status.repos.iter().find(|r| r.path == repo).cloned() {
                 ambient_upgrades.set(repo, entry);
             }
         }
     }
+    explicit.clear();
     if any_changed {
-        if let Err(e) = status_writer.write(&status) {
+        if let Err(e) = status_writer.write(status) {
             error!(error = %e, "Failed to write status file after rescan");
         } else {
             debug!(repos = status.repos.len(), "Incremental status written");
@@ -523,6 +632,9 @@ fn start_filesystem_watcher(
                 }
             };
             for raw_path in event.paths {
+                if !is_badge_relevant(&raw_path) {
+                    continue;
+                }
                 let canonical =
                     std::fs::canonicalize(&raw_path).unwrap_or_else(|_| raw_path.clone());
                 if let Some(repo) = enclosing_repo(&canonical, &watch_roots) {
@@ -539,6 +651,48 @@ fn start_filesystem_watcher(
         }
     }
     Ok(watcher)
+}
+
+/// Whether a raw watcher path can change a repo's badge.
+///
+/// Working-tree paths always can, lock files included (`Cargo.lock` is
+/// content). Inside `.git` only branch, index, config, ref and
+/// in-progress-operation state can; objects, logs, `FETCH_HEAD` and other
+/// tools' scratch files cannot. Forwarding those would make every scan the
+/// trigger for the next one, since any git command (the monitor's own
+/// `git status` included) may touch them. Lock files inside `.git` never
+/// pass: git writes `x.lock` and renames it over `x`, so the event for `x`
+/// still arrives.
+fn is_badge_relevant(path: &Path) -> bool {
+    let dot_git = Component::Normal(OsStr::new(".git"));
+    let mut components = path.components();
+    if !components.by_ref().any(|component| component == dot_git) {
+        return true;
+    }
+    // Names inside `.git` are ASCII; anything else is none of git's files.
+    let Some(inside) = components
+        .map(|component| component.as_os_str().to_str())
+        .collect::<Option<Vec<&str>>>()
+    else {
+        return false;
+    };
+    if inside.last().is_some_and(|name| name.ends_with(".lock")) {
+        return false;
+    }
+    matches!(
+        inside.as_slice(),
+        ["HEAD"
+            | "index"
+            | "config"
+            | "packed-refs"
+            | "MERGE_HEAD"
+            | "CHERRY_PICK_HEAD"
+            | "REVERT_HEAD"]
+            | ["refs", ..]
+            | ["logs", "refs", "stash"]
+            | ["rebase-merge" | "rebase-apply", ..]
+            | ["worktrees", _, "HEAD" | "index"]
+    )
 }
 
 /// Walk up from `path` until a `.git` directory is found, stopping at the

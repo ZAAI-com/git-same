@@ -295,3 +295,64 @@ async fn test_sync_repos_zero_concurrency_is_clamped() {
 
     assert_eq!(summary.skipped, 1);
 }
+
+/// Panics when a sync task starts for `repo`, after counting the call.
+struct PanicOnStart {
+    repo: String,
+    counts: CountingSyncProgress,
+}
+
+impl SyncProgress for PanicOnStart {
+    fn on_start(&self, repo: &OwnedRepo, path: &Path, index: usize, total: usize) {
+        self.counts.on_start(repo, path, index, total);
+        if repo.full_name() == self.repo {
+            panic!("progress reporter blew up");
+        }
+    }
+
+    fn on_fetch_complete(&self, repo: &OwnedRepo, result: &FetchResult, i: usize, t: usize) {
+        self.counts.on_fetch_complete(repo, result, i, t);
+    }
+
+    fn on_pull_complete(&self, repo: &OwnedRepo, result: &PullResult, i: usize, t: usize) {
+        self.counts.on_pull_complete(repo, result, i, t);
+    }
+
+    fn on_error(&self, repo: &OwnedRepo, error: &str, index: usize, total: usize) {
+        self.counts.on_error(repo, error, index, total);
+    }
+
+    fn on_skip(&self, repo: &OwnedRepo, reason: &str, index: usize, total: usize) {
+        self.counts.on_skip(repo, reason, index, total);
+    }
+}
+
+#[tokio::test]
+async fn test_sync_repos_panicked_task_is_reported_and_recorded() {
+    let temp1 = TempDir::new().unwrap();
+    let temp2 = TempDir::new().unwrap();
+
+    let mut git = MockGit::new();
+    git.add_repo(temp1.path().to_string_lossy().to_string());
+    git.add_repo(temp2.path().to_string_lossy().to_string());
+    let manager = SyncManager::new(git, SyncManagerOptions::new().with_concurrency(2));
+
+    let repos = vec![
+        local_repo("repo1", "org", temp1.path()),
+        local_repo("repo2", "org", temp2.path()),
+    ];
+    let progress = Arc::new(PanicOnStart {
+        repo: "org/repo2".to_string(),
+        counts: CountingSyncProgress::new(),
+    });
+    let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
+    let (summary, results) = manager.sync_repos(repos, progress_dyn).await;
+
+    assert_eq!(summary.success, 1);
+    assert_eq!(summary.failed, 1);
+    assert_eq!(results.len(), 2, "the panicked repo has a result too");
+    let failed = results.iter().find(|r| r.result.is_failed()).unwrap();
+    assert_eq!(failed.repo.full_name(), "org/repo2");
+    assert!(failed.result.error_message().unwrap().contains("panicked"));
+    assert_eq!(progress.counts.errors.load(Ordering::SeqCst), 1);
+}

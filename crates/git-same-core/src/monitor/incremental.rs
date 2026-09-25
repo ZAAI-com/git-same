@@ -1,8 +1,8 @@
 //! Per-repo rescans that mutate an in-memory `FinderStatus` in place.
 //!
-//! Used by both the FSEvents-driven scan loop and the socket `REFRESH <path>`
-//! handler so they share one consistent merge implementation and never need
-//! a full `scan_all`.
+//! Used by the monitor loop to flush FSEvents-driven rescans and socket
+//! `REFRESH <path>` requests together, so both share one consistent merge
+//! implementation and never need a full `scan_all`.
 
 use crate::api::RepoScanService;
 use crate::types::FinderStatus;

@@ -312,3 +312,21 @@ fn monitor_private_flags_stay_out_of_help() {
         assert!(help.contains(public), "{public} missing from help");
     }
 }
+
+#[test]
+fn test_output_carries_an_explicit_quiet_request() {
+    let plain = Cli::try_parse_from(["gisa", "sync"]).unwrap().output();
+    assert!(!plain.is_quiet_requested());
+    assert!(plain.shows_summary());
+
+    let quiet = Cli::try_parse_from(["gisa", "-q", "sync"])
+        .unwrap()
+        .output();
+    assert!(quiet.is_quiet_requested());
+    assert!(!quiet.shows_summary());
+
+    let json = Cli::try_parse_from(["gisa", "--json", "sync"])
+        .unwrap()
+        .output();
+    assert!(!json.shows_summary());
+}

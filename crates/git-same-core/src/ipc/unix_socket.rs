@@ -6,17 +6,36 @@
 //! ## Protocol
 //!
 //! ```text
-//! REFRESH /path/to/folder\n    → re-scan folder + subfolders, respond "OK\n"
-//! REFRESH_ALL\n                 → re-scan everything, respond "OK\n"
+//! REFRESH /path/to/folder\n    → queue a re-scan of folder + subfolders, respond "OK\n"
+//! REFRESH_ALL\n                 → reload config, queue a full re-scan, respond "OK\n"
 //! STATUS\n                      → respond with full status JSON
 //! PING\n                        → respond "PONG\n" (health check)
 //! ```
+//!
+//! "OK" means the request is queued, not that the scan finished: the monitor
+//! merges repeated requests into one scan and rewrites `status.json` when it
+//! completes. Older monitors ran the whole scan before answering, and any
+//! monitor answers late while a scan is running, so clients never wait for an
+//! answer without a limit: [`UnixSocketClient::request`] and
+//! [`UnixSocketClient::notify`] take a timeout, and [`UnixSocketClient::send`]
+//! gives up after [`SEND_TIMEOUT`].
 
+use super::IpcConfig;
 use crate::errors::AppError;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener as TokioUnixListener, UnixStream};
 use tracing::{debug, warn};
+
+/// Upper bound on [`UnixSocketClient::send`], so no caller can hang on a
+/// monitor that accepted the connection but never answers.
+pub const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Upper bound on [`nudge_refresh_all`]. A free monitor answers in
+/// milliseconds; a busy one reads the request from its socket later.
+pub const NUDGE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Commands the monitor can receive over the socket.
 ///
@@ -52,6 +71,19 @@ impl DaemonCommand {
             DaemonCommand::Ping
         } else {
             DaemonCommand::Unknown(trimmed.to_string())
+        }
+    }
+}
+
+/// Renders the command as its wire text, without the trailing newline.
+impl fmt::Display for DaemonCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DaemonCommand::Refresh(path) => write!(f, "REFRESH {}", path.display()),
+            DaemonCommand::RefreshAll => f.write_str("REFRESH_ALL"),
+            DaemonCommand::Status => f.write_str("STATUS"),
+            DaemonCommand::Ping => f.write_str("PING"),
+            DaemonCommand::Unknown(line) => f.write_str(line),
         }
     }
 }
@@ -147,6 +179,17 @@ pub async fn write_response(stream: &mut UnixStream, response: &str) -> Result<(
     Ok(())
 }
 
+/// What came back from a [`UnixSocketClient::request`] that reached the monitor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reply {
+    /// The monitor's answer line, trailing newline included. Empty when the
+    /// monitor closed the connection without answering.
+    Answered(String),
+    /// No answer within the timeout. The monitor is alive but busy; a request
+    /// that was written stays on its socket until the monitor reads it.
+    Pending,
+}
+
 /// Client for connecting to the monitor's Unix socket.
 pub struct UnixSocketClient {
     path: PathBuf,
@@ -159,7 +202,46 @@ impl UnixSocketClient {
     }
 
     /// Send a command and receive the response.
+    ///
+    /// Fails when the monitor does not answer within [`SEND_TIMEOUT`]. Use
+    /// [`Self::request`] to treat a slow monitor as busy instead.
     pub async fn send(&self, command: &str) -> Result<String, AppError> {
+        self.send_within(command, SEND_TIMEOUT).await
+    }
+
+    async fn send_within(&self, command: &str, timeout: Duration) -> Result<String, AppError> {
+        match self.request(command, timeout).await? {
+            Reply::Answered(response) => Ok(response),
+            Reply::Pending => Err(AppError::config(format!(
+                "Monitor did not answer '{command}' within {timeout:?}"
+            ))),
+        }
+    }
+
+    /// Send a command and wait at most `timeout` for the answer.
+    ///
+    /// A monitor that cannot be reached (no socket, connection refused) is an
+    /// error, so callers can still tell "not running" apart. Running out of
+    /// time while connecting, writing, or waiting for the answer is
+    /// [`Reply::Pending`].
+    pub async fn request(&self, command: &str, timeout: Duration) -> Result<Reply, AppError> {
+        match tokio::time::timeout(timeout, self.exchange(command)).await {
+            Ok(response) => response.map(Reply::Answered),
+            Err(_) => {
+                debug!(command, ?timeout, "Monitor did not answer in time");
+                Ok(Reply::Pending)
+            }
+        }
+    }
+
+    /// Send a command without waiting for its effect: [`Self::request`] with
+    /// the answer discarded. Only an unreachable monitor is an error.
+    pub async fn notify(&self, command: &str, timeout: Duration) -> Result<(), AppError> {
+        self.request(command, timeout).await.map(|_| ())
+    }
+
+    /// Connect, write one command line, and read one answer line.
+    async fn exchange(&self, command: &str) -> Result<String, AppError> {
         let mut stream = UnixStream::connect(&self.path).await.map_err(|e| {
             AppError::path(format!(
                 "Failed to connect to monitor socket '{}': {}",
@@ -211,6 +293,28 @@ impl UnixSocketClient {
     /// Request a full refresh of all monitored paths.
     pub async fn refresh_all(&self) -> Result<String, AppError> {
         self.send("REFRESH_ALL").await
+    }
+}
+
+/// Asks the running monitor to reload its configuration and rescan, without
+/// waiting for the scan.
+///
+/// Best effort and bounded by [`NUDGE_TIMEOUT`], so the commands that nudge
+/// after changing repos or the registry never wait on a busy monitor. A
+/// monitor that is not running is skipped, and failures are only logged at
+/// debug level.
+pub async fn nudge_refresh_all() {
+    let ipc = match IpcConfig::default_path() {
+        Ok(ipc) => ipc,
+        Err(e) => {
+            debug!(error = %e, "Monitor refresh nudge skipped");
+            return;
+        }
+    };
+    let command = DaemonCommand::RefreshAll.to_string();
+    let client = UnixSocketClient::new(ipc.socket_path());
+    if let Err(e) = client.notify(&command, NUDGE_TIMEOUT).await {
+        debug!(error = %e, "Monitor refresh nudge skipped");
     }
 }
 

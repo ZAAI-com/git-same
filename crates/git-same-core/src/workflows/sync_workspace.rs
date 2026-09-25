@@ -7,7 +7,7 @@ use crate::discovery::DiscoveryOrchestrator;
 use crate::errors::{AppError, Result};
 use crate::git::{CloneOptions, ShellGit};
 use crate::operations::clone::{
-    CloneManager, CloneManagerOptions, CloneProgress, MAX_CONCURRENCY, MIN_CONCURRENCY,
+    CloneManager, CloneManagerOptions, CloneProgress, CloneResult, MAX_CONCURRENCY, MIN_CONCURRENCY,
 };
 use crate::operations::sync::{
     LocalRepo, SyncManager, SyncManagerOptions, SyncMode, SyncProgress, SyncResult,
@@ -51,11 +51,53 @@ pub struct PreparedSyncWorkspace {
     pub clone_options: CloneOptions,
 }
 
+impl PreparedSyncWorkspace {
+    /// Repositories that neither phase touches, with the reason from planning.
+    ///
+    /// `skipped_sync` is planned over every discovered repository, so it also
+    /// lists each repository that is about to be cloned ("not cloned
+    /// locally"). Those are left out here.
+    pub fn skipped_at_planning(&self) -> Vec<(&OwnedRepo, &str)> {
+        let cloning: HashSet<&str> = self
+            .plan
+            .to_clone
+            .iter()
+            .map(|repo| repo.full_name())
+            .collect();
+        self.skipped_sync
+            .iter()
+            .filter(|(repo, _)| !cloning.contains(repo.full_name()))
+            .map(|(repo, reason)| (repo, reason.as_str()))
+            .collect()
+    }
+}
+
 /// Execution outcome for a prepared sync workflow.
+#[derive(Default)]
 pub struct SyncExecutionOutcome {
     pub clone_summary: Option<OpSummary>,
+    pub clone_results: Vec<CloneResult>,
     pub sync_summary: Option<OpSummary>,
     pub sync_results: Vec<SyncResult>,
+}
+
+impl SyncExecutionOutcome {
+    /// Assembles an outcome from the clone and fetch phase results.
+    pub fn from_phases(
+        clone: Option<(OpSummary, Vec<CloneResult>)>,
+        fetch: Option<(OpSummary, Vec<SyncResult>)>,
+    ) -> Self {
+        let mut outcome = Self::default();
+        if let Some((summary, results)) = clone {
+            outcome.clone_summary = Some(summary);
+            outcome.clone_results = results;
+        }
+        if let Some((summary, results)) = fetch {
+            outcome.sync_summary = Some(summary);
+            outcome.sync_results = results;
+        }
+        outcome
+    }
 }
 
 /// Prepare workspace sync data: authenticate, discover, plan and resolve options.
@@ -253,6 +295,10 @@ pub async fn prepare_sync_workspace(
 }
 
 /// Execute clone + sync phases for a prepared workspace plan.
+///
+/// Runs [`execute_prepared_clone`], then [`execute_prepared_fetch`]. Callers
+/// that render per-phase UI (the CLI's progress bars) call the two phases
+/// directly instead.
 pub async fn execute_prepared_sync(
     prepared: &PreparedSyncWorkspace,
     dry_run: bool,
@@ -260,55 +306,62 @@ pub async fn execute_prepared_sync(
     sync_progress: Arc<dyn SyncProgress>,
 ) -> SyncExecutionOutcome {
     if dry_run {
-        return SyncExecutionOutcome {
-            clone_summary: None,
-            sync_summary: None,
-            sync_results: Vec::new(),
-        };
+        return SyncExecutionOutcome::default();
     }
 
-    let mut clone_summary = None;
-    let mut sync_summary = None;
-    let mut sync_results = Vec::new();
+    let clone = execute_prepared_clone(prepared, clone_progress).await;
+    let fetch = execute_prepared_fetch(prepared, sync_progress).await;
+    SyncExecutionOutcome::from_phases(clone, fetch)
+}
 
-    if !prepared.plan.to_clone.is_empty() {
-        let clone_options = CloneManagerOptions::new()
-            .with_concurrency(prepared.effective_concurrency)
-            .with_clone_options(prepared.clone_options.clone())
-            .with_structure(prepared.structure.clone())
-            .with_ssh(prepared.provider_prefer_ssh);
-
-        let manager = CloneManager::new(ShellGit::new(), clone_options);
-        let (summary, _results) = manager
-            .clone_repos(
-                &prepared.base_path,
-                prepared.plan.to_clone.clone(),
-                &prepared.provider_name,
-                clone_progress,
-            )
-            .await;
-        clone_summary = Some(summary);
+/// Execute the clone phase of a prepared plan.
+///
+/// Returns `None`, without touching `progress`, when there is nothing to clone.
+pub async fn execute_prepared_clone(
+    prepared: &PreparedSyncWorkspace,
+    progress: Arc<dyn CloneProgress>,
+) -> Option<(OpSummary, Vec<CloneResult>)> {
+    if prepared.plan.to_clone.is_empty() {
+        return None;
     }
 
-    if !prepared.to_sync.is_empty() {
-        let sync_options = SyncManagerOptions::new()
-            .with_concurrency(prepared.effective_concurrency)
-            .with_mode(prepared.sync_mode)
-            .with_skip_uncommitted(prepared.skip_uncommitted);
+    let clone_options = CloneManagerOptions::new()
+        .with_concurrency(prepared.effective_concurrency)
+        .with_clone_options(prepared.clone_options.clone())
+        .with_structure(prepared.structure.clone())
+        .with_ssh(prepared.provider_prefer_ssh);
 
-        let manager = SyncManager::new(ShellGit::new(), sync_options);
-        let (summary, results) = manager
-            .sync_repos(prepared.to_sync.clone(), sync_progress)
-            .await;
-        sync_summary = Some(summary);
-        sync_results = results;
+    let manager = CloneManager::new(ShellGit::new(), clone_options);
+    let phase = manager
+        .clone_repos(
+            &prepared.base_path,
+            prepared.plan.to_clone.clone(),
+            &prepared.provider_name,
+            progress,
+        )
+        .await;
+    Some(phase)
+}
+
+/// Execute the fetch (or pull) phase of a prepared plan.
+///
+/// Returns `None`, without touching `progress`, when there is nothing to fetch.
+pub async fn execute_prepared_fetch(
+    prepared: &PreparedSyncWorkspace,
+    progress: Arc<dyn SyncProgress>,
+) -> Option<(OpSummary, Vec<SyncResult>)> {
+    if prepared.to_sync.is_empty() {
+        return None;
     }
 
-    SyncExecutionOutcome {
-        clone_summary,
-        sync_summary,
-        sync_results,
-    }
+    let sync_options = SyncManagerOptions::new()
+        .with_concurrency(prepared.effective_concurrency)
+        .with_mode(prepared.sync_mode)
+        .with_skip_uncommitted(prepared.skip_uncommitted);
+
+    let manager = SyncManager::new(ShellGit::new(), sync_options);
+    let phase = manager.sync_repos(prepared.to_sync.clone(), progress).await;
+    Some(phase)
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use console::{style, StyledObject};
 use indicatif::ProgressStyle;
 
 /// Default spinner style frames.
@@ -18,3 +19,16 @@ pub fn progress_style() -> ProgressStyle {
         .expect("Invalid progress template")
         .progress_chars("━╸─")
 }
+
+/// Glyph for a finished phase bar: a check, or a warning sign if anything failed.
+pub fn finish_glyph(failed: usize) -> StyledObject<&'static str> {
+    if failed > 0 {
+        style("⚠").yellow()
+    } else {
+        style("✓").green()
+    }
+}
+
+#[cfg(test)]
+#[path = "styles_tests.rs"]
+mod tests;

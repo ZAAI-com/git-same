@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use super::styles::progress_style;
+use super::styles::{finish_glyph, progress_style};
 
 /// Progress reporter for sync operations.
 pub struct SyncProgressBar {
@@ -41,7 +41,7 @@ impl SyncProgressBar {
         let updates = self.updates_count.load(Ordering::SeqCst);
         let msg = format!(
             "{} {} synced ({} with updates), {} failed, {} skipped",
-            style("✓").green(),
+            finish_glyph(failed),
             success,
             updates,
             failed,

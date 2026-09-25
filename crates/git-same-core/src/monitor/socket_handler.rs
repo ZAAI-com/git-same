@@ -2,105 +2,94 @@
 //!
 //! Each accepted connection is text-line based: read one line, dispatch
 //! the corresponding `DaemonCommand`, write a one-line response.
+//!
+//! Refresh commands never scan here. They queue a [`ScanRequest`] for the
+//! monitor loop and are answered "OK" at once, so a client never waits for a
+//! scan; the loop runs every scan and is the only writer of `status.json`.
 
-use crate::api::{AmbientUpgradeCache, OwnerTypeCache, RepoScanService};
-use crate::git::ShellGit;
 use crate::ipc::unix_socket::DaemonCommand;
 use crate::ipc::StatusFileWriter;
-use crate::monitor::incremental::rescan_and_merge;
 use crate::monitor::live_config::LiveConfig;
-use crate::types::FinderStatus;
-use std::sync::{Arc, Mutex};
+use crate::monitor::run::ScanRequest;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tracing::{debug, error};
+use tokio::sync::mpsc::UnboundedSender;
+use tracing::debug;
 
-/// Read one command from `stream`, run it against the live state, write
-/// the response, and close. Errors are logged and swallowed; a misbehaving
-/// client must not take the monitor down.
+/// How long a client may take to send its command line, and again to take
+/// the response, before the connection is dropped. Keeps an idle or stuck
+/// client from pinning a task forever.
+pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Read one command from `stream`, answer it, and close. Errors are logged
+/// and swallowed; a misbehaving client must not take the monitor down.
 ///
 /// `REFRESH_ALL` first reloads the configuration if it changed on disk, so a
 /// nudge after registering a workspace reaches a monitor that stays running.
-#[allow(clippy::too_many_arguments)]
+/// "OK" to `REFRESH` and `REFRESH_ALL` means the scan is queued; the loop
+/// runs it and rewrites `status.json` afterwards.
 pub async fn handle_socket_connection(
     mut stream: UnixStream,
     live: &LiveConfig,
-    reload_tx: &tokio::sync::mpsc::UnboundedSender<()>,
-    pid: u32,
-    status_writer: StatusFileWriter,
-    shared_status: Arc<Mutex<FinderStatus>>,
-    owner_types: Option<OwnerTypeCache>,
-    ambient_upgrades: Option<AmbientUpgradeCache>,
+    reload_tx: &UnboundedSender<()>,
+    scan_tx: &UnboundedSender<ScanRequest>,
+    status_writer: &StatusFileWriter,
+    timeout: Duration,
 ) {
     let (reader, mut writer) = stream.split();
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
-    match reader.read_line(&mut line).await {
-        Ok(0) => return,
-        Ok(_) => {}
-        Err(e) => {
+    match tokio::time::timeout(timeout, reader.read_line(&mut line)).await {
+        Err(_) => {
+            debug!("Socket client sent no command in time; dropping it");
+            return;
+        }
+        Ok(Ok(0)) => return,
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
             debug!(error = %e, "Failed to read from socket");
             return;
         }
     }
 
-    let cmd = DaemonCommand::parse(&line);
-    if matches!(cmd, DaemonCommand::RefreshAll) && live.reload_if_changed() {
-        let _ = reload_tx.send(());
-    }
-    let config = live.snapshot();
-    let git = ShellGit::new();
-    let mut service = RepoScanService::new(&git, &config);
-    if let Some(cache) = owner_types {
-        service = service.with_owner_types(cache);
-    }
-    if let Some(cache) = ambient_upgrades.clone() {
-        service = service.with_ambient_upgrades(cache);
-    }
-
-    let response = match cmd {
+    let response = match DaemonCommand::parse(&line) {
         DaemonCommand::Ping => "PONG\n".to_string(),
-        DaemonCommand::Refresh(ref path) => {
-            let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        DaemonCommand::Refresh(path) => {
+            let canonical = std::fs::canonicalize(&path).unwrap_or(path);
             debug!(path = %canonical.display(), "Refresh requested");
-            let mut status = shared_status.lock().expect("status mutex poisoned");
-            let changed = rescan_and_merge(&service, &mut status, &canonical);
-            if changed {
-                if let Err(e) = status_writer.write(&status) {
-                    error!(error = %e, "Failed to write status file after Refresh");
-                }
-            }
-            if let (Some(cache), Some(entry)) = (
-                ambient_upgrades.as_ref(),
-                status.repos.iter().find(|r| r.path == canonical).cloned(),
-            ) {
-                cache.set(canonical, entry);
-            }
-            "OK\n".to_string()
+            queue(scan_tx, ScanRequest::Repo(canonical))
         }
-        DaemonCommand::RefreshAll => match service.scan_all(pid) {
-            Ok(new_status) => {
-                let mut status = shared_status.lock().expect("status mutex poisoned");
-                *status = new_status;
-                if let Err(e) = status_writer.write(&status) {
-                    error!(error = %e, "Failed to write status file after RefreshAll");
-                }
-                "OK\n".to_string()
+        DaemonCommand::RefreshAll => {
+            if live.reload_if_changed() {
+                let _ = reload_tx.send(());
             }
-            Err(e) => {
-                error!(error = %e, "Refresh failed");
-                "ERROR\n".to_string()
-            }
-        },
-        DaemonCommand::Status => status_response(&status_writer),
+            debug!("Full refresh requested");
+            queue(scan_tx, ScanRequest::Full)
+        }
+        DaemonCommand::Status => status_response(status_writer),
         DaemonCommand::Unknown(cmd) => {
             format!("UNKNOWN: {}\n", cmd)
         }
     };
 
-    let _ = writer.write_all(response.as_bytes()).await;
-    let _ = writer.flush().await;
+    let reply = async {
+        writer.write_all(response.as_bytes()).await?;
+        writer.flush().await
+    };
+    if tokio::time::timeout(timeout, reply).await.is_err() {
+        debug!("Socket client did not take the response in time; dropping it");
+    }
+}
+
+/// Hand `request` to the monitor loop. Only fails once the loop has exited,
+/// when nothing is left to run the scan.
+fn queue(scan_tx: &UnboundedSender<ScanRequest>, request: ScanRequest) -> String {
+    match scan_tx.send(request) {
+        Ok(()) => "OK\n".to_string(),
+        Err(_) => "ERROR\n".to_string(),
+    }
 }
 
 /// Build the response for a `STATUS` command: the current status file as

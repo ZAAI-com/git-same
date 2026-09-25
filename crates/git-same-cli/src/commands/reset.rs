@@ -71,7 +71,7 @@ pub async fn run(
             output,
             before_config_removal,
         )?;
-        nudge_daemon_refresh().await;
+        git_same_core::ipc::nudge_refresh_all().await;
         return Ok(());
     }
 
@@ -85,7 +85,7 @@ pub async fn run(
     }
 
     execute_reset_with_precondition(&scope, &target, output, before_config_removal)?;
-    nudge_daemon_refresh().await;
+    git_same_core::ipc::nudge_refresh_all().await;
     Ok(())
 }
 
@@ -100,21 +100,6 @@ fn execute_reset_with_precondition(
     }
     execute_reset(scope, target, output)
 }
-
-#[cfg(unix)]
-async fn nudge_daemon_refresh() {
-    use git_same_core::ipc::{IpcConfig, UnixSocketClient};
-    let Ok(cfg) = IpcConfig::default_path() else {
-        return;
-    };
-    let client = UnixSocketClient::new(cfg.socket_path());
-    if let Err(e) = client.refresh_all().await {
-        tracing::debug!(error = %e, "Monitor refresh nudge skipped");
-    }
-}
-
-#[cfg(not(unix))]
-async fn nudge_daemon_refresh() {}
 
 /// Discover what files and directories exist that could be removed.
 fn discover_targets() -> Result<ResetTarget> {

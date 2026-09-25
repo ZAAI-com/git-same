@@ -72,23 +72,14 @@ pub async fn ensure(config_override: bool, output: HookOutput) {
     }
 }
 
-/// Asks a running monitor to reload the configuration and rescan.
-#[cfg(unix)]
+/// Asks a running monitor to reload the configuration and rescan, without
+/// waiting for the scan.
 pub async fn request_refresh() {
-    use git_same_core::ipc::{IpcConfig, UnixSocketClient};
     if monitor_agent::autostart_suppressed() {
         return;
     }
-    let Ok(ipc) = IpcConfig::default_path() else {
-        return;
-    };
-    if let Err(e) = UnixSocketClient::new(ipc.socket_path()).refresh_all().await {
-        tracing::debug!(error = %e, "Monitor refresh nudge skipped");
-    }
+    git_same_core::ipc::nudge_refresh_all().await;
 }
-
-#[cfg(not(unix))]
-pub async fn request_refresh() {}
 
 #[cfg(test)]
 #[path = "auto_monitor_tests.rs"]

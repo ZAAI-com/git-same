@@ -24,8 +24,8 @@ impl ShellGit {
         Self
     }
 
-    /// Runs a git command and returns the output.
-    fn run_git(&self, args: &[&str], cwd: Option<&Path>) -> Result<Output, GitError> {
+    /// Builds a git command with the environment every call runs under.
+    fn git_command(args: &[&str], cwd: Option<&Path>) -> Command {
         let mut cmd = Command::new("git");
         cmd.args(args);
 
@@ -36,7 +36,19 @@ impl ShellGit {
         // Prevent git from prompting for credentials
         cmd.env("GIT_TERMINAL_PROMPT", "0");
 
-        cmd.output().map_err(|e| {
+        // Skip optional locks: otherwise status-style commands take
+        // .git/index.lock to write back refreshed stat data. The monitor's
+        // file watcher sees that write and re-queues the repo it just scanned,
+        // and the lock collides with the user's own git commands. Clone,
+        // fetch and pull still take the locks they need.
+        cmd.env("GIT_OPTIONAL_LOCKS", "0");
+
+        cmd
+    }
+
+    /// Runs a git command and returns the output.
+    fn run_git(&self, args: &[&str], cwd: Option<&Path>) -> Result<Output, GitError> {
+        Self::git_command(args, cwd).output().map_err(|e| {
             GitError::command_failed(
                 format!("git {}", args.join(" ")),
                 format!("Failed to execute: {}", e),
@@ -66,13 +78,23 @@ impl ShellGit {
             .unwrap_or(false)
     }
 
-    /// Parses the porcelain status output.
-    fn parse_status_output(&self, output: &str, branch_output: &str) -> RepoStatus {
+    /// Parses `git status -b --porcelain` output: branch, ahead and behind
+    /// come from the "## " header line, the counts from the file lines.
+    fn parse_status_output(&self, output: &str) -> RepoStatus {
         let mut staged_count: usize = 0;
         let mut unstaged_count: usize = 0;
         let mut untracked_count: usize = 0;
+        let mut header = "";
 
         for line in output.lines() {
+            // The branch header is not a change. '#' is never a porcelain
+            // status code, so no file line can start with it.
+            if line.starts_with("## ") {
+                if header.is_empty() {
+                    header = line;
+                }
+                continue;
+            }
             if line.len() < 2 {
                 continue;
             }
@@ -94,9 +116,8 @@ impl ShellGit {
         let is_uncommitted = staged_count > 0 || unstaged_count > 0;
         let has_untracked = untracked_count > 0;
 
-        // Parse branch info from `git status -b --porcelain`
         // Format: "## main...origin/main [ahead 1, behind 2]" or "## main"
-        let (branch, ahead, behind) = self.parse_branch_info(branch_output);
+        let (branch, ahead, behind) = self.parse_branch_info(header);
 
         RepoStatus {
             branch,
@@ -379,14 +400,12 @@ impl GitOperations for ShellGit {
     }
 
     fn status(&self, repo_path: &Path) -> Result<RepoStatus, GitError> {
-        // Get status with branch info
-        let branch_output =
-            self.run_git_output(&["status", "-b", "--porcelain"], Some(repo_path))?;
+        // One call yields the branch header and the file lines. The header
+        // comes first, so trimming the output never strips the leading space
+        // of a file line (" M" is unstaged, "M " is staged).
+        let output = self.run_git_output(&["status", "-b", "--porcelain"], Some(repo_path))?;
 
-        // Get just the file status
-        let status_output = self.run_git_output(&["status", "--porcelain"], Some(repo_path))?;
-
-        Ok(self.parse_status_output(&status_output, &branch_output))
+        Ok(self.parse_status_output(&output))
     }
 
     fn is_repo(&self, path: &Path) -> bool {

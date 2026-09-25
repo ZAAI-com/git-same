@@ -4,7 +4,7 @@ use crate::types::OwnedRepo;
 use console::style;
 use indicatif::{MultiProgress, ProgressBar};
 
-use super::styles::progress_style;
+use super::styles::{finish_glyph, progress_style};
 
 /// Progress reporter for clone operations.
 pub struct CloneProgressBar {
@@ -34,7 +34,7 @@ impl CloneProgressBar {
     pub fn finish(&self, success: usize, failed: usize, skipped: usize) {
         let msg = format!(
             "{} {} cloned, {} failed, {} skipped",
-            style("✓").green(),
+            finish_glyph(failed),
             success,
             failed,
             skipped

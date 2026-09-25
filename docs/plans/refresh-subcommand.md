@@ -37,6 +37,8 @@ pub async fn run(args: &RefreshArgs, _config: &Config, output: &Output) -> Resul
 
 Note: unlike the post-sync/post-reset nudges, `gisa refresh` is user-initiated, so a daemon-down state SHOULD return a clear error (not silent). That is the one meaningful behavior difference.
 
+Update (3.3): the monitor now answers `REFRESH` and `REFRESH_ALL` with "OK" as soon as the request is queued, and rewrites `status.json` when the scan completes. Every client waits with a limit: the nudges from `sync`, `reset`, `init`/`setup`/`scan` and the app give up after 2 s (`ipc::nudge_refresh_all`), and `gisa refresh` waits 5 s. If that runs out, it reports the monitor as busy instead of failing, because the request stays on the socket until the monitor reads it. "ERROR", "UNKNOWN" or an empty answer is an error.
+
 ## Windows / non-unix
 
 `UnixSocketClient` is `#[cfg(unix)]`. Gate the handler similarly; on non-unix print a short "refresh is unix-only for now" message and return `Ok(())`. `src/ipc/mod.rs:1-8` notes Windows named-pipe support is planned but not shipped.
