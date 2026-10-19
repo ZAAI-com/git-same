@@ -1,0 +1,38 @@
+crates/git-same-core/src/git/traits_tests.rs
+  s_72a41da065f75d::t_4f9c81a0772973 276-278,280-293
+crates/git-same-core/src/api/service_tests.rs
+  s_72a41da065f75d::t_4f9c81a0772973 277-311
+.claude/CLAUDE.md
+  s_72a41da065f75d::t_566259077b5e19 62
+crates/git-same-core/src/git/traits.rs
+  s_72a41da065f75d::t_6869cdf7edc48b 227-229,233-238,255,281-282,306,525-537
+crates/git-same-cli/src/commands/status.rs
+  s_72a41da065f75d::t_ff0d10eda9ef95 19-20
+crates/git-same-core/src/git/shell_tests.rs
+  s_72a41da065f75d::t_4f9c81a0772973 485,489-553
+crates/git-same-core/src/git/shell.rs
+  s_72a41da065f75d::t_6869cdf7edc48b 11,581-597,599-605,614-659,662
+  s_72a41da065f75d::t_4f9c81a0772973 606-613
+crates/git-same-core/src/api/service.rs
+  s_72a41da065f75d::t_9b7e9dd0f5cd82 34,46,50-56,501-503,505-506
+  s_72a41da065f75d::t_4f9c81a0772973 453-458
+crates/git-same-core/src/config/parser.rs
+  s_72a41da065f75d::t_ff0d10eda9ef95 429-430,434
+  s_72a41da065f75d::t_07c8dabe1b9a73 146-148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "431d3676b3d5ef8e2f1523396ea2bc55211a2078",
+  "prompts": {},
+  "sessions": {
+    "s_72a41da065f75d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d824e5aa-55de-49a5-8478-67ccb05ac6b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
