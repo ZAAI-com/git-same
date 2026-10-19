@@ -1,0 +1,43 @@
+crates/git-same-core/src/setup/state.rs
+  s_0a89282337def4::t_4f4535105f28bc 3,123-125,237,241-289,401-405
+crates/git-same-core/src/setup/mod.rs
+  s_0a89282337def4::t_4f4535105f28bc 103-124
+crates/git-same-cli/src/tui/handler.rs
+  s_0a89282337def4::t_accd1b861d12f5 225,227
+  s_0a89282337def4::t_c978473cc9c871 226,228-229,265-287,359
+crates/git-same-cli/src/tui/screens/workspaces.rs
+  s_0a89282337def4::t_c978473cc9c871 127-131,143-155,487-495
+crates/git-same-cli/src/setup/ui.rs
+  s_0a89282337def4::t_748c3941027b57 20,49-51,324-330,341-346,379
+crates/git-same-cli/src/setup/screens/orgs.rs
+  s_0a89282337def4::t_748c3941027b57 23-27,29,52-56
+  s_0a89282337def4::t_3b56d9667304d0 57
+crates/git-same-core/src/setup/state_tests.rs
+  s_0a89282337def4::t_50c01ae856a917 206-265
+crates/git-same-cli/src/setup/screens/orgs_tests.rs
+  s_0a89282337def4::t_fce97ac2afa970 225-226
+  s_0a89282337def4::t_b15465c2c97acb 222-224,227-230
+crates/git-same-cli/src/setup/handler.rs
+  s_0a89282337def4::t_0d75d10571babe 7-9,113,592,602-616,628
+crates/git-same-core/src/setup/mod_tests.rs
+  s_0a89282337def4::t_50c01ae856a917 80-122
+crates/git-same-cli/src/setup/handler_tests.rs
+  s_0a89282337def4::t_b15465c2c97acb 780-799,805-822
+  s_0a89282337def4::t_fce97ac2afa970 800-804
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "227c88a3c5a91dfa6dc9bf692b588c487e76bd0a",
+  "prompts": {},
+  "sessions": {
+    "s_0a89282337def4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3019110e-7b50-4da2-bd47-414dc7e4eac3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
