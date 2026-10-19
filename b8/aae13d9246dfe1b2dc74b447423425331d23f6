@@ -1,0 +1,28 @@
+macos/Shared/SocketProtocol.swift
+  s_72a41da065f75d::t_e600bcbf113a0c 7-12,14-18,20-22,24-26,32-39,44-48,54-57,87-137
+  s_b6d4bdd4e9208c::t_07b1c8c3307597 138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8aae13d9246dfe1b2dc74b447423425331d23f6",
+  "prompts": {},
+  "sessions": {
+    "s_72a41da065f75d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d824e5aa-55de-49a5-8478-67ccb05ac6b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    },
+    "s_b6d4bdd4e9208c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f359fb43-b54b-42c3-9f41-9110ffbdc32b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
