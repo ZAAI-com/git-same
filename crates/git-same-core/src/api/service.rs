@@ -17,6 +17,8 @@ use crate::types::finder_status::{
 };
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tracing::debug;
 
 /// Service that scans repositories and computes badge status.
@@ -28,6 +30,7 @@ pub struct RepoScanService<'a> {
     config: &'a Config,
     owner_types: Option<OwnerTypeCache>,
     ambient_upgrades: Option<AmbientUpgradeCache>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl<'a> RepoScanService<'a> {
@@ -38,7 +41,23 @@ impl<'a> RepoScanService<'a> {
             config,
             owner_types: None,
             ambient_upgrades: None,
+            cancel: None,
         }
+    }
+
+    /// Attach a cancel flag. Once it is set, scans stop before the next repo
+    /// and return what they have, so a monitor shutting down never waits for
+    /// a whole pass. The caller discards a cancelled result.
+    pub fn with_cancel(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
+    /// Whether the attached cancel flag (if any) is set.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
     }
 
     /// Attach an owner-type cache so scanned org folders are annotated with
@@ -75,6 +94,9 @@ impl<'a> RepoScanService<'a> {
         let mut status = FinderStatus::new(pid, timestamp);
 
         for ws_path in &self.config.workspaces {
+            if self.is_cancelled() {
+                return Ok(status);
+            }
             let expanded = shellexpand::tilde(ws_path).to_string();
             let root = PathBuf::from(&expanded);
             if !root.exists() {
@@ -195,7 +217,7 @@ impl<'a> RepoScanService<'a> {
             }
         }
 
-        if !self.config.finder.show_ambient {
+        if !self.config.finder.show_ambient || self.is_cancelled() {
             return;
         }
 
@@ -309,10 +331,14 @@ impl<'a> RepoScanService<'a> {
             DiscoveryOrchestrator::new(workspace.filters.clone(), structure.to_string());
         let local_repos = orchestrator.scan_local(&base_path, self.git);
 
-        local_repos
-            .into_iter()
-            .map(|(repo_path, org, _name)| self.scan_repo(&repo_path, workspace_name, Some(&org)))
-            .collect()
+        let mut repos = Vec::with_capacity(local_repos.len());
+        for (repo_path, org, _name) in local_repos {
+            if self.is_cancelled() {
+                break;
+            }
+            repos.push(self.scan_repo(&repo_path, workspace_name, Some(&org)));
+        }
+        repos
     }
 
     /// Scan a single repository and build its `FinderRepoStatus`.

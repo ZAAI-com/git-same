@@ -8,9 +8,12 @@
 //! `--interval` flag and `config.monitor.fullscan_interval_secs`), stretched
 //! when a pass is slow so full scans never run back to back.
 //!
-//! The loop runs every scan and is the only writer of `status.json`. Socket
-//! tasks answer at once and hand refresh requests to the loop as
-//! [`ScanRequest`]s.
+//! The loop owns one job slot: every scan after the initial one runs on the
+//! blocking pool, one at a time, so the loop keeps answering socket clients
+//! and signals while it works. Results come back to the loop, which is the
+//! only writer of `status.json`. Socket tasks answer at once and hand refresh
+//! requests to the loop as [`ScanRequest`]s. On shutdown a cancel flag stops
+//! a running scan before its next repo.
 //!
 //! Startup order matters: the runtime lock is taken before anything is
 //! written or any existing socket is removed, so a second monitor can never
@@ -33,6 +36,8 @@ use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
@@ -303,22 +308,31 @@ where
     // A deadline, not a per-iteration sleep: a steady stream of filesystem
     // events must not postpone the safety-net scan forever.
     let mut next_full_scan = deadline_after(Instant::now(), full_scan_delay(interval, last_scan));
+    // The single job slot: at most one scan runs, on the blocking pool, so the
+    // loop keeps answering clients and signals while it works.
+    let mut job: Option<tokio::task::JoinHandle<JobOutcome>> = None;
+    let mut job_is_full = false;
+    // A `REFRESH_ALL` that arrived while a full scan ran: scan again once it ends.
+    let mut rerun_full = false;
+    // Set on shutdown so a running scan stops before its next repo.
+    let cancel = Arc::new(AtomicBool::new(false));
 
     tokio::pin!(shutdown);
 
     loop {
+        let idle = job.is_none();
         let debounce_active = !pending.is_empty();
         let mut config_changed = false;
         let mut rescanned = false;
 
         tokio::select! {
             // Polled in this order. Shutdown and accept only become ready on a
-            // real signal or connection, so they cannot starve the rest, and a
-            // client is answered before a due scan occupies the loop.
+            // real signal or connection, so they cannot starve the rest.
             biased;
             _ = &mut shutdown => {
                 info!("Monitor shutting down");
                 output.info("Monitor shutting down...");
+                cancel.store(true, Ordering::Relaxed);
                 #[cfg(unix)]
                 socket_listener.cleanup();
                 break;
@@ -334,7 +348,50 @@ where
                     },
                 );
             },
+            joined = wait_for_job(&mut job), if !idle => {
+                job = None;
+                let was_full = std::mem::take(&mut job_is_full);
+                match joined {
+                    Ok(JobOutcome::Full { result, took }) => {
+                        match result {
+                            Ok(new_status) => {
+                                reapply_workspace_folder_icons(&live.snapshot(), &new_status);
+                                status = new_status;
+                                rescanned = true;
+                                if let Err(e) = status_writer.write(&status) {
+                                    error!(error = %e, "Failed to write status file after full scan");
+                                } else {
+                                    debug!(repos = status.repos.len(), took = ?took, "Full scan complete");
+                                }
+                            }
+                            Err(e) => error!(error = %e, "Full scan failed"),
+                        }
+                        last_scan = took;
+                    }
+                    Ok(JobOutcome::Flush { status: rescanned_status, changed }) => {
+                        status = rescanned_status;
+                        if changed {
+                            if let Err(e) = status_writer.write(&status) {
+                                error!(error = %e, "Failed to write status file after rescan");
+                            } else {
+                                debug!(repos = status.repos.len(), "Incremental status written");
+                            }
+                        }
+                    }
+                    Err(e) => error!(error = %e, "Scan job panicked; keeping the previous status"),
+                }
+                if was_full {
+                    next_full_scan = if std::mem::take(&mut rerun_full) {
+                        Instant::now()
+                    } else {
+                        deadline_after(Instant::now(), full_scan_delay(interval, last_scan))
+                    };
+                }
+            },
             Some(request) = scan_rx.recv() => {
+                if job_is_full && request == ScanRequest::Full {
+                    rerun_full = true;
+                }
                 apply_scan_request(
                     request,
                     Instant::now(),
@@ -346,50 +403,48 @@ where
             Some(()) = reload_rx.recv() => {
                 config_changed = true;
             },
-            _ = tokio::time::sleep_until(next_full_scan) => {
+            _ = tokio::time::sleep_until(next_full_scan), if idle => {
                 debug!("Safety-net full scan");
                 config_changed = live.reload_if_changed();
                 let config = live.snapshot();
-                let started = Instant::now();
-                match scan(&config) {
-                    Ok(new_status) => {
-                        reapply_workspace_folder_icons(&config, &new_status);
-                        status = new_status;
-                        rescanned = true;
-                        if let Err(e) = status_writer.write(&status) {
-                            error!(error = %e, "Failed to write status file after full scan");
-                        } else {
-                            debug!(
-                                repos = status.repos.len(),
-                                took = ?started.elapsed(),
-                                "Full scan complete"
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Full scan failed");
-                    }
-                }
-                last_scan = started.elapsed();
-                next_full_scan =
-                    deadline_after(Instant::now(), full_scan_delay(interval, last_scan));
+                let owner_types = owner_types.clone();
+                let ambient_upgrades = ambient_upgrades.clone();
+                let cancel = cancel.clone();
+                job_is_full = true;
+                job = Some(tokio::task::spawn_blocking(move || {
+                    before_job_hook();
+                    let git = ShellGit::new();
+                    let started = std::time::Instant::now();
+                    let result = RepoScanService::new(&git, &config)
+                        .with_owner_types(owner_types)
+                        .with_ambient_upgrades(ambient_upgrades)
+                        .with_cancel(cancel)
+                        .scan_all(pid);
+                    JobOutcome::Full { result, took: started.elapsed() }
+                }));
             },
             Some(repo_path) = fs_rx.recv() => {
                 pending.insert(repo_path);
             },
-            _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active => {
+            _ = tokio::time::sleep(FS_EVENT_DEBOUNCE), if debounce_active && idle => {
                 let config = live.snapshot();
-                let service = RepoScanService::new(&git, &config)
-                    .with_owner_types(owner_types.clone())
-                    .with_ambient_upgrades(ambient_upgrades.clone());
-                flush_pending(
-                    &service,
-                    &mut status,
-                    &status_writer,
-                    &ambient_upgrades,
-                    &mut pending,
-                    &mut explicit,
-                );
+                let owner_types = owner_types.clone();
+                let ambient_upgrades = ambient_upgrades.clone();
+                let cancel = cancel.clone();
+                let mut snapshot = status.clone();
+                let repos = std::mem::take(&mut pending);
+                let requested = std::mem::take(&mut explicit);
+                job = Some(tokio::task::spawn_blocking(move || {
+                    before_job_hook();
+                    let git = ShellGit::new();
+                    let service = RepoScanService::new(&git, &config)
+                        .with_owner_types(owner_types)
+                        .with_ambient_upgrades(ambient_upgrades.clone())
+                        .with_cancel(cancel);
+                    let changed =
+                        rescan_pending(&service, &mut snapshot, &ambient_upgrades, repos, &requested);
+                    JobOutcome::Flush { status: snapshot, changed }
+                }));
             },
         }
 
@@ -535,26 +590,48 @@ fn start_watcher_or_warn(
     }
 }
 
-/// Rescan every pending repo and write the status file once if anything
-/// changed.
+/// What a finished scan job hands back to the loop.
+enum JobOutcome {
+    /// A safety-net or requested full scan, with how long it took.
+    Full {
+        result: Result<FinderStatus>,
+        took: Duration,
+    },
+    /// A flush of pending repos: the updated copy of the loop's status, and
+    /// whether any repo changed.
+    Flush { status: FinderStatus, changed: bool },
+}
+
+/// Resolves when the running job finishes. Never resolves without one; the
+/// `select!` branch is also guarded on a job existing.
+async fn wait_for_job(
+    job: &mut Option<tokio::task::JoinHandle<JobOutcome>>,
+) -> std::result::Result<JobOutcome, tokio::task::JoinError> {
+    match job {
+        Some(handle) => handle.await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Rescan every pending repo into `status`. Returns whether any repo changed;
+/// the loop writes the status file.
 ///
 /// A changed repo refreshes its ambient-upgrade entry. So does every repo in
 /// `explicit` (named by a client in `REFRESH <path>`) even when unchanged:
 /// that request is how a right-click upgrades a gray ambient repo, and the
 /// entry is what keeps the upgrade across later full scans.
-fn flush_pending(
+fn rescan_pending(
     service: &RepoScanService<'_>,
     status: &mut FinderStatus,
-    status_writer: &StatusFileWriter,
     ambient_upgrades: &AmbientUpgradeCache,
-    pending: &mut HashSet<PathBuf>,
-    explicit: &mut HashSet<PathBuf>,
-) {
-    if pending.is_empty() {
-        return;
-    }
+    pending: HashSet<PathBuf>,
+    explicit: &HashSet<PathBuf>,
+) -> bool {
     let mut any_changed = false;
-    for repo in pending.drain() {
+    for repo in pending {
+        if service.is_cancelled() {
+            break;
+        }
         let changed = rescan_and_merge(service, status, &repo);
         any_changed |= changed;
         if changed || explicit.contains(&repo) {
@@ -563,15 +640,24 @@ fn flush_pending(
             }
         }
     }
-    explicit.clear();
-    if any_changed {
-        if let Err(e) = status_writer.write(status) {
-            error!(error = %e, "Failed to write status file after rescan");
-        } else {
-            debug!(repos = status.repos.len(), "Incremental status written");
-        }
+    any_changed
+}
+
+/// Test hook run at the start of every scan job, so tests can hold a job open.
+#[cfg(test)]
+static BEFORE_JOB: std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+fn before_job_hook() {
+    let hook = BEFORE_JOB.lock().unwrap().clone();
+    if let Some(hook) = hook {
+        hook();
     }
 }
+
+#[cfg(not(test))]
+fn before_job_hook() {}
 
 /// Idempotently repaint the Git-Same folder icon on every workspace root in
 /// `status`. Skips roots whose `Icon\r` file is already present (the normal

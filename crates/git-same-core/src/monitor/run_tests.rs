@@ -256,3 +256,213 @@ fn repo_requests_join_the_flush_as_explicit() {
         "a repo request never forces a full scan"
     );
 }
+
+/// Serializes the tests that install the global `BEFORE_JOB` hook.
+static JOB_HOOK_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// How long a held job waits for release at most. Far longer than any
+/// deadline the tests assert, so "returned in time" proves "did not wait".
+const JOB_HOLD_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Holds every scan job until the test releases it, and counts jobs.
+struct HeldJobs {
+    started: Arc<std::sync::atomic::AtomicUsize>,
+    release: std::sync::mpsc::Sender<()>,
+}
+
+impl HeldJobs {
+    fn install() -> Self {
+        let started = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let released = std::sync::Mutex::new(released);
+        let counter = started.clone();
+        *BEFORE_JOB.lock().unwrap() = Some(Arc::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            let _ = released.lock().unwrap().recv_timeout(JOB_HOLD_LIMIT);
+        }));
+        Self { started, release }
+    }
+
+    fn started(&self) -> usize {
+        self.started.load(Ordering::SeqCst)
+    }
+
+    async fn wait_for(&self, jobs: usize) {
+        for _ in 0..200 {
+            if self.started() >= jobs {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        panic!("expected {jobs} scan jobs, saw {}", self.started());
+    }
+}
+
+impl Drop for HeldJobs {
+    fn drop(&mut self) {
+        *BEFORE_JOB.lock().unwrap() = None;
+    }
+}
+
+/// Starts a foreground monitor with no workspaces in a short temp dir and
+/// returns its socket client, its stop switch, and its task.
+async fn start_monitor() -> (
+    tempfile::TempDir,
+    crate::ipc::UnixSocketClient,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<()>>,
+) {
+    let dir = tempfile::Builder::new()
+        .prefix("gsm")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let ipc_dir = dir.path().join("ipc");
+    let socket = ipc_at(ipc_dir.clone()).socket_path();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let task = tokio::spawn(async move {
+        let mut config = Config::default();
+        config.finder.show_ambient = false;
+        run_with(
+            &config,
+            &Output::quiet(),
+            options(ipc_dir),
+            context(MonitorMode::Foreground),
+            async {
+                let _ = stopped.await;
+            },
+        )
+        .await
+    });
+    for _ in 0..200 {
+        if socket.exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(socket.exists(), "the monitor never bound its socket");
+    (dir, crate::ipc::UnixSocketClient::new(socket), stop, task)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_loop_answers_clients_while_a_scan_runs_and_reruns_once() {
+    use crate::ipc::Reply;
+    let _serial = JOB_HOOK_LOCK.lock().await;
+    let jobs = HeldJobs::install();
+    let (_dir, client, stop, task) = start_monitor().await;
+    let quick = std::time::Duration::from_millis(500);
+
+    // Starts a full scan, which the hook holds open.
+    assert_eq!(
+        client.request("REFRESH_ALL", quick).await.unwrap(),
+        Reply::Answered("OK\n".into())
+    );
+    jobs.wait_for(1).await;
+
+    // The loop still answers while that scan runs.
+    assert_eq!(
+        client.request("PING", quick).await.unwrap(),
+        Reply::Answered("PONG\n".into())
+    );
+    // Two more full requests during the scan collapse into one rerun.
+    for _ in 0..2 {
+        assert_eq!(
+            client.request("REFRESH_ALL", quick).await.unwrap(),
+            Reply::Answered("OK\n".into())
+        );
+    }
+
+    jobs.release.send(()).unwrap();
+    jobs.wait_for(2).await;
+    jobs.release.send(()).unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(jobs.started(), 2, "exactly one follow-up scan");
+
+    stop.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), task)
+        .await
+        .expect("monitor must stop promptly")
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_does_not_wait_for_a_running_scan() {
+    let _serial = JOB_HOOK_LOCK.lock().await;
+    let jobs = HeldJobs::install();
+    let (_dir, client, stop, task) = start_monitor().await;
+
+    client
+        .notify("REFRESH_ALL", std::time::Duration::from_millis(500))
+        .await
+        .unwrap();
+    jobs.wait_for(1).await;
+
+    // The scan is still held (up to JOB_HOLD_LIMIT); the loop must return
+    // well before that.
+    stop.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), task)
+        .await
+        .expect("shutdown must not wait for the scan")
+        .unwrap()
+        .unwrap();
+    jobs.release.send(()).unwrap();
+}
+
+#[test]
+fn rescan_pending_records_changed_and_explicit_repos_in_the_ambient_cache() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("repo/.git")).unwrap();
+    let repo = std::fs::canonicalize(tmp.path().join("repo")).unwrap();
+
+    let config = Config::default();
+    let git = crate::git::MockGit::new();
+    let cache = AmbientUpgradeCache::new();
+    let service = RepoScanService::new(&git, &config);
+    let mut status = FinderStatus::new(1, "2026-01-01T00:00:00Z".into());
+
+    // First sight of the repo: it changes the status and is cached.
+    let none = HashSet::new();
+    assert!(rescan_pending(
+        &service,
+        &mut status,
+        &cache,
+        HashSet::from([repo.clone()]),
+        &none
+    ));
+    assert!(cache.get(&repo).is_some());
+
+    // Unchanged and not requested: nothing changes, and the cache is untouched.
+    cache.remove(&repo);
+    assert!(!rescan_pending(
+        &service,
+        &mut status,
+        &cache,
+        HashSet::from([repo.clone()]),
+        &none
+    ));
+    assert!(cache.get(&repo).is_none());
+
+    // Unchanged but named in `REFRESH <path>`: recorded anyway.
+    let explicit = HashSet::from([repo.clone()]);
+    assert!(!rescan_pending(
+        &service,
+        &mut status,
+        &cache,
+        HashSet::from([repo.clone()]),
+        &explicit
+    ));
+    assert!(cache.get(&repo).is_some());
+
+    // A cancelled service stops before the first repo.
+    cache.remove(&repo);
+    let cancelled =
+        RepoScanService::new(&git, &config).with_cancel(Arc::new(AtomicBool::new(true)));
+    assert!(!rescan_pending(
+        &cancelled,
+        &mut status,
+        &cache,
+        HashSet::from([repo.clone()]),
+        &explicit
+    ));
+    assert!(cache.get(&repo).is_none());
+}

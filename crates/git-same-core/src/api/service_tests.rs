@@ -249,3 +249,28 @@ fn test_detect_boot_volume_aliases_invariants() {
         );
     }
 }
+
+#[test]
+fn a_cancelled_scan_stops_before_scanning_anything() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join("alpha/.git")).unwrap();
+
+    let mock = MockGit::new();
+    let mut cfg = Config::default();
+    cfg.finder.show_ambient = true;
+    cfg.finder.scan_roots = vec![tmp.path().to_string_lossy().to_string()];
+    cfg.finder.max_depth = 2;
+    cfg.finder.exclude_dirs = Vec::new();
+    cfg.workspaces = vec![tmp.path().to_string_lossy().to_string()];
+
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let service = RepoScanService::new(&mock, &cfg).with_cancel(cancel.clone());
+    assert!(!service.is_cancelled());
+
+    cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    let status = service.scan_all(1).unwrap();
+    assert!(service.is_cancelled());
+    assert!(status.repos.is_empty(), "no ambient walk after cancel");
+    assert!(status.workspaces.is_empty(), "no workspace after cancel");
+    assert!(mock.call_log().status_checks.is_empty());
+}

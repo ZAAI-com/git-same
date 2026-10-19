@@ -55,23 +55,35 @@ pub(crate) fn run() -> i32 {
     }
 }
 
+/// Upper bound on waiting for blocking work after the monitor loop returned.
+const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn run_inner(managed: bool) -> Result<()> {
     let output = Output::new(Verbosity::Quiet, false);
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| AppError::config(format!("tokio runtime init failed: {error}")))?;
-    if managed {
+    let result = if managed {
         // Identical startup rules to `gisa monitor --foreground --managed`:
         // respect the stored preference, never rewrite a broken config, and
         // exit successfully on anything a restart cannot fix.
-        return runtime.block_on(monitor::run_managed(&output));
-    }
+        runtime.block_on(monitor::run_managed(&output))
+    } else {
+        run_foreground(&runtime, &output)
+    };
+    // A scan that was running at shutdown stops at its next repo; never let
+    // one slow git command hold the exit past launchd's SIGKILL deadline.
+    runtime.shutdown_timeout(SHUTDOWN_TIMEOUT);
+    result
+}
+
+fn run_foreground(runtime: &tokio::runtime::Runtime, output: &Output) -> Result<()> {
     let config = Config::load()?;
     let ipc_config = IpcConfig::default_path()?;
     ipc_config.ensure_dir()?;
     let opts = monitor::Options::from_config(&config, ipc_config, None);
     runtime.block_on(monitor::run(
         &config,
-        &output,
+        output,
         opts,
         monitor::default_shutdown_signal(),
     ))
