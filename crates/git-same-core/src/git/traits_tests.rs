@@ -273,8 +273,24 @@ mod mock_tests {
     #[test]
     fn test_mock_list_ignored_files() {
         let mock = MockGit::new();
-        let files = mock.list_ignored_files(Path::new("/tmp/repo")).unwrap();
+        let files = mock
+            .list_ignored_files(Path::new("/tmp/repo"), &[])
+            .unwrap();
         assert!(files.is_empty());
+
+        let mut config = MockConfig::default();
+        config
+            .ignored_files
+            .insert("/tmp/repo".to_string(), vec!["config/.env".to_string()]);
+        let mock = MockGit::with_config(config);
+        let files = mock
+            .list_ignored_files(Path::new("/tmp/repo"), &[])
+            .unwrap();
+        assert_eq!(files, vec!["config/.env".to_string()]);
+        assert_eq!(
+            mock.call_log().ignored_listings,
+            vec!["/tmp/repo".to_string()]
+        );
     }
 
     #[test]

@@ -143,6 +143,9 @@ fn default_finder_excludes() -> Vec<String> {
         ".npm".into(),
         ".yarn".into(),
         ".venv".into(),
+        "venv".into(),
+        "__pycache__".into(),
+        "vendor".into(),
         ".Trash".into(),
         ".git-same".into(),
         ".zsh_sessions".into(),
@@ -423,11 +426,12 @@ scan_roots = ["~"]
 # Maximum directory depth for the ambient walk.
 max_depth = 8
 
-# Directory names skipped during the ambient walk. Critical for performance.
+# Directory names skipped during the ambient walk, and never looked into by
+# the important-ignored-files check (Blue badge). Critical for performance.
 exclude_dirs = [
     "node_modules", "target", "build", "dist", "DerivedData", "Pods",
     "Library", ".cache", ".cargo", ".rustup", ".npm", ".yarn", ".venv",
-    ".Trash", ".git-same", ".zsh_sessions",
+    "venv", "__pycache__", "vendor", ".Trash", ".git-same", ".zsh_sessions",
 ]
 
 [monitor]

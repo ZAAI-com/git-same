@@ -482,7 +482,72 @@ fn test_stash_count_real() {
 #[ignore]
 fn test_list_ignored_files_real() {
     let git = ShellGit::new();
-    let files = git.list_ignored_files(Path::new("."));
+    let files = git.list_ignored_files(Path::new("."), &[]);
     assert!(files.is_ok());
     // Just check it doesn't error; could be empty
+}
+
+fn skip(names: &[&str]) -> Vec<String> {
+    names.iter().map(|n| n.to_string()).collect()
+}
+
+#[test]
+fn test_split_ignored_entries_drops_dependency_folders() {
+    let listing = ".env\0build/\0config/\0mixed/key.pem\0node_modules/\0\
+                   packages/a/node_modules/\0packages/a/node_modules/x/.env\0\0";
+    let (files, dirs) = split_ignored_entries(listing, &skip(&["node_modules", "build"]));
+    assert_eq!(files, vec![".env", "mixed/key.pem"]);
+    assert_eq!(dirs, vec!["config/"]);
+}
+
+#[test]
+fn test_split_ignored_entries_matches_whole_components_only() {
+    let (files, dirs) = split_ignored_entries(
+        "my_node_modules/.env\0buildtools/\0",
+        &skip(&["node_modules", "build"]),
+    );
+    assert_eq!(files, vec!["my_node_modules/.env"]);
+    assert_eq!(dirs, vec!["buildtools/"]);
+}
+
+#[test]
+fn test_list_ignored_files_looks_inside_folders_but_not_dependencies() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    init_repo_with_commit(repo);
+    std::fs::write(
+        repo.join(".gitignore"),
+        "node_modules/\nconfig/\nbuild/\n.env\n*.pem\n",
+    )
+    .unwrap();
+    for file in [
+        "node_modules/pkg/credentials.d.ts",
+        "config/.env",
+        "config/app.toml",
+        "build/out.pem",
+        ".env",
+        "packages/a/node_modules/x/.env",
+        "mixed/key.pem",
+        "ünï code.pem",
+    ] {
+        let path = repo.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "x").unwrap();
+    }
+
+    let mut files = ShellGit::new()
+        .list_ignored_files(repo, &skip(&["node_modules", "build"]))
+        .unwrap();
+    files.sort();
+    assert_eq!(
+        files,
+        vec![
+            ".env",
+            "config/.env",
+            "config/app.toml",
+            "mixed/key.pem",
+            "ünï code.pem",
+        ],
+        "raw paths, each once, nothing from dependency folders"
+    );
 }

@@ -59,7 +59,7 @@ Git-Same is a Rust CLI + TUI + macOS Tauri app that discovers GitHub org/repo st
 - **`operations/clone.rs`**: `CloneManager` handles concurrent cloning (configurable 1–32, default 4)
 - **`operations/sync.rs`**: `SyncManager` handles fetch/pull with concurrency. Detects repos with uncommitted changes and optionally skips them
 - **`provider/`**: Trait-based provider abstraction (`Provider` trait in `traits.rs`). GitHub implementation in `github/client.rs` with pagination. Mock provider in `mock.rs` for testing
-- **`git/`**: `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands
+- **`git/`**: `GitOperations` trait (`traits.rs`) with `ShellGit` implementation (`shell.rs`) that shells out to `git` commands. `list_ignored_files` (the Blue badge's important-ignored-files check) lists with `--directory`, then looks inside collapsed folders in one more call, skipping `finder.exclude_dirs` dependency folders such as `node_modules`
 - **`cache/`**: `discovery.rs` provides `DiscoveryCache` (TTL-based validity, persisted at `<workspace-root>/.git-same/cache.json`); `sync_history.rs` records sync runs at `<workspace-root>/.git-same/sync-history.json`
 - **`domain/`**: Domain primitives, currently `repo_path_template.rs` for resolving `{org}/{repo}` style structures
 - **`infra/storage/`**: Storage abstractions for workspace-local persistence

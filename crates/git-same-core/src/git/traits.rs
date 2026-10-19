@@ -224,11 +224,18 @@ pub trait GitOperations: Send + Sync {
 
     /// Lists ignored files that exist on disk.
     ///
-    /// Returns file paths relative to the repository root.
+    /// Returns file paths relative to the repository root. Nothing inside a
+    /// folder whose name is in `skip_dirs` is listed (dependency folders
+    /// such as `node_modules`: slow to list and never the user's secrets).
     ///
     /// # Arguments
     /// * `repo_path` - Path to the local repository
-    fn list_ignored_files(&self, repo_path: &Path) -> Result<Vec<String>, GitError>;
+    /// * `skip_dirs` - Folder names whose contents are not listed
+    fn list_ignored_files(
+        &self,
+        repo_path: &Path,
+        skip_dirs: &[String],
+    ) -> Result<Vec<String>, GitError>;
 }
 
 /// A mock implementation of GitOperations for testing.
@@ -245,6 +252,7 @@ pub mod mock {
         pub fetches: Vec<String>,                        // paths
         pub pulls: Vec<String>,                          // paths
         pub status_checks: Vec<String>,                  // paths
+        pub ignored_listings: Vec<String>,               // paths
     }
 
     /// Configuration for mock responses.
@@ -270,6 +278,8 @@ pub mod mock {
         pub valid_repos: Vec<String>,
         /// Custom error message for failures
         pub error_message: Option<String>,
+        /// Ignored files returned by `list_ignored_files`, per repo path
+        pub ignored_files: HashMap<String, Vec<String>>,
     }
 
     impl Default for MockConfig {
@@ -293,6 +303,7 @@ pub mod mock {
                 fail_status_paths: Vec::new(),
                 valid_repos: Vec::new(),
                 error_message: None,
+                ignored_files: HashMap::new(),
             }
         }
     }
@@ -511,8 +522,19 @@ pub mod mock {
             Ok(0)
         }
 
-        fn list_ignored_files(&self, _repo_path: &Path) -> Result<Vec<String>, GitError> {
-            Ok(Vec::new())
+        fn list_ignored_files(
+            &self,
+            repo_path: &Path,
+            _skip_dirs: &[String],
+        ) -> Result<Vec<String>, GitError> {
+            let path = repo_path.to_string_lossy().to_string();
+            self.log.lock().unwrap().ignored_listings.push(path.clone());
+            Ok(self
+                .config
+                .ignored_files
+                .get(&path)
+                .cloned()
+                .unwrap_or_default())
         }
     }
 }

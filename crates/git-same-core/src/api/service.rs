@@ -31,6 +31,7 @@ pub struct RepoScanService<'a> {
     owner_types: Option<OwnerTypeCache>,
     ambient_upgrades: Option<AmbientUpgradeCache>,
     cancel: Option<Arc<AtomicBool>>,
+    ignored_check: bool,
 }
 
 impl<'a> RepoScanService<'a> {
@@ -42,7 +43,15 @@ impl<'a> RepoScanService<'a> {
             owner_types: None,
             ambient_upgrades: None,
             cancel: None,
+            ignored_check: true,
         }
+    }
+
+    /// Turn the important-ignored-files check (the Blue badge) on or off.
+    /// On by default; callers that never show the badge skip its cost.
+    pub fn with_ignored_check(mut self, enabled: bool) -> Self {
+        self.ignored_check = enabled;
+        self
     }
 
     /// Attach a cancel flag. Once it is set, scans stop before the next repo
@@ -441,11 +450,12 @@ impl<'a> RepoScanService<'a> {
             && all_branches_synced
             && all_worktrees_synced;
 
-        let (has_important_ignored_files, important_ignored_files) = if is_otherwise_clean {
-            self.check_important_ignored(repo_path)
-        } else {
-            (false, Vec::new())
-        };
+        let (has_important_ignored_files, important_ignored_files) =
+            if is_otherwise_clean && self.ignored_check {
+                self.check_important_ignored(repo_path)
+            } else {
+                (false, Vec::new())
+            };
 
         // Compute badge. Unreadable repos stay Gray so they don't pose as
         // healthy Green repos in the Finder or in `gisa status`.
@@ -488,9 +498,12 @@ impl<'a> RepoScanService<'a> {
         }
     }
 
-    /// Check if a repo has important ignored files matching the configured patterns.
+    /// Check if a repo has important ignored files matching the configured
+    /// patterns. Dependency folders (`finder.exclude_dirs`, e.g.
+    /// `node_modules`) are not looked into.
     fn check_important_ignored(&self, repo_path: &Path) -> (bool, Vec<String>) {
-        let ignored_files = match self.git.list_ignored_files(repo_path) {
+        let skip_dirs = &self.config.finder.exclude_dirs;
+        let ignored_files = match self.git.list_ignored_files(repo_path, skip_dirs) {
             Ok(files) => files,
             Err(_) => return (false, Vec::new()),
         };

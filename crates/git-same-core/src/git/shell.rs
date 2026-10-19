@@ -8,6 +8,7 @@ use crate::git::traits::{
     BranchInfo, CloneOptions, FetchResult, GitOperations, PullResult, RemoteInfo, RepoStatus,
     WorktreeInfo,
 };
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::{Command, Output};
 use tracing::{debug, trace};
@@ -577,16 +578,88 @@ impl GitOperations for ShellGit {
         }
     }
 
-    fn list_ignored_files(&self, repo_path: &Path) -> Result<Vec<String>, GitError> {
-        let output = self.run_git_output(
-            &["ls-files", "--others", "--ignored", "--exclude-standard"],
-            Some(repo_path),
+    fn list_ignored_files(
+        &self,
+        repo_path: &Path,
+        skip_dirs: &[String],
+    ) -> Result<Vec<String>, GitError> {
+        // Fully ignored folders come back once as `dir/` instead of every
+        // file inside them (astro: 1,137 entries instead of 102,106).
+        let listing = self.run_git_nul_separated(
+            &[
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+            ],
+            repo_path,
         )?;
-        if output.is_empty() {
-            return Ok(Vec::new());
+        let (mut files, dirs) = split_ignored_entries(&listing, skip_dirs);
+
+        // Look inside the collapsed folders that are not dependency folders,
+        // all in one call, so a `config/.env` in an ignored `config/` is
+        // still found.
+        if !dirs.is_empty() {
+            let specs: Vec<String> = dirs.iter().map(|d| format!(":(literal){d}")).collect();
+            let mut args = vec![
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--",
+            ];
+            args.extend(specs.iter().map(String::as_str));
+            let inside = self.run_git_nul_separated(&args, repo_path)?;
+            files.extend(split_ignored_entries(&inside, skip_dirs).0);
         }
-        Ok(output.lines().map(|l| l.to_string()).collect())
+
+        // An untracked folder holding only ignored files is listed both as
+        // `dir/` and as `dir/file`, so the second call can repeat a file.
+        let mut seen = HashSet::new();
+        files.retain(|file| seen.insert(file.clone()));
+        Ok(files)
     }
+}
+
+impl ShellGit {
+    /// Runs a `-z` git command and returns stdout untrimmed: with NUL
+    /// separators, trimming could eat a leading space of the first path.
+    fn run_git_nul_separated(&self, args: &[&str], repo_path: &Path) -> Result<String, GitError> {
+        let output = self.run_git(args, Some(repo_path))?;
+        if !output.status.success() {
+            return Err(GitError::command_failed(
+                format!("git {}", args.join(" ")),
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+}
+
+/// Splits NUL-separated `ls-files --directory` output into ignored files and
+/// collapsed folders (`dir/`), dropping every entry that lies in, or is, a
+/// folder named in `skip_dirs` (dependency folders such as `node_modules`).
+fn split_ignored_entries(listing: &str, skip_dirs: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut files = Vec::new();
+    let mut dirs = Vec::new();
+    for entry in listing.split('\0').filter(|entry| !entry.is_empty()) {
+        let in_skipped_dir = entry
+            .trim_end_matches('/')
+            .split('/')
+            .any(|component| skip_dirs.iter().any(|skip| skip == component));
+        if in_skipped_dir {
+            continue;
+        }
+        if entry.ends_with('/') {
+            dirs.push(entry.to_string());
+        } else {
+            files.push(entry.to_string());
+        }
+    }
+    (files, dirs)
 }
 
 #[cfg(test)]

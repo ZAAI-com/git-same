@@ -274,3 +274,38 @@ fn a_cancelled_scan_stops_before_scanning_anything() {
     assert!(status.workspaces.is_empty(), "no workspace after cancel");
     assert!(mock.call_log().status_checks.is_empty());
 }
+
+fn clean_repo_with_ignored(files: &[&str]) -> (tempfile::TempDir, std::path::PathBuf, MockGit) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    let mut cfg = MockConfig::default();
+    cfg.ignored_files.insert(
+        repo.to_string_lossy().to_string(),
+        files.iter().map(|f| f.to_string()).collect(),
+    );
+    (tmp, repo, MockGit::with_config(cfg))
+}
+
+#[test]
+fn an_important_ignored_file_makes_a_clean_repo_blue() {
+    let (_tmp, repo, mock) = clean_repo_with_ignored(&["config/.env", "config/app.toml"]);
+    let config = default_config();
+    let status = RepoScanService::new(&mock, &config).scan_repo(&repo, None, None);
+    assert_eq!(status.badge, Badge::Blue);
+    assert_eq!(
+        status.important_ignored_files,
+        vec!["config/.env".to_string()]
+    );
+}
+
+#[test]
+fn the_ignored_check_can_be_switched_off() {
+    let (_tmp, repo, mock) = clean_repo_with_ignored(&["config/.env"]);
+    let config = default_config();
+    let status = RepoScanService::new(&mock, &config)
+        .with_ignored_check(false)
+        .scan_repo(&repo, None, None);
+    assert_ne!(status.badge, Badge::Blue);
+    assert!(mock.call_log().ignored_listings.is_empty());
+}

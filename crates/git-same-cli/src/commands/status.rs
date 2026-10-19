@@ -16,7 +16,8 @@ pub async fn run(args: &StatusArgs, config: &Config, output: &Output) -> Result<
 
     // Use the scan service to get full FinderRepoStatus for every repo
     let git = ShellGit::new();
-    let service = RepoScanService::new(&git, config);
+    // `status` never shows the Blue badge, so skip the ignored-files listing.
+    let service = RepoScanService::new(&git, config).with_ignored_check(false);
     let repos = service.scan_workspace(&workspace)?;
 
     if repos.is_empty() {
