@@ -219,3 +219,12 @@ fn render_org_error_shows_retry_prompt() {
     assert!(output.contains("Press Enter to retry"));
     assert!(output.contains("network timeout"));
 }
+
+#[test]
+fn render_org_edit_names_the_workspace() {
+    let ws =
+        git_same_core::config::WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws-edit"));
+    let state = SetupState::for_org_edit(ws, "token".to_string(), None);
+    let output = render_output(&state);
+    assert!(output.contains("Select organizations to sync into /tmp/ws-edit"));
+}

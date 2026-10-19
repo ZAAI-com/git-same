@@ -20,8 +20,13 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
         .map(|o| o.repo_count)
         .sum();
 
+    let title = if state.is_org_edit() {
+        format!("  Select organizations to sync into {}", state.base_path)
+    } else {
+        "  Select organizations to sync".to_string()
+    };
     lines.push(Line::from(Span::styled(
-        "  Select organizations to sync",
+        title,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
@@ -43,6 +48,12 @@ pub fn render(state: &SetupState, frame: &mut Frame, area: Rect) {
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
+    }
+    if let Some(ref err) = state.error_message {
+        lines.push(Line::from(Span::styled(
+            format!("  Error: {}", err),
+            Style::default().fg(Color::Red),
+        )));
     }
     lines.push(Line::raw(""));
 

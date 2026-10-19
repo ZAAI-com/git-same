@@ -100,6 +100,28 @@ pub async fn discover_org_entries(
     }
 }
 
+/// Returns the edited workspace with its orgs replaced by the current selection.
+///
+/// Every other field round-trips unchanged, so `last_synced`, filters, and
+/// provider settings survive the edit.
+pub fn workspace_with_selected_orgs(state: &SetupState) -> Result<WorkspaceConfig> {
+    let Some(ws) = &state.edit_workspace else {
+        return Err(AppError::config("No workspace is being edited"));
+    };
+    let orgs = state.selected_orgs();
+    if orgs.is_empty() {
+        return Err(AppError::config("Select at least one organization"));
+    }
+    let mut ws = ws.clone();
+    ws.orgs = orgs;
+    Ok(ws)
+}
+
+/// Persists the org selection of the workspace being edited.
+pub fn save_workspace_orgs(state: &SetupState) -> Result<()> {
+    WorkspaceManager::save(&workspace_with_selected_orgs(state)?)
+}
+
 /// Persists the workspace represented by setup state.
 pub fn save_workspace(state: &SetupState) -> Result<()> {
     let expanded = shellexpand::tilde(&state.base_path);

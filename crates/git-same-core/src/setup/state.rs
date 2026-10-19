@@ -1,6 +1,6 @@
 //! Setup wizard state (the "Model" in Elm architecture).
 
-use crate::config::WorkspaceProvider;
+use crate::config::{WorkspaceConfig, WorkspaceProvider};
 use crate::types::ProviderKind;
 
 /// Which step of the wizard is active.
@@ -120,6 +120,9 @@ pub struct SetupState {
     pub tick_count: u64,
     /// Whether this is the first workspace setup (controls UI text).
     pub is_first_setup: bool,
+    /// Existing workspace whose org selection is being edited. When set, the
+    /// wizard only shows the org step and saves straight back to this workspace.
+    pub edit_workspace: Option<WorkspaceConfig>,
 }
 
 /// Authentication status during step 3.
@@ -231,7 +234,57 @@ impl SetupState {
             error_message: None,
             tick_count: 0,
             is_first_setup,
+            edit_workspace: None,
         }
+    }
+
+    /// Create state that edits the org selection of an existing workspace.
+    ///
+    /// Starts directly on the org step with discovery pending, since the caller
+    /// has already authenticated.
+    pub fn for_org_edit(ws: WorkspaceConfig, token: String, username: Option<String>) -> Self {
+        let mut state = Self::new(&tilde_collapse(&ws.root_path.to_string_lossy()));
+        state.step = SetupStep::SelectOrgs;
+        state.auth_status = AuthStatus::Success;
+        state.auth_token = Some(token);
+        state.username = username;
+        state.org_loading = true;
+        state.edit_workspace = Some(ws);
+        state
+    }
+
+    /// Whether this state edits an existing workspace's orgs.
+    pub fn is_org_edit(&self) -> bool {
+        self.edit_workspace.is_some()
+    }
+
+    /// Store discovered orgs, preselecting the edited workspace's current orgs.
+    ///
+    /// An empty org list in the workspace means "all", so everything stays
+    /// selected. Configured orgs that discovery did not return are kept as
+    /// selected entries so saving never drops them silently.
+    pub fn apply_discovered_orgs(&mut self, mut entries: Vec<OrgEntry>) {
+        if let Some(ws) = &self.edit_workspace {
+            if !ws.orgs.is_empty() {
+                for entry in &mut entries {
+                    entry.selected = ws.orgs.contains(&entry.name);
+                }
+                for name in &ws.orgs {
+                    if !entries.iter().any(|e| &e.name == name) {
+                        entries.push(OrgEntry {
+                            name: name.clone(),
+                            repo_count: 0,
+                            selected: true,
+                        });
+                    }
+                }
+                entries.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+        }
+        self.orgs = entries;
+        self.org_index = 0;
+        self.org_loading = false;
+        self.org_error = None;
     }
 
     /// Get the selected provider kind.
@@ -345,6 +398,11 @@ impl SetupState {
             }
             SetupStep::SelectProvider => SetupStep::Requirements,
             SetupStep::Authenticate => SetupStep::SelectProvider,
+            SetupStep::SelectOrgs if self.is_org_edit() => {
+                self.outcome = Some(SetupOutcome::Cancelled);
+                self.should_quit = true;
+                SetupStep::SelectOrgs
+            }
             SetupStep::SelectOrgs => SetupStep::Authenticate,
             SetupStep::SelectPath => SetupStep::SelectOrgs,
             SetupStep::Confirm => SetupStep::SelectPath,

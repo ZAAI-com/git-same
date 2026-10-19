@@ -4,7 +4,9 @@ use super::state::{
     tilde_collapse, AuthStatus, PathBrowseEntry, SetupOutcome, SetupState, SetupStep,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use git_same_core::setup::{authenticate_provider, discover_org_entries, save_workspace};
+use git_same_core::setup::{
+    authenticate_provider, discover_org_entries, save_workspace, save_workspace_orgs,
+};
 
 /// Handle a key event in the setup wizard.
 ///
@@ -108,7 +110,7 @@ async fn handle_step_forward(state: &mut SetupState) {
                 state.org_discovery_in_progress = false;
                 state.org_error = None;
             } else {
-                state.next_step();
+                advance_from_orgs(state);
             }
         }
         SetupStep::SelectPath => {
@@ -587,13 +589,28 @@ async fn handle_orgs(state: &mut SetupState, key: KeyEvent) {
                 state.org_discovery_in_progress = false;
                 state.org_error = None;
             } else {
-                state.next_step();
+                advance_from_orgs(state);
             }
         }
         KeyCode::Esc => {
             state.prev_step();
         }
         _ => {}
+    }
+}
+
+/// Leave the org step: save and finish when editing a workspace, else continue.
+fn advance_from_orgs(state: &mut SetupState) {
+    if !state.is_org_edit() {
+        state.next_step();
+        return;
+    }
+    match save_workspace_orgs(state) {
+        Ok(()) => {
+            state.outcome = Some(SetupOutcome::Completed);
+            state.should_quit = true;
+        }
+        Err(e) => state.error_message = Some(e.to_string()),
     }
 }
 
@@ -608,9 +625,7 @@ async fn do_discover_orgs(state: &mut SetupState) {
     let ws_provider = state.build_workspace_provider();
     match discover_org_entries(ws_provider, token.clone()).await {
         Ok(org_entries) => {
-            state.orgs = org_entries;
-            state.org_index = 0;
-            state.org_loading = false;
+            state.apply_discovered_orgs(org_entries);
             state.org_discovery_in_progress = false;
         }
         Err(e) => {

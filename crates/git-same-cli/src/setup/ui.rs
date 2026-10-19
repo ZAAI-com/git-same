@@ -17,7 +17,7 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
 
     // Graceful degradation for small terminals
     let show_banner = height >= 30;
-    let show_progress = height >= 20;
+    let show_progress = height >= 20 && !state.is_org_edit();
 
     let mut constraints = Vec::new();
     if show_banner {
@@ -46,7 +46,9 @@ pub fn render(state: &SetupState, frame: &mut Frame) {
     }
 
     // Title
-    let title_text = if state.is_first_setup {
+    let title_text = if state.is_org_edit() {
+        "Edit Organizations"
+    } else if state.is_first_setup {
         "Workspace Setup"
     } else {
         "New Workspace"
@@ -319,6 +321,13 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
             Span::styled("[Esc]", blue),
             Span::styled(" Close Popup", dim),
         ]
+    } else if state.is_org_edit() {
+        vec![
+            Span::styled("[q]", blue),
+            Span::styled(" Quit  ", dim),
+            Span::styled("[Esc]", blue),
+            Span::styled(" Cancel", dim),
+        ]
     } else {
         vec![
             Span::styled("[q]", blue),
@@ -329,6 +338,12 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
     };
 
     let bottom_right = match state.step {
+        SetupStep::SelectOrgs if state.is_org_edit() => vec![
+            Span::styled("[↑] [↓]", blue),
+            Span::styled(" Move  ", dim),
+            Span::styled("[Enter]", blue),
+            Span::styled(" Save", dim),
+        ],
         SetupStep::SelectProvider | SetupStep::SelectOrgs => vec![
             Span::styled("[↑] [↓]", blue),
             Span::styled(" Move  ", dim),
@@ -361,7 +376,7 @@ fn render_status_bar(state: &SetupState, frame: &mut Frame, area: Rect) {
 
     let rows = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(area);
     let step_num = state.step_number();
-    let step_text = if step_num > 0 {
+    let step_text = if step_num > 0 && !state.is_org_edit() {
         Some(format!("Step {} of {}", step_num, SetupState::TOTAL_STEPS))
     } else {
         None

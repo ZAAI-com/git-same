@@ -124,6 +124,11 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
                 });
             }
         }
+        KeyCode::Char('e') if app.workspace_index < num_ws => {
+            if let Some(ws) = app.workspaces.get(app.workspace_index).cloned() {
+                start_org_edit(app, ws).await;
+            }
+        }
         KeyCode::Char('f') if app.workspace_index < num_ws => {
             // Open workspace folder
             if let Some(ws) = app.workspaces.get(app.workspace_index) {
@@ -132,6 +137,19 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, backend_tx: &UnboundedSend
             }
         }
         _ => {}
+    }
+}
+
+/// Authenticate against the workspace's provider and open the org picker for it.
+async fn start_org_edit(app: &mut App, ws: WorkspaceConfig) {
+    match git_same_core::setup::authenticate_provider(ws.provider.clone()).await {
+        Ok(auth) => {
+            app.setup_state = Some(SetupState::for_org_edit(ws, auth.token, auth.username));
+            app.navigate_to(Screen::WorkspaceSetup);
+        }
+        Err(e) => {
+            app.error_message = Some(format!("Cannot edit organizations: {}", e));
+        }
     }
 }
 
@@ -466,7 +484,15 @@ fn render_workspace_detail(app: &App, ws: &WorkspaceConfig, frame: &mut Frame, a
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("  Account", section_style)));
+    lines.push(section_line_with_hint(
+        area,
+        "Account",
+        "[e]",
+        "Edit organizations",
+        section_style,
+        dim,
+        key_style,
+    ));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled(format!("    {:<14}", "Username"), dim),

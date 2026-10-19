@@ -222,7 +222,11 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
     crate::setup::handler::handle_key(setup, key).await;
 
     if setup.should_quit {
-        if matches!(setup.outcome, Some(SetupOutcome::Completed)) {
+        let completed = matches!(setup.outcome, Some(SetupOutcome::Completed));
+        let edited_root = setup.edit_workspace.as_ref().map(|ws| ws.root_path.clone());
+        if let (true, Some(root)) = (completed, edited_root) {
+            finish_org_edit(app, &root);
+        } else if matches!(setup.outcome, Some(SetupOutcome::Completed)) {
             // Reload workspaces and go to dashboard
             match WorkspaceManager::list() {
                 Ok(workspaces) => {
@@ -256,6 +260,29 @@ async fn handle_setup_wizard_key(app: &mut App, key: KeyEvent) {
             }
         }
     }
+}
+
+/// Reload workspaces after an org edit and return to the Workspaces screen.
+fn finish_org_edit(app: &mut App, root: &std::path::Path) {
+    match WorkspaceManager::list() {
+        Ok(workspaces) => {
+            if let Some(ws) = workspaces.iter().find(|ws| ws.root_path == root) {
+                if app
+                    .active_workspace
+                    .as_ref()
+                    .is_some_and(|active| active.root_path == root)
+                {
+                    app.active_workspace = Some(ws.clone());
+                }
+            }
+            app.workspaces = workspaces;
+        }
+        Err(e) => {
+            app.error_message = Some(format!("Failed to load workspaces: {}", e));
+        }
+    }
+    app.setup_state = None;
+    app.go_back();
 }
 
 /// Compute the filesystem path for a repo from its full name (e.g. "org/repo").
@@ -329,10 +356,7 @@ fn handle_backend_message(
             if let Some(setup) = app.setup_state.as_mut() {
                 setup.org_discovery_in_progress = false;
                 if setup.step == SetupStep::SelectOrgs {
-                    setup.orgs = orgs;
-                    setup.org_index = 0;
-                    setup.org_loading = false;
-                    setup.org_error = None;
+                    setup.apply_discovered_orgs(orgs);
                 }
             }
         }

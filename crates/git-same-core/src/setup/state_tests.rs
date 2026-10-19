@@ -203,3 +203,63 @@ fn test_step_number() {
 fn test_total_steps_is_six() {
     assert_eq!(SetupState::TOTAL_STEPS, 6);
 }
+
+fn org(name: &str, repo_count: usize) -> OrgEntry {
+    OrgEntry {
+        name: name.to_string(),
+        repo_count,
+        selected: true,
+    }
+}
+
+fn edit_state(orgs: &[&str]) -> SetupState {
+    let mut ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws"));
+    ws.orgs = orgs.iter().map(|o| o.to_string()).collect();
+    SetupState::for_org_edit(ws, "token".to_string(), Some("me".to_string()))
+}
+
+#[test]
+fn for_org_edit_starts_on_org_step_with_discovery_pending() {
+    let state = edit_state(&["a"]);
+    assert!(state.is_org_edit());
+    assert_eq!(state.step, SetupStep::SelectOrgs);
+    assert_eq!(state.auth_status, AuthStatus::Success);
+    assert_eq!(state.auth_token.as_deref(), Some("token"));
+    assert!(state.org_loading);
+    assert!(!state.org_discovery_in_progress);
+}
+
+#[test]
+fn apply_discovered_orgs_preselects_configured_orgs_and_keeps_missing_ones() {
+    let mut state = edit_state(&["b", "gone"]);
+    state.org_loading = true;
+    state.apply_discovered_orgs(vec![org("c", 1), org("b", 2), org("a", 3)]);
+
+    let summary: Vec<(&str, bool)> = state
+        .orgs
+        .iter()
+        .map(|o| (o.name.as_str(), o.selected))
+        .collect();
+    assert_eq!(
+        summary,
+        vec![("a", false), ("b", true), ("c", false), ("gone", true)]
+    );
+    assert!(!state.org_loading);
+    assert_eq!(state.selected_orgs(), vec!["b", "gone"]);
+}
+
+#[test]
+fn apply_discovered_orgs_with_empty_config_selects_all() {
+    let mut state = edit_state(&[]);
+    state.apply_discovered_orgs(vec![org("a", 1), org("b", 2)]);
+    assert!(state.orgs.iter().all(|o| o.selected));
+}
+
+#[test]
+fn prev_step_on_org_edit_cancels() {
+    let mut state = edit_state(&["a"]);
+    state.prev_step();
+    assert!(state.should_quit);
+    assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+    assert_eq!(state.step, SetupStep::SelectOrgs);
+}

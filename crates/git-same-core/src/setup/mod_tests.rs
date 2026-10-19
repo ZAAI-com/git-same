@@ -77,3 +77,46 @@ async fn standalone_requirements_step_auto_runs_checks_end_to_end() {
     assert!(!state.check_results.is_empty());
     assert_eq!(state.step, SetupStep::Requirements);
 }
+
+#[test]
+fn workspace_with_selected_orgs_replaces_only_orgs() {
+    let mut ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws"));
+    ws.orgs = vec!["old".to_string()];
+    ws.username = "me".to_string();
+    ws.last_synced = Some("2026-10-19T14:18:18+00:00".to_string());
+    ws.filters.include_forks = true;
+
+    let mut state = SetupState::for_org_edit(ws, "token".to_string(), None);
+    state.apply_discovered_orgs(vec![
+        OrgEntry {
+            name: "new".to_string(),
+            repo_count: 1,
+            selected: true,
+        },
+        OrgEntry {
+            name: "old".to_string(),
+            repo_count: 1,
+            selected: true,
+        },
+    ]);
+    state.orgs[0].selected = true; // tick "new"
+
+    let updated = workspace_with_selected_orgs(&state).unwrap();
+    assert_eq!(updated.orgs, vec!["new", "old"]);
+    assert_eq!(updated.username, "me");
+    assert_eq!(
+        updated.last_synced.as_deref(),
+        Some("2026-10-19T14:18:18+00:00")
+    );
+    assert!(updated.filters.include_forks);
+}
+
+#[test]
+fn workspace_with_selected_orgs_rejects_empty_selection_and_non_edit_state() {
+    let ws = WorkspaceConfig::new_from_root(std::path::Path::new("/tmp/ws"));
+    let state = SetupState::for_org_edit(ws, "token".to_string(), None);
+    assert!(workspace_with_selected_orgs(&state).is_err());
+
+    let state = SetupState::new("~/Git-Same/GitHub");
+    assert!(workspace_with_selected_orgs(&state).is_err());
+}

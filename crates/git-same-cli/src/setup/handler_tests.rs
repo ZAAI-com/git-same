@@ -777,3 +777,46 @@ async fn unreadable_directory_surfaces_inline_error() {
     reset.set_mode(0o700);
     std::fs::set_permissions(&locked, reset).unwrap();
 }
+
+fn org_edit_state() -> SetupState {
+    let ws = git_same_core::config::WorkspaceConfig::new_from_root(std::path::Path::new(
+        "/tmp/git-same-org-edit",
+    ));
+    let mut state = SetupState::for_org_edit(ws, "token".to_string(), None);
+    state.apply_discovered_orgs(vec![git_same_core::setup::OrgEntry {
+        name: "a".to_string(),
+        repo_count: 1,
+        selected: false,
+    }]);
+    state
+}
+
+#[tokio::test]
+async fn org_edit_enter_does_not_advance_to_path_step() {
+    let mut state = org_edit_state();
+    // Nothing selected: save is rejected before touching disk.
+    state.orgs[0].selected = false;
+
+    handle_key(
+        &mut state,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    )
+    .await;
+
+    assert_eq!(state.step, SetupStep::SelectOrgs);
+    assert!(!state.should_quit);
+    assert_eq!(
+        state.error_message.as_deref(),
+        Some("Configuration error: Select at least one organization")
+    );
+}
+
+#[tokio::test]
+async fn org_edit_left_cancels() {
+    let mut state = org_edit_state();
+
+    handle_key(&mut state, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)).await;
+
+    assert!(state.should_quit);
+    assert!(matches!(state.outcome, Some(SetupOutcome::Cancelled)));
+}
