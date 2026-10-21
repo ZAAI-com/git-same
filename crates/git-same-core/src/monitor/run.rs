@@ -215,7 +215,7 @@ where
 
     let live = LiveConfig::new(config.clone(), context.config_path.clone());
     let status_writer = ipc_config.status_writer();
-    let git = ShellGit::new();
+    let git = ShellGit::background();
 
     let owner_types = OwnerTypeCache::load(OwnerTypeCache::default_path(&ipc_config.dir));
     let ambient_upgrades = AmbientUpgradeCache::new();
@@ -413,7 +413,7 @@ where
                 job_is_full = true;
                 job = Some(tokio::task::spawn_blocking(move || {
                     before_job_hook();
-                    let git = ShellGit::new();
+                    let git = ShellGit::background();
                     let started = std::time::Instant::now();
                     let result = RepoScanService::new(&git, &config)
                         .with_owner_types(owner_types)
@@ -442,7 +442,7 @@ where
                     let mut snapshot = status.clone();
                     job = Some(tokio::task::spawn_blocking(move || {
                         before_job_hook();
-                        let git = ShellGit::new();
+                        let git = ShellGit::background();
                         let service = RepoScanService::new(&git, &config)
                             .with_owner_types(owner_types)
                             .with_ambient_upgrades(ambient_upgrades.clone())

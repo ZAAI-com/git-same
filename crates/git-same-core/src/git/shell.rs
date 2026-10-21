@@ -3,31 +3,56 @@
 //! This module provides the real implementation of git operations
 //! by invoking git commands through the shell.
 
+use crate::auth::process::run_with_timeout;
 use crate::errors::GitError;
 use crate::git::traits::{
     BranchInfo, CloneOptions, FetchResult, GitOperations, PullResult, RemoteInfo, RepoStatus,
     WorktreeInfo,
 };
 use std::collections::HashSet;
-use std::path::Path;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
+use std::time::Duration;
 use tracing::{debug, trace};
+
+/// Apple's `/usr/bin/git`: a launcher that looks up the active developer
+/// directory on every call before starting the real git.
+const APPLE_GIT_LAUNCHER: &str = "/usr/bin/git";
+
+/// How long resolving the real git through `xcrun` may take.
+const XCRUN_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The git program every call runs, resolved once per process.
+static GIT_PROGRAM: OnceLock<PathBuf> = OnceLock::new();
 
 /// Shell-based git operations.
 ///
 /// This implementation executes git commands via the shell and parses their output.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct ShellGit;
+pub struct ShellGit {
+    /// Background callers (the monitor) do not emit git trace2 events.
+    background: bool,
+}
 
 impl ShellGit {
     /// Creates a new ShellGit instance.
     pub fn new() -> Self {
-        Self
+        Self { background: false }
+    }
+
+    /// A ShellGit for the background monitor. Its git calls skip trace2
+    /// events, so a user's trace2 target (an activity daemon, for example)
+    /// sees the user's own git work instead of thousands of status reads per
+    /// scan, and each call is cheaper.
+    pub fn background() -> Self {
+        Self { background: true }
     }
 
     /// Builds a git command with the environment every call runs under.
-    fn git_command(args: &[&str], cwd: Option<&Path>) -> Command {
-        let mut cmd = Command::new("git");
+    fn command_for(&self, program: &Path, args: &[&str], cwd: Option<&Path>) -> Command {
+        let mut cmd = Command::new(program);
         cmd.args(args);
 
         if let Some(dir) = cwd {
@@ -44,12 +69,38 @@ impl ShellGit {
         // fetch and pull still take the locks they need.
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
 
+        if self.background {
+            cmd.env("GIT_TRACE2_EVENT", "0");
+        }
+
         cmd
     }
 
     /// Runs a git command and returns the output.
     fn run_git(&self, args: &[&str], cwd: Option<&Path>) -> Result<Output, GitError> {
-        Self::git_command(args, cwd).output().map_err(|e| {
+        self.run_git_with(git_program(), args, cwd)
+    }
+
+    /// Runs `program`, falling back to `git` from `PATH` when the resolved
+    /// program is gone (an Xcode deleted or switched while a long-running
+    /// monitor kept the old path).
+    fn run_git_with(
+        &self,
+        program: &Path,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> Result<Output, GitError> {
+        let output = match self.command_for(program, args, cwd).output() {
+            Err(e) if e.kind() == ErrorKind::NotFound && program != Path::new("git") => {
+                debug!(
+                    program = %program.display(),
+                    "Resolved git is gone; using git from PATH"
+                );
+                self.command_for(Path::new("git"), args, cwd).output()
+            }
+            other => other,
+        };
+        output.map_err(|e| {
             GitError::command_failed(
                 format!("git {}", args.join(" ")),
                 format!("Failed to execute: {}", e),
@@ -660,6 +711,64 @@ fn split_ignored_entries(listing: &str, skip_dirs: &[String]) -> (Vec<String>, V
         }
     }
     (files, dirs)
+}
+
+/// The git program to run, resolved on first use.
+fn git_program() -> &'static Path {
+    GIT_PROGRAM.get_or_init(|| {
+        let program = choose_git_program(
+            cfg!(target_os = "macos"),
+            find_on_path("git"),
+            std::env::var_os("DEVELOPER_DIR").is_some(),
+            xcrun_find_git,
+        );
+        debug!(program = %program.display(), "Resolved git program");
+        program
+    })
+}
+
+/// Picks the git binary to run.
+///
+/// Only Apple's launcher is replaced: on macOS, when the `git` on `PATH` is
+/// `/usr/bin/git`, the real binary it would start is used directly, which
+/// saves the launcher's lookup on every call (2,000+ calls per monitor scan).
+/// A git the user installed (Homebrew, for example) and a per-shell
+/// `DEVELOPER_DIR` keep working through plain `git`, as does any failure.
+fn choose_git_program(
+    is_macos: bool,
+    path_git: Option<PathBuf>,
+    developer_dir_set: bool,
+    xcrun_git: impl FnOnce() -> Option<PathBuf>,
+) -> PathBuf {
+    let plain = PathBuf::from("git");
+    if !is_macos || developer_dir_set {
+        return plain;
+    }
+    if path_git.as_deref() != Some(Path::new(APPLE_GIT_LAUNCHER)) {
+        return plain;
+    }
+    match xcrun_git() {
+        Some(real) if real.is_file() => real,
+        _ => plain,
+    }
+}
+
+/// The first `name` on `PATH` that is a file.
+fn find_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// Asks Xcode which git binary `/usr/bin/git` would start.
+fn xcrun_find_git() -> Option<PathBuf> {
+    let output = run_with_timeout("/usr/bin/xcrun", &["--find", "git"], XCRUN_TIMEOUT).ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let found = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!found.is_empty()).then(|| PathBuf::from(found))
 }
 
 #[cfg(test)]

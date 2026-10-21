@@ -148,16 +148,90 @@ fn test_parse_status_counts_each_file_line() {
 
 #[test]
 fn test_git_command_disables_optional_locks() {
-    let cmd = ShellGit::git_command(&["status", "--porcelain"], Some(Path::new("/tmp/repo")));
+    let cmd = ShellGit::new().command_for(
+        git_program(),
+        &["status", "--porcelain"],
+        Some(Path::new("/tmp/repo")),
+    );
     let envs: Vec<_> = cmd.get_envs().collect();
     assert!(
         envs.contains(&(OsStr::new("GIT_OPTIONAL_LOCKS"), Some(OsStr::new("0")))),
         "status must not take .git/index.lock: {envs:?}"
     );
     assert!(envs.contains(&(OsStr::new("GIT_TERMINAL_PROMPT"), Some(OsStr::new("0")))));
+    assert!(
+        !envs
+            .iter()
+            .any(|(key, _)| *key == OsStr::new("GIT_TRACE2_EVENT")),
+        "foreground git calls stay traced: {envs:?}"
+    );
+    assert_eq!(cmd.get_program(), git_program().as_os_str());
     let args: Vec<_> = cmd.get_args().collect();
     assert_eq!(args, ["status", "--porcelain"]);
     assert_eq!(cmd.get_current_dir(), Some(Path::new("/tmp/repo")));
+}
+
+#[test]
+fn test_background_git_calls_skip_trace2() {
+    let cmd = ShellGit::background().command_for(Path::new("git"), &["status"], None);
+    let envs: Vec<_> = cmd.get_envs().collect();
+    for key in [
+        "GIT_TRACE2_EVENT",
+        "GIT_OPTIONAL_LOCKS",
+        "GIT_TERMINAL_PROMPT",
+    ] {
+        assert!(
+            envs.contains(&(OsStr::new(key), Some(OsStr::new("0")))),
+            "{key}=0 missing: {envs:?}"
+        );
+    }
+}
+
+#[test]
+fn test_choose_git_program_replaces_only_apples_launcher() {
+    let real = tempfile::NamedTempFile::new().unwrap();
+    let real_path = real.path().to_path_buf();
+    let launcher = Some(PathBuf::from("/usr/bin/git"));
+    let homebrew = Some(PathBuf::from("/opt/homebrew/bin/git"));
+    let plain = PathBuf::from("git");
+    let found = || Some(real_path.clone());
+
+    assert_eq!(
+        choose_git_program(true, launcher.clone(), false, found),
+        real_path
+    );
+    assert_eq!(
+        choose_git_program(true, launcher.clone(), false, || None),
+        plain
+    );
+    assert_eq!(
+        choose_git_program(true, launcher.clone(), true, found),
+        plain,
+        "DEVELOPER_DIR keeps the launcher in charge"
+    );
+    assert_eq!(
+        choose_git_program(true, homebrew, false, found),
+        plain,
+        "a git the user installed is kept"
+    );
+    assert_eq!(choose_git_program(true, None, false, found), plain);
+    assert_eq!(
+        choose_git_program(true, launcher.clone(), false, || {
+            Some(PathBuf::from("/nonexistent/git"))
+        }),
+        plain,
+        "xcrun pointing at a missing file"
+    );
+    assert_eq!(choose_git_program(false, launcher, false, found), plain);
+}
+
+#[test]
+fn test_a_vanished_git_program_falls_back_to_git_on_path() {
+    let output = ShellGit::new()
+        .run_git_with(Path::new("/nonexistent/xcode/git"), &["--version"], None)
+        .unwrap();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("git version"));
 }
 
 /// Runs git for test setup, isolated from the user's global and system
