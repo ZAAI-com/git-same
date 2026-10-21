@@ -306,3 +306,118 @@ async fn test_clone_repos_zero_concurrency_is_clamped() {
 
     assert_eq!(summary.skipped, 1);
 }
+
+/// Records `start:<repo>:<index>` and `done:<repo>:<index>` in call order.
+/// Optionally holds one repository's start for a while to make it finish last.
+#[derive(Default)]
+struct RecordingProgress {
+    events: std::sync::Mutex<Vec<String>>,
+    slow: Option<&'static str>,
+}
+
+impl RecordingProgress {
+    fn record(&self, kind: &str, repo: &OwnedRepo, index: usize) {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("{kind}:{}:{index}", repo.full_name()));
+    }
+
+    fn events(&self) -> Vec<String> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl CloneProgress for RecordingProgress {
+    fn on_start(&self, repo: &OwnedRepo, index: usize, _total: usize) {
+        self.record("start", repo, index);
+        if self.slow == Some(repo.full_name()) {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+
+    fn on_complete(&self, repo: &OwnedRepo, index: usize, _total: usize) {
+        self.record("done", repo, index);
+    }
+
+    fn on_error(&self, repo: &OwnedRepo, _error: &str, index: usize, _total: usize) {
+        self.record("done", repo, index);
+    }
+
+    fn on_skip(&self, repo: &OwnedRepo, _reason: &str, index: usize, _total: usize) {
+        self.record("done", repo, index);
+    }
+}
+
+#[tokio::test]
+async fn test_clone_repos_reports_each_clone_as_it_finishes() {
+    let temp = TempDir::new().unwrap();
+    let manager = CloneManager::new(
+        MockGit::new(),
+        CloneManagerOptions::new().with_concurrency(1),
+    );
+    let repos = vec![
+        test_repo("repo1", "org"),
+        test_repo("repo2", "org"),
+        test_repo("repo3", "org"),
+    ];
+
+    let progress = Arc::new(RecordingProgress::default());
+    let progress_dyn: Arc<dyn CloneProgress> = progress.clone();
+    manager
+        .clone_repos(temp.path(), repos, "github", progress_dyn)
+        .await;
+
+    // Before, every start was reported before the first finish.
+    assert_eq!(
+        progress.events(),
+        vec![
+            "start:org/repo1:0",
+            "done:org/repo1:0",
+            "start:org/repo2:1",
+            "done:org/repo2:1",
+            "start:org/repo3:2",
+            "done:org/repo3:2",
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_clone_repos_a_slow_repo_does_not_hold_the_count_back() {
+    let temp = TempDir::new().unwrap();
+    let options = CloneManagerOptions::new()
+        .with_concurrency(3)
+        .with_dry_run(true);
+    let manager = CloneManager::new(MockGit::new(), options);
+    let repos = vec![
+        test_repo("repo1", "org"),
+        test_repo("repo2", "org"),
+        test_repo("repo3", "org"),
+    ];
+
+    let progress = Arc::new(RecordingProgress {
+        slow: Some("org/repo1"),
+        ..Default::default()
+    });
+    let progress_dyn: Arc<dyn CloneProgress> = progress.clone();
+    let (_summary, results) = manager
+        .clone_repos(temp.path(), repos, "github", progress_dyn)
+        .await;
+
+    let done: Vec<String> = progress
+        .events()
+        .into_iter()
+        .filter(|e| e.starts_with("done:"))
+        .collect();
+    // The slow first repo finishes last, and the finished callbacks count
+    // completions (0, 1, 2) instead of repeating input positions.
+    assert_eq!(done.len(), 3);
+    assert_eq!(done[2], "done:org/repo1:2");
+    assert!(
+        done[0].ends_with(":0") && done[1].ends_with(":1"),
+        "{done:?}"
+    );
+    // Results still come back in input order.
+    let names: Vec<&str> = results.iter().map(|r| r.repo.full_name()).collect();
+    assert_eq!(names, vec!["org/repo1", "org/repo2", "org/repo3"]);
+}

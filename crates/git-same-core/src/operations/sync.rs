@@ -34,27 +34,34 @@
 
 use crate::git::{FetchResult, GitOperations, PullResult, RepoStatus};
 use crate::types::{OpResult, OpSummary, OwnedRepo};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::task::{self, JoinSet};
 
 use super::clone::{MAX_CONCURRENCY, MIN_CONCURRENCY};
 
 /// Progress callback for sync operations.
+///
+/// `on_start` receives the repository's position in the input list. The
+/// finishing callbacks (`on_fetch_complete`, `on_pull_complete`, `on_error`,
+/// `on_skip`) arrive as each sync finishes and receive a completion counter
+/// instead: the number of syncs that finished before this one, so
+/// `index + 1` is the live completed count.
 pub trait SyncProgress: Send + Sync {
-    /// Called when a sync operation starts.
+    /// Called when a sync operation starts. `index` is the input position.
     fn on_start(&self, repo: &OwnedRepo, path: &Path, index: usize, total: usize);
 
-    /// Called when a fetch completes.
+    /// Called when a fetch completes. `index` counts completions.
     fn on_fetch_complete(&self, repo: &OwnedRepo, result: &FetchResult, index: usize, total: usize);
 
-    /// Called when a pull completes.
+    /// Called when a pull completes. `index` counts completions.
     fn on_pull_complete(&self, repo: &OwnedRepo, result: &PullResult, index: usize, total: usize);
 
-    /// Called when a sync fails.
+    /// Called when a sync fails. `index` counts completions.
     fn on_error(&self, repo: &OwnedRepo, error: &str, index: usize, total: usize);
 
-    /// Called when a sync is skipped.
+    /// Called when a sync is skipped. `index` counts completions.
     fn on_skip(&self, repo: &OwnedRepo, reason: &str, index: usize, total: usize);
 }
 
@@ -204,6 +211,11 @@ impl<G: GitOperations + 'static> SyncManager<G> {
     }
 
     /// Syncs repositories in parallel.
+    ///
+    /// Returns a summary and the individual results, in input order.
+    /// Progress is reported as each repository finishes, not in input order,
+    /// so one slow repository never holds the count back. Dropping the
+    /// returned future aborts the syncs that have not finished.
     pub async fn sync_repos(
         &self,
         repos: Vec<LocalRepo>,
@@ -214,265 +226,269 @@ impl<G: GitOperations + 'static> SyncManager<G> {
             .options
             .concurrency
             .clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
-        let semaphore = Arc::new(Semaphore::new(concurrency));
-        let mut handles = Vec::with_capacity(total);
+        let mut queued = repos.into_iter().enumerate();
+        let mut running: JoinSet<SyncResult> = JoinSet::new();
+        // Who each task is, so a panicked task is still reported against its
+        // repository and sorted back into place.
+        let mut identities: HashMap<task::Id, (usize, LocalRepo)> = HashMap::new();
+        let mut summary = OpSummary::new();
+        let mut results: Vec<(usize, SyncResult)> = Vec::with_capacity(total);
+        let mut completed = 0;
 
-        for (index, local_repo) in repos.into_iter().enumerate() {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
-            let git = self.git.clone();
-            let mode = self.options.mode;
-            let skip_uncommitted = self.options.skip_uncommitted;
-            let dry_run = self.options.dry_run;
-            let progress = Arc::clone(&progress);
-            let panic_repo = local_repo.clone();
-
-            let handle = tokio::spawn(async move {
-                // Notify progress - sync starting
-                progress.on_start(&local_repo.repo, &local_repo.path, index, total);
-                let path = local_repo.path.clone();
-
-                // Check if path exists and is a repo
-                if !path.exists() {
-                    drop(permit);
-                    return SyncResult {
-                        repo: local_repo.repo,
-                        path,
-                        result: OpResult::Skipped("path does not exist".to_string()),
-                        had_updates: false,
-                        status: None,
-                        fetch_result: None,
-                        pull_result: None,
-                    };
-                }
-                if !git.is_repo(&path) {
-                    drop(permit);
-                    return SyncResult {
-                        repo: local_repo.repo,
-                        path,
-                        result: OpResult::Skipped("not a git repository".to_string()),
-                        had_updates: false,
-                        status: None,
-                        fetch_result: None,
-                        pull_result: None,
-                    };
-                }
-
-                // Get status (blocking)
-                let status = match tokio::task::spawn_blocking({
-                    let git = git.clone();
-                    let path = path.clone();
-                    move || git.status(&path)
-                })
-                .await
-                {
-                    Ok(Ok(status)) => Some(status),
-                    Ok(Err(e)) if skip_uncommitted => {
-                        drop(permit);
-                        return SyncResult {
-                            repo: local_repo.repo,
-                            path,
-                            result: OpResult::Skipped(format!("failed to get status: {}", e)),
-                            had_updates: false,
-                            status: None,
-                            fetch_result: None,
-                            pull_result: None,
-                        };
-                    }
-                    Ok(Err(_)) => None,
-                    Err(e) if skip_uncommitted => {
-                        drop(permit);
-                        return SyncResult {
-                            repo: local_repo.repo,
-                            path,
-                            result: OpResult::Skipped(format!(
-                                "failed to get status: task join error: {}",
-                                e
-                            )),
-                            had_updates: false,
-                            status: None,
-                            fetch_result: None,
-                            pull_result: None,
-                        };
-                    }
-                    Err(_) => None,
+        loop {
+            // Keep `concurrency` syncs running; start the next one as soon as
+            // a slot frees up.
+            while running.len() < concurrency {
+                let Some((index, local_repo)) = queued.next() else {
+                    break;
                 };
+                let git = self.git.clone();
+                let mode = self.options.mode;
+                let skip_uncommitted = self.options.skip_uncommitted;
+                let dry_run = self.options.dry_run;
+                let progress = Arc::clone(&progress);
+                let identity = (index, local_repo.clone());
 
-                // Check if uncommitted and should skip
-                if skip_uncommitted {
-                    if let Some(ref s) = status {
-                        if s.is_uncommitted || s.has_untracked {
-                            drop(permit);
+                let handle = running.spawn(async move {
+                    // Notify progress - sync starting
+                    progress.on_start(&local_repo.repo, &local_repo.path, index, total);
+                    let path = local_repo.path.clone();
+
+                    // Check if path exists and is a repo
+                    if !path.exists() {
+                        return SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Skipped("path does not exist".to_string()),
+                            had_updates: false,
+                            status: None,
+                            fetch_result: None,
+                            pull_result: None,
+                        };
+                    }
+                    if !git.is_repo(&path) {
+                        return SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Skipped("not a git repository".to_string()),
+                            had_updates: false,
+                            status: None,
+                            fetch_result: None,
+                            pull_result: None,
+                        };
+                    }
+
+                    // Get status (blocking)
+                    let status = match tokio::task::spawn_blocking({
+                        let git = git.clone();
+                        let path = path.clone();
+                        move || git.status(&path)
+                    })
+                    .await
+                    {
+                        Ok(Ok(status)) => Some(status),
+                        Ok(Err(e)) if skip_uncommitted => {
                             return SyncResult {
                                 repo: local_repo.repo,
                                 path,
-                                result: OpResult::Skipped("uncommitted changes".to_string()),
+                                result: OpResult::Skipped(format!("failed to get status: {}", e)),
+                                had_updates: false,
+                                status: None,
+                                fetch_result: None,
+                                pull_result: None,
+                            };
+                        }
+                        Ok(Err(_)) => None,
+                        Err(e) if skip_uncommitted => {
+                            return SyncResult {
+                                repo: local_repo.repo,
+                                path,
+                                result: OpResult::Skipped(format!(
+                                    "failed to get status: task join error: {}",
+                                    e
+                                )),
+                                had_updates: false,
+                                status: None,
+                                fetch_result: None,
+                                pull_result: None,
+                            };
+                        }
+                        Err(_) => None,
+                    };
+
+                    // Check if uncommitted and should skip
+                    if skip_uncommitted {
+                        if let Some(ref s) = status {
+                            if s.is_uncommitted || s.has_untracked {
+                                return SyncResult {
+                                    repo: local_repo.repo,
+                                    path,
+                                    result: OpResult::Skipped("uncommitted changes".to_string()),
+                                    had_updates: false,
+                                    status,
+                                    fetch_result: None,
+                                    pull_result: None,
+                                };
+                            }
+                        }
+                    }
+
+                    // Dry run
+                    if dry_run {
+                        return SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Skipped("dry run".to_string()),
+                            had_updates: false,
+                            status,
+                            fetch_result: None,
+                            pull_result: None,
+                        };
+                    }
+
+                    // Perform fetch (blocking)
+                    let fetch_result = tokio::task::spawn_blocking({
+                        let git = git.clone();
+                        let path = path.clone();
+                        move || git.fetch(&path)
+                    })
+                    .await;
+
+                    let fetch_result = match fetch_result {
+                        Ok(Ok(r)) => r,
+                        Ok(Err(e)) => {
+                            return SyncResult {
+                                repo: local_repo.repo,
+                                path,
+                                result: OpResult::Failed(e.to_string()),
                                 had_updates: false,
                                 status,
                                 fetch_result: None,
                                 pull_result: None,
                             };
                         }
-                    }
-                }
-
-                // Dry run
-                if dry_run {
-                    drop(permit);
-                    return SyncResult {
-                        repo: local_repo.repo,
-                        path,
-                        result: OpResult::Skipped("dry run".to_string()),
-                        had_updates: false,
-                        status,
-                        fetch_result: None,
-                        pull_result: None,
+                        Err(e) => {
+                            return SyncResult {
+                                repo: local_repo.repo,
+                                path,
+                                result: OpResult::Failed(format!("Task panicked: {}", e)),
+                                had_updates: false,
+                                status,
+                                fetch_result: None,
+                                pull_result: None,
+                            };
+                        }
                     };
-                }
 
-                // Perform fetch (blocking)
-                let fetch_result = tokio::task::spawn_blocking({
-                    let git = git.clone();
-                    let path = path.clone();
-                    move || git.fetch(&path)
-                })
-                .await;
+                    let had_updates = fetch_result.updated;
 
-                let fetch_result = match fetch_result {
-                    Ok(Ok(r)) => r,
-                    Ok(Err(e)) => {
-                        drop(permit);
-                        return SyncResult {
-                            repo: local_repo.repo,
-                            path,
-                            result: OpResult::Failed(e.to_string()),
-                            had_updates: false,
-                            status,
-                            fetch_result: None,
-                            pull_result: None,
-                        };
-                    }
-                    Err(e) => {
-                        drop(permit);
-                        return SyncResult {
-                            repo: local_repo.repo,
-                            path,
-                            result: OpResult::Failed(format!("Task panicked: {}", e)),
-                            had_updates: false,
-                            status,
-                            fetch_result: None,
-                            pull_result: None,
-                        };
-                    }
-                };
+                    // If pull mode and has updates, do pull
+                    if mode == SyncMode::Pull && had_updates {
+                        let pull_task_result = tokio::task::spawn_blocking({
+                            let git = git.clone();
+                            let path = path.clone();
+                            move || git.pull(&path)
+                        })
+                        .await;
 
-                let had_updates = fetch_result.updated;
-
-                // If pull mode and has updates, do pull
-                if mode == SyncMode::Pull && had_updates {
-                    let pull_task_result = tokio::task::spawn_blocking({
-                        let git = git.clone();
-                        let path = path.clone();
-                        move || git.pull(&path)
-                    })
-                    .await;
-
-                    let (result, actual_pull_result) = match pull_task_result {
-                        Ok(Ok(r)) if r.success => (OpResult::Success, Some(r)),
-                        Ok(Ok(r)) => (
-                            OpResult::Failed(
-                                r.error.clone().unwrap_or_else(|| "Pull failed".to_string()),
+                        let (result, actual_pull_result) = match pull_task_result {
+                            Ok(Ok(r)) if r.success => (OpResult::Success, Some(r)),
+                            Ok(Ok(r)) => (
+                                OpResult::Failed(
+                                    r.error.clone().unwrap_or_else(|| "Pull failed".to_string()),
+                                ),
+                                Some(r),
                             ),
-                            Some(r),
-                        ),
-                        Ok(Err(e)) => (OpResult::Failed(e.to_string()), None),
-                        Err(e) => (OpResult::Failed(format!("Task panicked: {}", e)), None),
-                    };
+                            Ok(Err(e)) => (OpResult::Failed(e.to_string()), None),
+                            Err(e) => (OpResult::Failed(format!("Task panicked: {}", e)), None),
+                        };
 
-                    drop(permit);
-                    SyncResult {
-                        repo: local_repo.repo,
-                        path,
-                        result,
-                        had_updates,
-                        status,
-                        fetch_result: Some(fetch_result),
-                        pull_result: actual_pull_result,
-                    }
-                } else {
-                    drop(permit);
-                    SyncResult {
-                        repo: local_repo.repo,
-                        path,
-                        result: OpResult::Success,
-                        had_updates,
-                        status,
-                        fetch_result: Some(fetch_result),
-                        pull_result: None,
-                    }
-                }
-            });
-
-            handles.push((panic_repo, handle));
-        }
-
-        // Collect results
-        let mut summary = OpSummary::new();
-        let mut results = Vec::with_capacity(total);
-
-        for (index, (panic_repo, handle)) in handles.into_iter().enumerate() {
-            match handle.await {
-                Ok(sync_result) => {
-                    // Notify progress based on result using actual operation results
-                    match &sync_result.result {
-                        OpResult::Success => {
-                            if let Some(ref pull_result) = sync_result.pull_result {
-                                progress.on_pull_complete(
-                                    &sync_result.repo,
-                                    pull_result,
-                                    index,
-                                    total,
-                                );
-                            } else if let Some(ref fetch_result) = sync_result.fetch_result {
-                                progress.on_fetch_complete(
-                                    &sync_result.repo,
-                                    fetch_result,
-                                    index,
-                                    total,
-                                );
-                            }
+                        SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result,
+                            had_updates,
+                            status,
+                            fetch_result: Some(fetch_result),
+                            pull_result: actual_pull_result,
                         }
-                        OpResult::Failed(err) => {
-                            progress.on_error(&sync_result.repo, err, index, total);
-                        }
-                        OpResult::Skipped(reason) => {
-                            progress.on_skip(&sync_result.repo, reason, index, total);
+                    } else {
+                        SyncResult {
+                            repo: local_repo.repo,
+                            path,
+                            result: OpResult::Success,
+                            had_updates,
+                            status,
+                            fetch_result: Some(fetch_result),
+                            pull_result: None,
                         }
                     }
+                });
+                identities.insert(handle.id(), identity);
+            }
 
-                    summary.record(&sync_result.result);
-                    results.push(sync_result);
+            let Some(joined) = running.join_next_with_id().await else {
+                break;
+            };
+            let (index, sync_result) = match joined {
+                Ok((id, sync_result)) => {
+                    let (index, _) = identities
+                        .remove(&id)
+                        .expect("every sync task is registered when spawned");
+                    (index, sync_result)
                 }
                 Err(e) => {
                     // Report and record the panicked repo like any other
                     // failure, so the result list matches the summary counts.
-                    let err = format!("Task panicked: {}", e);
-                    progress.on_error(&panic_repo.repo, &err, index, total);
+                    let (index, local_repo) = identities
+                        .remove(&e.id())
+                        .expect("every sync task is registered when spawned");
                     let failed = SyncResult {
-                        repo: panic_repo.repo,
-                        path: panic_repo.path,
-                        result: OpResult::Failed(err),
+                        repo: local_repo.repo,
+                        path: local_repo.path,
+                        result: OpResult::Failed(format!("Task panicked: {}", e)),
                         had_updates: false,
                         status: None,
                         fetch_result: None,
                         pull_result: None,
                     };
-                    summary.record(&failed.result);
-                    results.push(failed);
+                    (index, failed)
+                }
+            };
+
+            // Terminal callbacks carry how many syncs finished before this
+            // one, so `index + 1` is the live completed count.
+            match &sync_result.result {
+                OpResult::Success => {
+                    if let Some(ref pull_result) = sync_result.pull_result {
+                        progress.on_pull_complete(&sync_result.repo, pull_result, completed, total);
+                    } else if let Some(ref fetch_result) = sync_result.fetch_result {
+                        progress.on_fetch_complete(
+                            &sync_result.repo,
+                            fetch_result,
+                            completed,
+                            total,
+                        );
+                    }
+                }
+                OpResult::Failed(err) => {
+                    progress.on_error(&sync_result.repo, err, completed, total);
+                }
+                OpResult::Skipped(reason) => {
+                    progress.on_skip(&sync_result.repo, reason, completed, total);
                 }
             }
+            completed += 1;
+
+            summary.record(&sync_result.result);
+            results.push((index, sync_result));
         }
 
-        (summary, results)
+        results.sort_by_key(|(index, _)| *index);
+        (
+            summary,
+            results.into_iter().map(|(_, result)| result).collect(),
+        )
     }
 
     /// Syncs a single repository synchronously.

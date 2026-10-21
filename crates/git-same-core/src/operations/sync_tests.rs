@@ -356,3 +356,117 @@ async fn test_sync_repos_panicked_task_is_reported_and_recorded() {
     assert!(failed.result.error_message().unwrap().contains("panicked"));
     assert_eq!(progress.counts.errors.load(Ordering::SeqCst), 1);
 }
+
+/// Records `start:<repo>:<index>` and `done:<repo>:<index>` in call order.
+/// Optionally holds one repository's start for a while to make it finish last.
+#[derive(Default)]
+struct RecordingSyncProgress {
+    events: std::sync::Mutex<Vec<String>>,
+    slow: Option<&'static str>,
+}
+
+impl RecordingSyncProgress {
+    fn record(&self, kind: &str, repo: &OwnedRepo, index: usize) {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("{kind}:{}:{index}", repo.full_name()));
+    }
+
+    fn events(&self) -> Vec<String> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl SyncProgress for RecordingSyncProgress {
+    fn on_start(&self, repo: &OwnedRepo, _path: &Path, index: usize, _total: usize) {
+        self.record("start", repo, index);
+        if self.slow == Some(repo.full_name()) {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+
+    fn on_fetch_complete(&self, repo: &OwnedRepo, _result: &FetchResult, i: usize, _t: usize) {
+        self.record("done", repo, i);
+    }
+
+    fn on_pull_complete(&self, repo: &OwnedRepo, _result: &PullResult, i: usize, _t: usize) {
+        self.record("done", repo, i);
+    }
+
+    fn on_error(&self, repo: &OwnedRepo, _error: &str, index: usize, _total: usize) {
+        self.record("done", repo, index);
+    }
+
+    fn on_skip(&self, repo: &OwnedRepo, _reason: &str, index: usize, _total: usize) {
+        self.record("done", repo, index);
+    }
+}
+
+fn three_local_repos() -> (Vec<TempDir>, MockGit, Vec<LocalRepo>) {
+    let dirs: Vec<TempDir> = (0..3).map(|_| TempDir::new().unwrap()).collect();
+    let mut git = MockGit::new();
+    for dir in &dirs {
+        git.add_repo(dir.path().to_string_lossy().to_string());
+    }
+    let repos = dirs
+        .iter()
+        .enumerate()
+        .map(|(i, dir)| local_repo(&format!("repo{}", i + 1), "org", dir.path()))
+        .collect();
+    (dirs, git, repos)
+}
+
+#[tokio::test]
+async fn test_sync_repos_reports_each_sync_as_it_finishes() {
+    let (_dirs, git, repos) = three_local_repos();
+    let manager = SyncManager::new(git, SyncManagerOptions::new().with_concurrency(1));
+
+    let progress = Arc::new(RecordingSyncProgress::default());
+    let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
+    manager.sync_repos(repos, progress_dyn).await;
+
+    // Before, every start was reported before the first finish.
+    assert_eq!(
+        progress.events(),
+        vec![
+            "start:org/repo1:0",
+            "done:org/repo1:0",
+            "start:org/repo2:1",
+            "done:org/repo2:1",
+            "start:org/repo3:2",
+            "done:org/repo3:2",
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_sync_repos_a_slow_repo_does_not_hold_the_count_back() {
+    let (_dirs, git, repos) = three_local_repos();
+    let manager = SyncManager::new(git, SyncManagerOptions::new().with_concurrency(3));
+
+    let progress = Arc::new(RecordingSyncProgress {
+        slow: Some("org/repo1"),
+        ..Default::default()
+    });
+    let progress_dyn: Arc<dyn SyncProgress> = progress.clone();
+    let (summary, results) = manager.sync_repos(repos, progress_dyn).await;
+
+    assert_eq!(summary.success, 3);
+    let done: Vec<String> = progress
+        .events()
+        .into_iter()
+        .filter(|e| e.starts_with("done:"))
+        .collect();
+    // The slow first repo finishes last, and the finished callbacks count
+    // completions (0, 1, 2) instead of repeating input positions.
+    assert_eq!(done.len(), 3);
+    assert_eq!(done[2], "done:org/repo1:2");
+    assert!(
+        done[0].ends_with(":0") && done[1].ends_with(":1"),
+        "{done:?}"
+    );
+    // Results still come back in input order.
+    let names: Vec<&str> = results.iter().map(|r| r.repo.full_name()).collect();
+    assert_eq!(names, vec!["org/repo1", "org/repo2", "org/repo3"]);
+}

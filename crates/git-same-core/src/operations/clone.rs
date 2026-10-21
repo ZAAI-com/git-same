@@ -33,9 +33,10 @@
 use crate::domain::RepoPathTemplate;
 use crate::git::{CloneOptions, GitOperations};
 use crate::types::{OpResult, OpSummary, OwnedRepo};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::task::{self, JoinSet};
 
 /// Maximum allowed concurrency to prevent resource exhaustion.
 /// Higher values can cause "too many open files" errors and network saturation.
@@ -48,17 +49,23 @@ pub const MIN_CONCURRENCY: usize = 1;
 pub const DEFAULT_CONCURRENCY: usize = 8;
 
 /// Progress callback for clone operations.
+///
+/// `on_start` receives the repository's position in the input list. The
+/// finishing callbacks (`on_complete`, `on_error`, `on_skip`) arrive as each
+/// clone finishes and receive a completion counter instead: the number of
+/// clones that finished before this one, so `index + 1` is the live
+/// completed count.
 pub trait CloneProgress: Send + Sync {
-    /// Called when a clone starts.
+    /// Called when a clone starts. `index` is the input position.
     fn on_start(&self, repo: &OwnedRepo, index: usize, total: usize);
 
-    /// Called when a clone completes successfully.
+    /// Called when a clone completes successfully. `index` counts completions.
     fn on_complete(&self, repo: &OwnedRepo, index: usize, total: usize);
 
-    /// Called when a clone fails.
+    /// Called when a clone fails. `index` counts completions.
     fn on_error(&self, repo: &OwnedRepo, error: &str, index: usize, total: usize);
 
-    /// Called when a clone is skipped.
+    /// Called when a clone is skipped. `index` counts completions.
     fn on_skip(&self, repo: &OwnedRepo, reason: &str, index: usize, total: usize);
 }
 
@@ -196,7 +203,10 @@ impl<G: GitOperations + 'static> CloneManager<G> {
 
     /// Clones repositories in parallel.
     ///
-    /// Returns a summary of operations and individual results.
+    /// Returns a summary of operations and individual results, in input
+    /// order. Progress is reported as each clone finishes, not in input
+    /// order, so one slow repository never holds the count back. Dropping
+    /// the returned future aborts the clones that have not finished.
     pub async fn clone_repos(
         &self,
         base_path: &Path,
@@ -209,103 +219,119 @@ impl<G: GitOperations + 'static> CloneManager<G> {
             .options
             .concurrency
             .clamp(MIN_CONCURRENCY, MAX_CONCURRENCY);
-        let semaphore = Arc::new(Semaphore::new(concurrency));
-        let mut handles = Vec::with_capacity(total);
-
-        for (index, repo) in repos.into_iter().enumerate() {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
-            let git = self.git.clone();
-            let clone_options = self.options.clone_options.clone();
-            let target_path = self.compute_path(base_path, &repo, provider);
-            let url = self.get_clone_url(&repo).to_string();
-            let dry_run = self.options.dry_run;
-            let progress = Arc::clone(&progress);
-            let panic_repo = repo.clone();
-            let panic_path = target_path.clone();
-
-            let handle = tokio::spawn(async move {
-                // Notify progress - clone starting
-                progress.on_start(&repo, index, total);
-                let result = if dry_run {
-                    OpResult::Skipped("dry run".to_string())
-                } else if target_path.exists() {
-                    OpResult::Skipped("directory already exists".to_string())
-                } else {
-                    // Create parent directories
-                    if let Some(parent) = target_path.parent() {
-                        if let Err(e) = std::fs::create_dir_all(parent) {
-                            OpResult::Failed(format!("Failed to create directory: {}", e))
-                        } else {
-                            // Perform the clone (blocking operation)
-                            match tokio::task::spawn_blocking({
-                                let git = git.clone();
-                                let url = url.clone();
-                                let target_path = target_path.clone();
-                                let clone_options = clone_options.clone();
-                                move || git.clone_repo(&url, &target_path, &clone_options)
-                            })
-                            .await
-                            {
-                                Ok(Ok(())) => OpResult::Success,
-                                Ok(Err(e)) => OpResult::Failed(e.to_string()),
-                                Err(e) => OpResult::Failed(format!("Task panicked: {}", e)),
-                            }
-                        }
-                    } else {
-                        OpResult::Failed("Invalid target path".to_string())
-                    }
-                };
-
-                drop(permit); // Release semaphore
-
-                CloneResult {
-                    repo,
-                    path: target_path,
-                    result,
-                }
-            });
-
-            handles.push((panic_repo, panic_path, handle));
-        }
-
-        // Collect results
+        let mut queued = repos.into_iter().enumerate();
+        let mut running: JoinSet<CloneResult> = JoinSet::new();
+        // Who each task is, so a panicked task is still reported against its
+        // repository and sorted back into place.
+        let mut identities: HashMap<task::Id, (usize, OwnedRepo, PathBuf)> = HashMap::new();
         let mut summary = OpSummary::new();
-        let mut results = Vec::with_capacity(total);
+        let mut results: Vec<(usize, CloneResult)> = Vec::with_capacity(total);
+        let mut completed = 0;
 
-        for (index, (panic_repo, panic_path, handle)) in handles.into_iter().enumerate() {
-            match handle.await {
-                Ok(clone_result) => {
-                    // Notify progress
-                    match &clone_result.result {
-                        OpResult::Success => {
-                            progress.on_complete(&clone_result.repo, index, total);
+        loop {
+            // Keep `concurrency` clones running; start the next one as soon as
+            // a slot frees up.
+            while running.len() < concurrency {
+                let Some((index, repo)) = queued.next() else {
+                    break;
+                };
+                let git = self.git.clone();
+                let clone_options = self.options.clone_options.clone();
+                let target_path = self.compute_path(base_path, &repo, provider);
+                let url = self.get_clone_url(&repo).to_string();
+                let dry_run = self.options.dry_run;
+                let progress = Arc::clone(&progress);
+                let identity = (index, repo.clone(), target_path.clone());
+
+                let handle = running.spawn(async move {
+                    // Notify progress - clone starting
+                    progress.on_start(&repo, index, total);
+                    let result = if dry_run {
+                        OpResult::Skipped("dry run".to_string())
+                    } else if target_path.exists() {
+                        OpResult::Skipped("directory already exists".to_string())
+                    } else {
+                        // Create parent directories
+                        if let Some(parent) = target_path.parent() {
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                OpResult::Failed(format!("Failed to create directory: {}", e))
+                            } else {
+                                // Perform the clone (blocking operation)
+                                match tokio::task::spawn_blocking({
+                                    let git = git.clone();
+                                    let url = url.clone();
+                                    let target_path = target_path.clone();
+                                    let clone_options = clone_options.clone();
+                                    move || git.clone_repo(&url, &target_path, &clone_options)
+                                })
+                                .await
+                                {
+                                    Ok(Ok(())) => OpResult::Success,
+                                    Ok(Err(e)) => OpResult::Failed(e.to_string()),
+                                    Err(e) => OpResult::Failed(format!("Task panicked: {}", e)),
+                                }
+                            }
+                        } else {
+                            OpResult::Failed("Invalid target path".to_string())
                         }
-                        OpResult::Failed(err) => {
-                            progress.on_error(&clone_result.repo, err, index, total);
-                        }
-                        OpResult::Skipped(reason) => {
-                            progress.on_skip(&clone_result.repo, reason, index, total);
-                        }
+                    };
+
+                    CloneResult {
+                        repo,
+                        path: target_path,
+                        result,
                     }
+                });
+                identities.insert(handle.id(), identity);
+            }
 
-                    summary.record(&clone_result.result);
-                    results.push(clone_result);
+            let Some(joined) = running.join_next_with_id().await else {
+                break;
+            };
+            let (index, clone_result) = match joined {
+                Ok((id, clone_result)) => {
+                    let (index, _, _) = identities
+                        .remove(&id)
+                        .expect("every clone task is registered when spawned");
+                    (index, clone_result)
                 }
                 Err(e) => {
-                    let err = format!("Task panicked: {}", e);
-                    progress.on_error(&panic_repo, &err, index, total);
+                    let (index, repo, path) = identities
+                        .remove(&e.id())
+                        .expect("every clone task is registered when spawned");
                     let failed = CloneResult {
-                        repo: panic_repo,
-                        path: panic_path,
-                        result: OpResult::Failed(err),
+                        repo,
+                        path,
+                        result: OpResult::Failed(format!("Task panicked: {}", e)),
                     };
-                    summary.record(&failed.result);
-                    results.push(failed);
+                    (index, failed)
+                }
+            };
+
+            // Terminal callbacks carry how many clones finished before this
+            // one, so `index + 1` is the live completed count.
+            match &clone_result.result {
+                OpResult::Success => {
+                    progress.on_complete(&clone_result.repo, completed, total);
+                }
+                OpResult::Failed(err) => {
+                    progress.on_error(&clone_result.repo, err, completed, total);
+                }
+                OpResult::Skipped(reason) => {
+                    progress.on_skip(&clone_result.repo, reason, completed, total);
                 }
             }
+            completed += 1;
+
+            summary.record(&clone_result.result);
+            results.push((index, clone_result));
         }
 
-        (summary, results)
+        results.sort_by_key(|(index, _)| *index);
+        (
+            summary,
+            results.into_iter().map(|(_, result)| result).collect(),
+        )
     }
 
     /// Clones a single repository synchronously.
