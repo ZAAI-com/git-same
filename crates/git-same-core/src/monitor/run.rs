@@ -26,7 +26,7 @@ use crate::errors::{MonitorAgentError, Result};
 use crate::git::ShellGit;
 use crate::ipc::status_file::ensure_legacy_symlinks;
 use crate::ipc::{IpcConfig, StatusFileWriter};
-use crate::monitor::incremental::rescan_and_merge;
+use crate::monitor::incremental::{belongs_to_workspace, rescan_and_merge};
 use crate::monitor::live_config::LiveConfig;
 use crate::monitor::runtime_guard::{AcquireError, MonitorMode, RuntimeGuard};
 use crate::output::Output;
@@ -431,20 +431,32 @@ where
                 let owner_types = owner_types.clone();
                 let ambient_upgrades = ambient_upgrades.clone();
                 let cancel = cancel.clone();
-                let mut snapshot = status.clone();
-                let repos = std::mem::take(&mut pending);
+                let repos = wanted_rescans(
+                    &status,
+                    &ambient_upgrades,
+                    std::mem::take(&mut pending),
+                    &explicit,
+                );
                 let requested = std::mem::take(&mut explicit);
-                job = Some(tokio::task::spawn_blocking(move || {
-                    before_job_hook();
-                    let git = ShellGit::new();
-                    let service = RepoScanService::new(&git, &config)
-                        .with_owner_types(owner_types)
-                        .with_ambient_upgrades(ambient_upgrades.clone())
-                        .with_cancel(cancel);
-                    let changed =
-                        rescan_pending(&service, &mut snapshot, &ambient_upgrades, repos, &requested);
-                    JobOutcome::Flush { status: snapshot, changed }
-                }));
+                if !repos.is_empty() {
+                    let mut snapshot = status.clone();
+                    job = Some(tokio::task::spawn_blocking(move || {
+                        before_job_hook();
+                        let git = ShellGit::new();
+                        let service = RepoScanService::new(&git, &config)
+                            .with_owner_types(owner_types)
+                            .with_ambient_upgrades(ambient_upgrades.clone())
+                            .with_cancel(cancel);
+                        let changed = rescan_pending(
+                            &service,
+                            &mut snapshot,
+                            &ambient_upgrades,
+                            repos,
+                            &requested,
+                        );
+                        JobOutcome::Flush { status: snapshot, changed }
+                    }));
+                }
             },
         }
 
@@ -611,6 +623,38 @@ async fn wait_for_job(
         Some(handle) => handle.await,
         None => std::future::pending().await,
     }
+}
+
+/// The pending repos worth a rescan.
+///
+/// Workspace repos (including a fresh clone under a workspace root) always
+/// are. An ambient repo outside every workspace is only rescanned once the
+/// user asked for it: named in `REFRESH <path>` now (`explicit`, a
+/// right-click or the Finder extension asking about an unknown folder), or
+/// upgraded by such a request earlier. Otherwise a file change in, say, a
+/// Conductor worktree would run a full git scan of it and color it for good.
+fn wanted_rescans(
+    status: &FinderStatus,
+    upgrades: &AmbientUpgradeCache,
+    pending: HashSet<PathBuf>,
+    explicit: &HashSet<PathBuf>,
+) -> HashSet<PathBuf> {
+    let before = pending.len();
+    let wanted: HashSet<PathBuf> = pending
+        .into_iter()
+        .filter(|repo| {
+            explicit.contains(repo)
+                || belongs_to_workspace(status, repo)
+                || upgrades.get(repo).is_some()
+        })
+        .collect();
+    if wanted.len() < before {
+        debug!(
+            skipped = before - wanted.len(),
+            "Ignoring file changes in ambient repos that were never requested"
+        );
+    }
+    wanted
 }
 
 /// Rescan every pending repo into `status`. Returns whether any repo changed;

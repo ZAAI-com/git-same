@@ -466,3 +466,66 @@ fn rescan_pending_records_changed_and_explicit_repos_in_the_ambient_cache() {
     ));
     assert!(cache.get(&repo).is_none());
 }
+
+#[test]
+fn only_workspace_and_requested_ambient_repos_are_rescanned_on_file_changes() {
+    use crate::types::finder_status::FinderWorkspaceInfo;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(tmp.path()).unwrap();
+    let ws = root.join("ws");
+    let workspace_repo = ws.join("org/a");
+    let new_workspace_clone = ws.join("org/new");
+    let ambient = root.join("amb/x");
+    let unknown_ambient = root.join("amb/y");
+    for dir in [
+        &workspace_repo,
+        &new_workspace_clone,
+        &ambient,
+        &unknown_ambient,
+    ] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+
+    let config = Config::default();
+    let git = crate::git::MockGit::new();
+    let service = RepoScanService::new(&git, &config);
+    let mut status = FinderStatus::new(1, "2026-01-01T00:00:00Z".into());
+    status.workspaces.push(FinderWorkspaceInfo {
+        name: "ws".into(),
+        root: ws.clone(),
+        orgs: Vec::new(),
+    });
+    let mut workspace_entry = service.scan_ambient_repo(&workspace_repo);
+    workspace_entry.workspace = Some("ws".into());
+    status.repos.push(workspace_entry);
+    status.repos.push(service.scan_ambient_repo(&ambient));
+
+    let upgrades = AmbientUpgradeCache::new();
+    let all = || {
+        HashSet::from([
+            workspace_repo.clone(),
+            new_workspace_clone.clone(),
+            ambient.clone(),
+            unknown_ambient.clone(),
+        ])
+    };
+
+    // Gray ambient repos, known or not, ignore file changes.
+    let wanted = wanted_rescans(&status, &upgrades, all(), &HashSet::new());
+    assert_eq!(
+        wanted,
+        HashSet::from([workspace_repo.clone(), new_workspace_clone.clone()])
+    );
+
+    // After a right-click upgraded it, an ambient repo follows file changes.
+    upgrades.set(ambient.clone(), service.scan_ambient_repo(&ambient));
+    let wanted = wanted_rescans(&status, &upgrades, all(), &HashSet::new());
+    assert!(wanted.contains(&ambient));
+    assert!(!wanted.contains(&unknown_ambient));
+
+    // A `REFRESH <path>` for an unknown ambient repo is always honored.
+    let explicit = HashSet::from([unknown_ambient.clone()]);
+    let wanted = wanted_rescans(&status, &upgrades, all(), &explicit);
+    assert!(wanted.contains(&unknown_ambient));
+}

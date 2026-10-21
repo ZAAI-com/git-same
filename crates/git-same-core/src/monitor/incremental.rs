@@ -51,6 +51,13 @@ fn is_git_repo(path: &Path) -> bool {
     dot_git.is_dir() || dot_git.is_file() || path.join("HEAD").is_file()
 }
 
+/// Whether `repo_path` belongs to a workspace: an existing workspace entry,
+/// or a path under a workspace root (a fresh clone). Everything else is
+/// ambient.
+pub(crate) fn belongs_to_workspace(status: &FinderStatus, repo_path: &Path) -> bool {
+    labels_for(status, repo_path).0.is_some()
+}
+
 /// Recover the workspace + org labels for a repo path.
 ///
 /// Prefers the existing `FinderStatus` entry (so a repo that was first
