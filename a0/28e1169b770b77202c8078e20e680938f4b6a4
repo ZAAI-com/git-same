@@ -1,0 +1,27 @@
+crates/git-same-core/src/monitor/run_tests.rs
+  s_72a41da065f75d::t_c74842c9ae3833 469-531
+.claude/CLAUDE.md
+  s_72a41da065f75d::t_70be3d621aa9fc 55
+crates/git-same-core/src/monitor/run.rs
+  s_72a41da065f75d::t_dded1415ee1b31 443
+  s_72a41da065f75d::t_d411851a46da41 29,434-439,441-442,444-459,628-655
+  s_72a41da065f75d::t_8e53dfec34e38f 656-659
+crates/git-same-core/src/monitor/incremental.rs
+  s_72a41da065f75d::t_d411851a46da41 54-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a028e1169b770b77202c8078e20e680938f4b6a4",
+  "prompts": {},
+  "sessions": {
+    "s_72a41da065f75d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d824e5aa-55de-49a5-8478-67ccb05ac6b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
