@@ -1,0 +1,29 @@
+docs/DEVELOPMENT.md
+  s_72a41da065f75d::t_fd986a45bad751 86-91
+.github/workflows/S2-Release-GitHub.yml
+  s_72a41da065f75d::t_fb9cfa3f46a3be 449,452-453
+crates/git-same-app/ui/package.json
+  s_72a41da065f75d::t_8ab2d26d5f5893 6
+.github/workflows/S1-Test-CI.yml
+  s_72a41da065f75d::t_fb9cfa3f46a3be 126-129,132-133
+toolkit/conductor/setup.sh
+  s_72a41da065f75d::t_fb9cfa3f46a3be 81-86
+.claude/CLAUDE.md
+  s_72a41da065f75d::t_fd986a45bad751 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "854f5fe6c3529ed0895ad3bffe4157d9ce3e7d7d",
+  "prompts": {},
+  "sessions": {
+    "s_72a41da065f75d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d824e5aa-55de-49a5-8478-67ccb05ac6b9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Manuel <m@manuelgruber.com>"
+    }
+  }
+}
