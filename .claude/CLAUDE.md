@@ -16,6 +16,7 @@ cargo test --workspace <test_name>                     # Run a single test by na
 cargo test -p git-same --test integration_test         # Run only integration tests
 cargo fmt --all -- --check                             # Check formatting
 cargo clippy --workspace --all-targets --all-features -- -D warnings   # Lint
+corepack prepare "$(node -p "require('./crates/git-same-app/ui/package.json').packageManager.split('+')[0]")" --activate   # Once: make the pinned pnpm the default so --dir works from the repo root
 pnpm --dir crates/git-same-app/ui install              # Install Tauri UI dependencies
 cargo tauri dev --manifest-path crates/git-same-app/Cargo.toml          # Run macOS app in development
 pnpm --dir crates/git-same-app/ui check                # Type-check the Svelte/Vite UI

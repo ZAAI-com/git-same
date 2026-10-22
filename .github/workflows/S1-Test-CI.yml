@@ -123,12 +123,14 @@ jobs:
 
       - name: Enable pnpm
         # Activate the pnpm version pinned in crates/git-same-app/ui/package.json
-        # (packageManager: pnpm@11.0.9). Newer corepack defaults to a different
-        # pnpm (11.9.0) and refuses to self-switch, so pin it for every corepack
-        # invocation, including the tauri.conf.json beforeBuildCommand.
+        # (packageManager). Corepack picks pnpm's version from the current
+        # directory before `--dir` applies, so `pnpm --dir crates/...` from the
+        # repo root would otherwise run corepack's default and pnpm refuses to
+        # run under a different pin. Read from package.json, never hardcoded.
         run: |
           corepack enable pnpm
-          corepack prepare pnpm@11.0.9 --activate
+          PINNED_PNPM="$(node -p "require('./crates/git-same-app/ui/package.json').packageManager.split('+')[0]")"
+          corepack prepare "$PINNED_PNPM" --activate
 
       - name: Verify entitlements parity
         run: bash toolkit/packaging/macos/check-entitlements-parity.sh

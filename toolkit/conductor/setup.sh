@@ -78,7 +78,12 @@ if ! command -v corepack &> /dev/null; then
     exit 1
 fi
 corepack enable pnpm
-# Corepack resolves packageManager from its working directory before pnpm handles --dir.
+# Corepack resolves packageManager from its working directory before pnpm
+# handles --dir, so `pnpm --dir crates/git-same-app/ui ...` from the repo root
+# runs corepack's default version, which pnpm refuses under a different pin.
+# Make the pinned version the default, as CI and the release build do.
+PINNED_PNPM="$(node -p "require('$UI_DIR/package.json').packageManager.split('+')[0]")"
+corepack prepare "$PINNED_PNPM" --activate
 PNPM_VERSION="$(cd "$UI_DIR" && corepack pnpm --version)"
 echo "pnpm: $PNPM_VERSION"
 echo ""

@@ -83,6 +83,12 @@ The repository is a Cargo workspace with three member crates: `git-same-core` (e
 
 The Tauri-based desktop app lives at `crates/git-same-app/`. You need [pnpm](https://pnpm.io/) and the [`tauri-cli`](https://v2.tauri.app/reference/cli/) (`cargo install tauri-cli --version "^2.0"`).
 
+The pnpm version is pinned in `crates/git-same-app/ui/package.json` (`packageManager`). Corepack picks the version from the current directory, before `--dir` applies, so activate the pin once to run the `pnpm --dir ...` commands from the repo root (`toolkit/conductor/setup.sh`, CI and the release build all do this):
+
+```bash
+corepack prepare "$(node -p "require('./crates/git-same-app/ui/package.json').packageManager.split('+')[0]")" --activate
+```
+
 ```bash
 # Install frontend dependencies
 pnpm --dir crates/git-same-app/ui install
